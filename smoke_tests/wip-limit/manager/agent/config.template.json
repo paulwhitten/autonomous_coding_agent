@@ -1,0 +1,81 @@
+{
+  "agent": {
+    "hostname": "smoke-wip-mgr",
+    "role": "manager",
+    "checkIntervalMs": 5000,
+    "stuckTimeoutMs": 120000,
+    "sdkTimeoutMs": 120000,
+    "taskRetryCount": 2,
+    "workflowFile": "../../workflow.json",
+    "wipLimit": 2,
+    "backpressure": {
+      "enabled": true,
+      "maxPendingWorkItems": 50,
+      "maxRecipientMailbox": 10
+    },
+    "timeoutStrategy": {
+      "enabled": true,
+      "tier1_multiplier": 1.5,
+      "tier2_backgroundThreshold": 2,
+      "tier3_decomposeThreshold": 3,
+      "tier4_adaptiveWindow": 3600000,
+      "tier4_adaptiveThreshold": 3
+    },
+    "validation": {
+      "mode": "none",
+      "reviewEveryNthItem": 99,
+      "milestones": []
+    }
+  },
+  "mailbox": {
+    "repoPath": "../runtime_mailbox",
+    "gitSync": false,
+    "autoCommit": false,
+    "supportBroadcast": false,
+    "supportAttachments": false,
+    "supportPriority": true
+  },
+  "copilot": {
+    "model": "gpt-4.1",
+    "allowedTools": ["all"]
+  },
+  "workspace": {
+    "path": "./workspace",
+    "tasksFolder": "tasks",
+    "workingFolder": "project",
+    "taskSubfolders": {
+      "pending": "pending",
+      "completed": "completed",
+      "review": "review",
+      "failed": "failed"
+    },
+    "persistContext": true
+  },
+  "logging": {
+    "level": "info",
+    "path": "./logs/agent.log",
+    "maxSizeMB": 100
+  },
+  "manager": {
+    "hostname": "smoke-wip-mgr",
+    "role": "manager",
+    "escalationPriority": "NORMAL"
+  },
+  "quota": {
+    "enabled": false,
+    "preset": "development",
+    "presetsFile": "./quota-presets.json"
+  },
+  "teamMembers": [
+    {
+      "hostname": "smoke-wip-dev",
+      "role": "developer",
+      "responsibilities": "Implementation tasks for WIP smoke test"
+    },
+    {
+      "hostname": "smoke-wip-qa",
+      "role": "qa",
+      "responsibilities": "Validation tasks for WIP smoke test"
+    }
+  ]
+}

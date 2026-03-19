@@ -1,0 +1,86 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "description": "TypeScript medical records validation - HIPAA regulatory standards",
+
+  "codingStandards": {
+    "language": "TypeScript",
+    "description": "Quality gates for HIPAA-compliant TypeScript code. Run BEFORE every commit.",
+    "preCommitChecklist": [
+      "1. npm run build OR npx tsc -- must compile with zero errors",
+      "2. npm test OR npx jest -- all tests must pass",
+      "3. npx tsc --noEmit --strict -- enable strict mode checks"
+    ],
+    "sections": {
+      "Type Safety": [
+        "NEVER use 'any' type -- use proper interfaces or unknown",
+        "Define interfaces for all data structures (e.g. MedicalRecord, ValidationResult)",
+        "Use discriminated unions for recordType: 'patient' | 'procedure' | 'diagnosis'",
+        "Enable strict mode in tsconfig.json (strict: true)"
+      ],
+      "Code Architecture": [
+        "Separate concerns into modules: src/types.ts, src/parser.ts, src/validator.ts, src/cli.ts",
+        "src/cli.ts is the entrypoint -- it calls functions from other modules",
+        "Keep every function under 30 lines -- extract helpers for complex logic",
+        "Export validation functions so tests can call them directly without spawning a process",
+        "Use pure functions: input -> output, no side effects in validation logic"
+      ],
+      "Error Handling": [
+        "Define a ValidationError interface with line number, message, and category",
+        "Collect all errors in a single pass -- do not exit on first failure",
+        "Return meaningful exit codes: 0=success, 1=validation failure, 2=runtime error",
+        "Wrap file I/O in try-catch; propagate structured errors to CLI layer"
+      ],
+      "Documentation": [
+        "Every exported function needs a JSDoc comment with @param and @returns",
+        "Every interface needs a JSDoc comment explaining its purpose"
+      ]
+    }
+  },
+
+  "testStandards": {
+    "description": "Minimum test quality for regulatory compliance.",
+    "structure": [
+      "One describe() block per requirement (REQ-HCDP-XXX)",
+      "Import and test validation functions directly -- not only via CLI spawn",
+      "Use test fixtures in tests/fixtures/ for data-driven tests"
+    ],
+    "minimumCases": [
+      "Happy path: valid input returns success",
+      "Empty file: zero records is valid",
+      "Malformed JSON: parser returns line-level errors",
+      "Invalid recordType: validator rejects unknown types",
+      "Missing patientId on procedure/diagnosis",
+      "Orphaned patientId referencing non-existent patient",
+      "File not found: CLI exits with code 2",
+      "Mixed valid and invalid records: all errors reported"
+    ],
+    "rules": [
+      "Minimum 3 test cases per requirement (happy, error, edge)",
+      "Assert specific values (line numbers, error messages) -- not just truthy/falsy",
+      "Test the function, not just the CLI exit code -- unit tests over integration tests"
+    ]
+  },
+
+  "preSubmissionChecklist": {
+    "description": "QA will REJECT your submission if ANY of these are true. Self-check before sending completion report.",
+    "checks": [
+      "npx tsc --noEmit --strict fails (code must compile in strict mode)",
+      "Any test fails (npm test must exit 0)",
+      "'any' type used anywhere in src/ (grep -rn ': any' src/ must return nothing)",
+      "All logic in a single file -- src/ must have multiple .ts files (types, parser, validator, cli)",
+      "Any function body exceeds 40 lines",
+      "Fewer than 3 test cases per requirement",
+      "Tests only spawn CLI process -- must also have unit tests that import validation functions directly",
+      "No TypeScript interfaces defined for data structures",
+      "Missing REQ-HCDP-XXX traceability comments in src/ and tests/",
+      "Acceptance criteria from the task not fully implemented"
+    ]
+  },
+
+  "projectContext": [
+    "HIPAA Security Rule (45 CFR 164) compliance required",
+    "Medical records validation CLI for healthcare data pipeline",
+    "JSONL format: one JSON object per line",
+    "REQ-HCDP-XXX traceability mandatory in all source and test files"
+  ]
+}

@@ -1,0 +1,65 @@
+{
+  "agent": {
+    "hostname": "docker-agent",
+    "role": "developer",
+    "checkIntervalMs": 30000,
+    "stuckTimeoutMs": 300000,
+    "sdkTimeoutMs": 300000,
+    "taskRetryCount": 3,
+    "timeoutStrategy": {
+      "enabled": true,
+      "tier1_multiplier": 1.5,
+      "tier2_backgroundThreshold": 2,
+      "tier3_decomposeThreshold": 3,
+      "tier4_adaptiveWindow": 3600000,
+      "tier4_adaptiveThreshold": 3
+    },
+    "validation": {
+      "mode": "milestone",
+      "reviewEveryNthItem": 5,
+      "milestones": [10, 25, 50, 100]
+    }
+  },
+  "mailbox": {
+    "repoPath": "/app/mailbox",
+    "gitSync": true,
+    "autoCommit": true,
+    "commitMessage": "Agent: {hostname}_{role} at {timestamp}",
+    "supportBroadcast": true,
+    "supportAttachments": true,
+    "supportPriority": true
+  },
+  "copilot": {
+    "model": "gpt-4.1",
+    "allowedTools": ["all"]
+  },
+  "workspace": {
+    "path": "/app/workspace",
+    "tasksFolder": "tasks",
+    "workingFolder": "project",
+    "taskSubfolders": {
+      "pending": "pending",
+      "completed": "completed",
+      "review": "review",
+      "failed": "failed"
+    },
+    "persistContext": true
+  },
+  "logging": {
+    "level": "info",
+    "path": "/app/logs/agent.log",
+    "maxSizeMB": 100
+  },
+  "manager": {
+    "hostname": "localhost",
+    "role": "manager",
+    "escalationPriority": "NORMAL"
+  },
+  "quota": {
+    "enabled": false,
+    "preset": "production",
+    "presetsFile": "./quota-presets.json",
+    "overrides": {},
+    "sharedQuotaUrl": ""
+  }
+}

@@ -1,0 +1,43 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "description": "Requirements Analyst - V-model requirements definition and acceptance",
+
+  "requirementsStandards": {
+    "description": "Standards for writing testable, traceable requirements",
+    "sections": {
+      "Clarity": [
+        "Use 'shall' for mandatory requirements (not 'should' or 'must')",
+        "Each requirement is a single, testable statement",
+        "Avoid ambiguous terms: 'user-friendly', 'fast', 'robust' -- use measurable criteria"
+      ],
+      "Traceability": [
+        "Every requirement has a unique REQ-HCDP-XXX identifier",
+        "Every requirement specifies where traceability comments must appear",
+        "Acceptance criteria directly map to requirement statements"
+      ],
+      "Verification": [
+        "Acceptance criteria must be objectively verifiable (not subjective)",
+        "Specify success criteria: exit codes, output format, error messages",
+        "Include examples or test cases where helpful"
+      ]
+    }
+  },
+
+  "acceptanceReview": {
+    "description": "What to check when performing final acceptance (ACCEPTANCE state)",
+    "checklist": [
+      "Read QA verification report -- was verdict PASS?",
+      "Check verified commit SHA is present in QA report",
+      "Verify traceability: grep -rn 'REQ-HCDP-XXX' src/ tests/ returns expected results",
+      "Cross-reference acceptance criteria checklist with QA verification",
+      "Review evidence/traceability-matrix.md for coverage",
+      "Issue ACCEPTED verdict if all criteria met, REJECTED if gaps exist"
+    ]
+  },
+
+  "projectContext": [
+    "V-model regulatory pipeline: RA opens (requirements) and closes (acceptance) the V",
+    "HIPAA Security Rule (45 CFR 164) compliance context",
+    "REQ-HCDP-XXX traceability is mandatory for regulatory audit trail"
+  ]
+}

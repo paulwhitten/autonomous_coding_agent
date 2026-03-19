@@ -1,0 +1,115 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "description": "Optional per-project customizations overlaid onto base roles.json when generating copilot-instructions.md. Place as custom_instructions.json next to the agent config.json, or set agent.customInstructionsFile in config.json.",
+
+  "gitWorkflow": {
+    "developer": {
+      "description": "CRITICAL: One task at a time, end-to-end. Work on a feature branch, push, wait for QA. QA merges on approval -- you do NOT merge.",
+      "steps": [
+        "1. git fetch origin && git checkout main && git pull origin main (ALWAYS pull latest -- QA merges approved work to main)",
+        "2. Create a feature branch: git checkout -b dev/<short-task-name>",
+        "3. Implement the task, commit frequently with descriptive messages",
+        "4. Push to origin: git push origin dev/<short-task-name>",
+        "5. Send completion report to manager with branch name, commit SHA, and test results",
+        "6. WAIT for next assignment -- QA will validate and merge your branch if it passes"
+      ],
+      "rules": [
+        "ALWAYS start from latest main BEFORE creating a branch",
+        "ONE feature branch at a time -- do not start new work until the manager sends the next task",
+        "You do NOT merge to main -- QA merges your branch after approval",
+        "NEVER leave completed work only in your local clone -- always push to origin",
+        "Push BEFORE sending completion report so QA can pull and verify",
+        "If QA rejects, fix on the SAME branch (do not create a new branch), then re-push and re-report",
+        "Keep feature branches small and focused (one task per branch)",
+        "Include branch name AND commit SHA in every completion report"
+      ]
+    },
+    "qa": {
+      "description": "QA validates on the developer's feature branch. On PASS, QA merges to main and deletes the branch. On FAIL, QA sends rejection to developer.",
+      "steps": [
+        "1. Read the completion report -- it MUST contain a branch name and commit SHA",
+        "2. If no branch name: reject immediately with 'No branch specified -- developer must push and provide branch name'",
+        "3. cd workspace/project && git fetch origin",
+        "4. git checkout <branch> && git pull origin <branch>",
+        "5. Run verification on the FEATURE BRANCH",
+        "6. If FAIL: send rejection to developer via send_message(priority=HIGH). Developer fixes on the SAME branch.",
+        "7. If PASS: merge to main and clean up:",
+        "   git checkout main && git pull origin main",
+        "   git merge dev/<branch> --no-ff -m 'Merge <branch>: <short description>'",
+        "   git push origin main",
+        "   git branch -d dev/<branch> && git push origin --delete dev/<branch>",
+        "8. Send approval to manager via send_message() confirming merge commit SHA on main"
+      ],
+      "rules": [
+        "ALWAYS validate on the feature branch, NEVER on main",
+        "ALWAYS git fetch origin before checking out the branch",
+        "Verify code from origin, not from your local workspace edits",
+        "If the completion report does not mention a branch or commit, reject immediately",
+        "On PASS: QA merges to main, pushes, and deletes the feature branch",
+        "On FAIL: QA does NOT merge -- send rejection to developer for rework on the same branch",
+        "Include the merge commit SHA on main in the approval message to manager"
+      ]
+    }
+  },
+
+  "codingStandards": {
+    "language": "Rust",
+    "description": "Mandatory quality gates for all Rust code. Run these BEFORE every commit.",
+    "preCommitChecklist": [
+      "1. cargo fmt -- format all code (zero tolerance for unformatted code)",
+      "2. cargo clippy -- -D warnings -- fix ALL warnings, do not suppress with #[allow] unless justified in a comment",
+      "3. cargo build -- must compile cleanly with zero warnings",
+      "4. cargo test -- all tests must pass"
+    ],
+    "sections": {
+      "Documentation": [
+        "Every public fn, struct, enum, trait, and module MUST have a /// doc comment",
+        "Module-level docs (//!) at the top of each file explaining the module's purpose",
+        "Include # Examples in doc comments for non-trivial public APIs",
+        "Every unsafe block MUST have a // SAFETY: comment explaining why it is sound"
+      ],
+      "Error Handling": [
+        "Use Result<T, E> for fallible operations -- never unwrap() or expect() in library code",
+        "Define domain-specific error types with thiserror or manual Display/Error impls",
+        "Propagate errors with ? -- avoid swallowing errors silently"
+      ],
+      "Concurrency": [
+        "NEVER use static mut -- it is undefined behavior in concurrent contexts",
+        "Use Arc<Mutex<T>> or Arc<RwLock<T>> for shared mutable state",
+        "Prefer message passing (std::sync::mpsc or crossbeam channels) over shared state where feasible",
+        "Keep critical sections (lock scopes) as short as possible",
+        "Use atomics (AtomicBool, AtomicUsize) for simple flags and counters instead of a full Mutex"
+      ],
+      "Code Structure": [
+        "One logical concern per module -- keep files under ~300 lines",
+        "Prefer newtypes and enums over raw primitives for domain concepts",
+        "Keep unsafe blocks minimal and isolated -- wrap them in safe abstractions"
+      ]
+    }
+  },
+
+  "buildSystem": {
+    "buildCommand": "cargo build",
+    "testCommand": "cargo test",
+    "lintCommand": "cargo clippy -- -D warnings",
+    "formatCommand": "cargo fmt"
+  },
+
+  "projectContext": [
+    "FDA-regulated medical device data platform (SaMD Class II)",
+    "HIPAA-compliant patient data processing pipeline",
+    "HL7 FHIR R4 API integration for EHR interoperability",
+    "IEC 62304 software lifecycle compliance required"
+  ],
+
+  "additionalSections": [
+    {
+      "title": "Regulatory Notes",
+      "items": [
+        "All PHI access must go through the audit-logged DataAccess trait",
+        "Document risk mitigations per IEC 62304 hazard analysis",
+        "Unit test coverage must meet 80% minimum for safety-critical modules"
+      ]
+    }
+  ]
+}

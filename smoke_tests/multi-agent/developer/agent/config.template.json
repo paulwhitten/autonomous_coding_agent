@@ -1,0 +1,58 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "agent": {
+    "hostname": "smoke-test-dev",
+    "role": "developer",
+    "checkIntervalMs": 5000,
+    "stuckTimeoutMs": 2700000,
+    "sdkTimeoutMs": 120000,
+    "validation": {
+      "mode": "none",
+      "reviewEveryNthItem": 99,
+      "alwaysReviewOnError": false,
+      "milestones": []
+    }
+  },
+  "mailbox": {
+    "repoPath": "../runtime_mailbox",
+    "gitSync": false,
+    "autoCommit": false,
+    "commitMessage": "Smoke test: {hostname}_{role} at {timestamp}",
+    "supportBroadcast": false,
+    "supportAttachments": false,
+    "supportPriority": true
+  },
+  "copilot": {
+    "model": "gpt-4.1",
+    "allowedTools": ["all"]
+  },
+  "workspace": {
+    "path": "./workspace",
+    "tasksFolder": "tasks",
+    "workingFolder": "project",
+    "taskSubfolders": {
+      "pending": "pending",
+      "completed": "completed",
+      "review": "review",
+      "failed": "failed"
+    },
+    "persistContext": true
+  },
+  "logging": {
+    "level": "info",
+    "path": "./logs/agent.log",
+    "maxSizeMB": 100
+  },
+  "manager": {
+    "hostname": "smoke-test-mgr",
+    "role": "manager",
+    "escalationPriority": "HIGH"
+  },
+  "quota": {
+    "enabled": false,
+    "preset": "development",
+    "presetsFile": "./quota-presets.json",
+    "overrides": {},
+    "sharedQuotaUrl": ""
+  }
+}

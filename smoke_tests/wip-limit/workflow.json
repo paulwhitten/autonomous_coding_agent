@@ -1,0 +1,50 @@
+{
+  "$schema": "../../workflows/workflow.schema.json",
+  "id": "wip-smoke-workflow",
+  "name": "WIP Limit Smoke Test Workflow",
+  "description": "Minimal workflow for testing WIP limit gate. Manager assigns, developer implements, then done.",
+  "version": "1.0.0",
+  "initialState": "ASSIGN",
+  "terminalStates": ["DONE"],
+  "globalContext": {
+    "projectPath": "workspace/project"
+  },
+  "states": {
+    "ASSIGN": {
+      "name": "Task Assignment",
+      "role": "manager",
+      "description": "Manager delegates a task to the developer.",
+      "prompt": "You are assigning a task. Use find_agents_by_role('developer') to look up the developer's hostname, then call send_message() with the task details.\n\nRules:\n- Priority: NORMAL\n- Include clear acceptance criteria\n- Include a branch name: dev/{{taskId}}",
+      "allowedTools": ["mailbox:send", "team", "mailbox:read"],
+      "requiredOutputs": ["assignedTo"],
+      "transitions": {
+        "onSuccess": "IMPLEMENTING",
+        "onFailure": "DONE"
+      }
+    },
+    "IMPLEMENTING": {
+      "name": "Implementation",
+      "role": "developer",
+      "description": "Developer implements the task.",
+      "prompt": "Implement the assigned task.\n\n1. Create a proof file in workspace\n2. Report completion",
+      "allowedTools": ["terminal", "file_ops", "reporting"],
+      "requiredOutputs": ["branch"],
+      "transitions": {
+        "onSuccess": "DONE",
+        "onFailure": "DONE"
+      },
+      "timeoutMs": 300000
+    },
+    "DONE": {
+      "name": "Complete",
+      "role": "manager",
+      "description": "Task is complete.",
+      "prompt": "",
+      "allowedTools": [],
+      "transitions": {
+        "onSuccess": null,
+        "onFailure": null
+      }
+    }
+  }
+}

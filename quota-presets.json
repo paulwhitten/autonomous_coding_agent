@@ -1,0 +1,148 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "Quota Strategy Presets",
+  "description": "Predefined quota management strategies with model multipliers",
+  
+  "presets": {
+    "conservative": {
+      "description": "Safe for long-term autonomous operation. Switch to cheaper models early.",
+      "limits": {
+        "monthly": 500,
+        "daily": 15
+      },
+      "modelFallback": {
+        "enabled": true,
+        "primary": "claude-sonnet-4.5",
+        "fallback": "gpt-4.1",
+        "switchAt": 0.5
+      },
+      "behavior": {
+        "onDailyLimit": "pause",
+        "pauseDuration": 3600000,
+        "onMonthlyLimit": "pause",
+        "onWarning": "log"
+      },
+      "tracking": {
+        "warningThresholds": [0.5, 0.75, 0.9]
+      }
+    },
+    
+    "aggressive": {
+      "description": "Use premium models until quota exhausted. For short sprints.",
+      "limits": {
+        "monthly": 500
+      },
+      "modelFallback": {
+        "enabled": false
+      },
+      "behavior": {
+        "onMonthlyLimit": "warn",
+        "onWarning": "log"
+      },
+      "tracking": {
+        "warningThresholds": [0.9, 0.95]
+      }
+    },
+    
+    "adaptive": {
+      "description": "Task priority affects model choice. Balance quality and cost.",
+      "limits": {
+        "monthly": 500,
+        "daily": 20
+      },
+      "modelFallback": {
+        "enabled": true,
+        "primary": "claude-sonnet-4.5",
+        "fallback": "gpt-4.1",
+        "switchAt": 0.75
+      },
+      "priorityRules": {
+        "HIGH": {
+          "alwaysUsePrimary": true,
+          "bypassDailyLimit": false
+        },
+        "NORMAL": {
+          "useFallbackAfter": 0.75
+        },
+        "LOW": {
+          "useFallbackAfter": 0.5,
+          "skipIfDailyLimitReached": true
+        }
+      },
+      "behavior": {
+        "onDailyLimit": "pause",
+        "pauseDuration": 3600000,
+        "onMonthlyLimit": "fallback",
+        "onWarning": "notify"
+      },
+      "tracking": {
+        "warningThresholds": [0.5, 0.75, 0.9]
+      }
+    },
+    
+    "budget": {
+      "description": "Strict cost control. Start with mid-tier, fallback to cheapest.",
+      "limits": {
+        "monthly": 300,
+        "daily": 10
+      },
+      "modelFallback": {
+        "enabled": true,
+        "primary": "gpt-4.1",
+        "fallback": "claude-haiku-4.5",
+        "switchAt": 0.3
+      },
+      "behavior": {
+        "onDailyLimit": "pause",
+        "pauseUntilNextDay": true,
+        "onMonthlyLimit": "stop",
+        "onWarning": "notify"
+      },
+      "tracking": {
+        "warningThresholds": [0.3, 0.5, 0.75, 0.9]
+      }
+    },
+    
+    "development": {
+      "description": "For testing. High daily limit, warn only on overuse.",
+      "limits": {
+        "daily": 50
+      },
+      "modelFallback": {
+        "enabled": false,
+        "primary": "gpt-4.1"
+      },
+      "behavior": {
+        "onDailyLimit": "warn",
+        "onWarning": "log"
+      },
+      "tracking": {
+        "warningThresholds": [0.9]
+      }
+    }
+  },
+  
+  "modelMultipliers": {
+    "description": "Premium request multipliers per GitHub's pricing. Updated 2025.",
+    "source": "https://docs.github.com/en/copilot/managing-copilot/monitoring-usage-and-entitlements/about-premium-requests",
+    "models": {
+      "gpt-4.1": 0,
+      "gpt-4o": 0,
+      "gpt-5-mini": 0,
+      "gpt-5": 1,
+      "gpt-5.1": 1,
+      "gpt-5.2": 1,
+      "claude-sonnet-4": 1,
+      "claude-sonnet-4.5": 1,
+      "claude-haiku-4.5": 0.5,
+      "claude-opus-4.5": 3,
+      "gemini-3-pro-preview": 1
+    },
+    "notes": [
+      "gpt-4.1, gpt-4o, gpt-5-mini are FREE on paid plans (0x multiplier)",
+      "claude-opus-4.5 is premium: 3x multiplier (1 prompt = 3 requests)",
+      "claude-haiku-4.5 is cheaper: 0.5x multiplier (2 prompts = 1 request)",
+      "Most models: 1x multiplier (1 prompt = 1 request)"
+    ]
+  }
+}

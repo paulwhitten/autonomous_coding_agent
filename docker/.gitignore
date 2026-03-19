@@ -1,0 +1,19 @@
+# Runtime directories
+workspace/
+mailbox/
+logs/
+
+# Config files (should be customized per deployment)
+config.json
+config-*.json
+
+# Git credentials
+.git-credentials
+
+# Environment files
+.env
+.env.local
+
+# Backup files
+*.tar.gz
+*.bundle

@@ -1,0 +1,99 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "Team Roster Configuration",
+  "description": "Defines the team structure, agents, and their capabilities for multi-agent collaboration",
+  "type": "object",
+  "required": ["team", "agents"],
+  "properties": {
+    "team": {
+      "type": "object",
+      "required": ["name"],
+      "properties": {
+        "name": {
+          "type": "string",
+          "description": "Unique team name",
+          "examples": ["circuit-analysis-team", "research-agents"]
+        },
+        "description": {
+          "type": "string",
+          "description": "Human-readable team description"
+        },
+        "created": {
+          "type": "string",
+          "format": "date",
+          "description": "Team creation date (YYYY-MM-DD)"
+        },
+        "updated": {
+          "type": "string",
+          "format": "date",
+          "description": "Last update date (YYYY-MM-DD)"
+        }
+      }
+    },
+    "agents": {
+      "type": "array",
+      "description": "List of all agents on the team",
+      "items": {
+        "type": "object",
+        "required": ["id", "hostname", "role"],
+        "properties": {
+          "id": {
+            "type": "string",
+            "description": "Unique agent identifier (hostname_role)",
+            "examples": ["dev-server-1_developer", "qa-server_qa"]
+          },
+          "hostname": {
+            "type": "string",
+            "description": "Agent's hostname or server name"
+          },
+          "role": {
+            "type": "string",
+            "description": "Agent's role (must match roles.json)",
+            "enum": ["developer", "qa", "manager", "researcher"]
+          },
+          "description": {
+            "type": "string",
+            "description": "Human-readable agent description"
+          },
+          "capabilities": {
+            "type": "array",
+            "description": "Agent's specific skills or specializations",
+            "items": {
+              "type": "string"
+            },
+            "examples": [["python", "circuit-processing"], ["validation", "csv-analysis"]]
+          },
+          "timezone": {
+            "type": "string",
+            "description": "Agent's timezone (for coordination)",
+            "examples": ["America/Los_Angeles", "UTC", "Europe/London"]
+          },
+          "contact": {
+            "type": "string",
+            "description": "Optional contact information for the agent owner"
+          }
+        }
+      }
+    },
+    "roles": {
+      "type": "object",
+      "description": "Summary of agents grouped by role",
+      "additionalProperties": {
+        "type": "object",
+        "properties": {
+          "agents": {
+            "type": "array",
+            "description": "List of agent IDs with this role",
+            "items": {
+              "type": "string"
+            }
+          },
+          "description": {
+            "type": "string",
+            "description": "Role description"
+          }
+        }
+      }
+    }
+  }
+}

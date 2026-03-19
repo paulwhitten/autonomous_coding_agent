@@ -1,0 +1,52 @@
+{
+  "$schema": "../../workflows/workflow.schema.json",
+  "id": "smoke-test-workflow",
+  "name": "Smoke Test Workflow",
+  "description": "Minimal 2-state workflow for smoke testing the workflow engine integration.",
+  "version": "1.0.0",
+  "initialState": "IMPLEMENTING",
+  "terminalStates": ["DONE"],
+  "globalContext": {
+    "projectPath": "workspace/project"
+  },
+  "states": {
+    "IMPLEMENTING": {
+      "name": "Implementation",
+      "role": "developer",
+      "description": "Developer implements a simple task to verify workflow engine integration.",
+      "prompt": "You are working inside a WORKFLOW ENGINE smoke test.\n\nYour task is simple: create a file called 'workflow_proof.txt' in the working directory that contains the text 'WORKFLOW_ENGINE_ACTIVE'.\n\nThis proves the workflow engine injected context into your prompt.\n\nSteps:\n1. Create file 'workflow_proof.txt' with content 'WORKFLOW_ENGINE_ACTIVE'\n2. Verify the file exists\n3. Report completion",
+      "allowedTools": ["terminal", "file_ops"],
+      "requiredOutputs": ["branch"],
+      "transitions": {
+        "onSuccess": "DONE",
+        "onFailure": "DONE"
+      },
+      "timeoutMs": 300000,
+      "exitEvaluation": {
+        "prompt": "Based on the work just completed, does a file called 'workflow_proof.txt' exist with the content 'WORKFLOW_ENGINE_ACTIVE'? Answer with a single word: true or false.",
+        "responseFormat": "boolean",
+        "mapping": { "true": "success", "false": "failure" },
+        "defaultOutcome": "failure"
+      },
+      "exitActions": [
+        { "type": "set_context", "params": { "key": "implementationCompleted", "value": "true" } },
+        { "type": "log", "params": { "message": "Implementation phase completed for task {{taskId}}", "level": "info" } }
+      ]
+    },
+    "DONE": {
+      "name": "Complete",
+      "role": "manager",
+      "description": "Workflow complete.",
+      "prompt": "",
+      "allowedTools": [],
+      "transitions": {
+        "onSuccess": null,
+        "onFailure": null
+      },
+      "entryActions": [
+        { "type": "set_context", "params": { "key": "completedAt", "value": "done" } },
+        { "type": "send_to_role", "params": { "role": "manager", "message": "Workflow completed for task {{taskId}}" } }
+      ]
+    }
+  }
+}

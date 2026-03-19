@@ -1,0 +1,236 @@
+{
+  "$schema": "../../workflows/workflow.schema.json",
+  "id": "v-model-evidence",
+  "name": "V-Model Regulatory Evidence Pipeline",
+  "description": "Serial V-model with peer routing: RA defines requirements, Developer builds, QA verifies, RA accepts. No manager in the routing chain -- agents route directly to each other via teamMembers.",
+  "version": "2.0.0",
+  "initialState": "REQUIREMENTS_DEFINITION",
+  "terminalStates": ["DONE", "ESCALATED"],
+  "globalContext": {
+    "projectPath": "workspace/project",
+    "branch": "main",
+    "complianceLevel": "HIPAA-High",
+    "standard": "HIPAA Security Rule (45 CFR 164)",
+    "coverageThreshold": 80
+  },
+  "states": {
+
+    "REQUIREMENTS_DEFINITION": {
+      "name": "Requirements Definition",
+      "role": "requirements-analyst",
+      "description": "RA writes the initial minimal requirement for a CLI application.",
+      "prompt": "You are the Requirements Analyst. Write or update the requirements specification for the task described below.\n\nWork in your workspace/project directory:\n1. Pull latest from origin (there may be prior work from earlier tasks)\n2. Create or update docs/requirements-specification.md with a section for the requirement described in the task details. Include the REQ-HCDP-XXX identifier and a source annotation line: // REQ: REQ-HCDP-XXX\n3. Create or update docs/acceptance-criteria-checklist.md with acceptance criteria for this requirement\n4. Push to origin and report completion\n\nKeep changes focused on the single requirement in this task.",
+      "allowedTools": ["terminal", "file_ops", "reporting"],
+      "transitions": {
+        "onSuccess": "IMPLEMENTING",
+        "onFailure": "REQUIREMENTS_DEFINITION"
+      },
+      "exitEvaluation": {
+        "prompt": "Based on the requirements definition work just completed, were ALL of the following accomplished: (1) requirements-specification.md created or updated with the REQ-HCDP-XXX identifier and source annotation, (2) acceptance-criteria-checklist.md created or updated, and (3) changes committed and pushed to origin? Answer with a single word: true or false.",
+        "responseFormat": "boolean",
+        "mapping": { "true": "success", "false": "failure" },
+        "defaultOutcome": "failure"
+      },
+      "maxRetries": 1,
+      "timeoutMs": 180000,
+      "onEntryCommands": [
+        { "command": "git fetch origin", "reason": "Fetch latest remote tracking references to see changes pushed by other agents.", "failOnError": false },
+        { "command": "git checkout {{branch}}", "reason": "Switch to the {{branch}} branch. If it does not exist locally, create it with: git checkout -b {{branch}}. If uncommitted changes block checkout, use: git checkout -f {{branch}}.", "failOnError": false },
+        { "command": "git reset --hard origin/{{branch}}", "reason": "Force-sync local branch to match origin/{{branch}}. This ensures you start with the latest work from other agents. If origin/{{branch}} does not exist yet (fresh repo, first task), skip this step and continue.", "failOnError": false }
+      ],
+      "onExitCommands": [
+        { "command": "git add -A", "reason": "Stage all new and modified files including untracked files.", "failOnError": false },
+        { "command": "git commit -m '{{role}}: {{state}} for {{taskId}}'", "reason": "Commit all staged changes. If there is nothing new to commit, use the --allow-empty flag.", "failOnError": false },
+        { "command": "git rev-parse HEAD", "reason": "Capture the commit SHA for downstream traceability.", "captureAs": "commitSha" },
+        { "command": "git push origin {{branch}}", "reason": "Push all local commits to origin so subsequent agents can pull this work. This is critical -- if this fails, downstream agents will not see your changes. Retry or diagnose the failure.", "failOnError": false }
+      ],
+      "exitActions": [
+        { "type": "set_context", "params": { "key": "requirementsComplete", "value": "true" } },
+        { "type": "log", "params": { "message": "Requirements defined for task {{taskId}}", "level": "info" } }
+      ]
+    },
+
+    "IMPLEMENTING": {
+      "name": "Implementation",
+      "role": "developer",
+      "description": "Developer builds the minimal CLI app per the requirement.",
+      "prompt": "You are the Developer. Implement the requirement described in the task details.\n\nWork in your workspace/project directory:\n1. Pull latest from origin (there may be prior work from earlier tasks)\n2. Read docs/requirements-specification.md to understand the requirement\n3. Create or update source files in src/ with // REQ: REQ-HCDP-XXX annotation on line 1\n4. Create or update test files in tests/ with // REQ: REQ-HCDP-XXX annotation\n5. Create test fixtures in tests/fixtures/ if needed\n6. If package.json does not exist, create it (name: hcdp-validate) with tsconfig.json and jest.config.js\n7. Run npm install && npx jest -- all tests must pass\n8. Create or update evidence/developer-traceability.md mapping each REQ to its files\n9. Commit and push to origin, report completion with the commit hash\n\nEvery .ts file MUST have a // REQ: REQ-HCDP-XXX comment on line 1. Keep changes focused on this task's requirement.\n\nTypeScript strict mode: In catch blocks, the error variable is type 'unknown'. Always use 'catch (err: unknown)' and cast before accessing properties, e.g. '(err as Error).message' or guard with 'if (err instanceof Error)'.",
+      "allowedTools": ["terminal", "file_ops", "reporting"],
+      "transitions": {
+        "onSuccess": "VERIFICATION",
+        "onFailure": "IMPLEMENTING"
+      },
+      "exitEvaluation": {
+        "prompt": "Based on the implementation work just completed, did ALL of the following succeed: (1) source files created or updated with // REQ: REQ-HCDP-XXX annotations on line 1, (2) test files created or updated with // REQ: REQ-HCDP-XXX annotations, (3) all tests pass when running npx jest, (4) developer-traceability.md updated, and (5) changes committed and pushed to origin? Answer with a single word: true or false.",
+        "responseFormat": "boolean",
+        "mapping": { "true": "success", "false": "failure" },
+        "defaultOutcome": "failure"
+      },
+      "maxRetries": 2,
+      "timeoutMs": 300000,
+      "onEntryCommands": [
+        { "command": "git fetch origin", "reason": "Fetch latest remote tracking references to see changes pushed by other agents.", "failOnError": false },
+        { "command": "git checkout {{branch}}", "reason": "Switch to the {{branch}} branch. If it does not exist locally, create it with: git checkout -b {{branch}}. If uncommitted changes block checkout, use: git checkout -f {{branch}}.", "failOnError": false },
+        { "command": "git reset --hard origin/{{branch}}", "reason": "Force-sync local branch to match origin/{{branch}}. This ensures you start with the latest code including requirements docs from the RA. If origin/{{branch}} does not exist, skip.", "failOnError": false }
+      ],
+      "onExitCommands": [
+        { "command": "git add -A", "reason": "Stage all new and modified files including untracked files.", "failOnError": false },
+        { "command": "git commit -m '{{role}}: {{state}} for {{taskId}}'", "reason": "Commit all staged changes. If there is nothing new to commit, use the --allow-empty flag.", "failOnError": false },
+        { "command": "git rev-parse HEAD", "reason": "Capture the commit SHA for downstream traceability.", "captureAs": "commitSha" },
+        { "command": "git push origin {{branch}}", "reason": "Push all local commits to origin so QA can pull and verify. This is critical -- if this fails, QA will not see your implementation. Retry or diagnose the failure.", "failOnError": false }
+      ],
+      "exitActions": [
+        { "type": "set_context", "params": { "key": "implementationComplete", "value": "true" } },
+        { "type": "log", "params": { "message": "Implementation pushed for task {{taskId}}", "level": "info" } }
+      ]
+    },
+
+    "VERIFICATION": {
+      "name": "QA Verification",
+      "role": "qa",
+      "description": "QA verifies the developer's implementation against the requirements.",
+      "prompt": "You are QA. Verify the implementation for this task's requirement in your workspace/project directory.\n\n1. Pull latest from origin\n2. Record the verified commit: run `git rev-parse HEAD` and save the hash\n3. Check REQ annotations: grep -rn 'REQ-HCDP' src/ tests/ --include='*.ts'\n4. Run tests: npm install && npx jest\n5. Create or update evidence/traceability-matrix.md with a row for this requirement:\n   | Requirement | Source File | Test File | Annotation Found | Tests Pass | Verified Commit | Status |\n6. Create or update evidence/verification-report.md with the verified commit hash and verdict (PASS or FAIL)\n7. If PASS, merge to main: git checkout main && git merge --no-ff -m 'QA verified' && git push origin main\n8. Push evidence to origin and report completion with the commit hash\n\nWhen updating verification, validation, or traceability reports, preserve all existing entries from prior tasks. Append new rows or sections -- do not overwrite past evidence.\n\nYou produce evidence only. You do NOT accept -- that is the RA's job.",
+      "allowedTools": ["terminal", "file_ops", "reporting"],
+      "transitions": {
+        "onSuccess": "ACCEPTANCE",
+        "onFailure": "REWORK"
+      },
+      "exitEvaluation": {
+        "prompt": "Based on the QA verification work just completed, did ALL of the following pass: (1) REQ annotation comments found in every source and test file, (2) all unit tests passed, and (3) the verification report verdict is PASS? Answer with a single word: true or false.",
+        "responseFormat": "boolean",
+        "mapping": { "true": "success", "false": "failure" },
+        "defaultOutcome": "failure"
+      },
+      "maxRetries": 1,
+      "timeoutMs": 300000,
+      "onEntryCommands": [
+        { "command": "git fetch origin", "reason": "Fetch latest remote tracking references to see the developer's pushed implementation.", "failOnError": false },
+        { "command": "git checkout {{branch}}", "reason": "Switch to the {{branch}} branch. If it does not exist locally, create it with: git checkout -b {{branch}}. If uncommitted changes block checkout, use: git checkout -f {{branch}}.", "failOnError": false },
+        { "command": "git reset --hard origin/{{branch}}", "reason": "Force-sync local branch to match origin/{{branch}}. This ensures you are verifying exactly what the developer pushed, not stale local files.", "failOnError": false }
+      ],
+      "onExitCommands": [
+        { "command": "git add -A", "reason": "Stage all new and modified files including evidence documents.", "failOnError": false },
+        { "command": "git commit -m '{{role}}: {{state}} for {{taskId}}'", "reason": "Commit all staged changes including verification evidence. If there is nothing new to commit, use the --allow-empty flag.", "failOnError": false },
+        { "command": "git rev-parse HEAD", "reason": "Capture the commit SHA for downstream traceability.", "captureAs": "commitSha" },
+        { "command": "git push origin {{branch}}", "reason": "Push verification evidence to origin so the RA can review it during acceptance. This is critical -- if this fails, the RA will not see QA evidence. Retry or diagnose the failure.", "failOnError": false }
+      ],
+      "exitActions": [
+        { "type": "set_context", "params": { "key": "verificationComplete", "value": "true" } },
+        { "type": "log", "params": { "message": "QA verification completed for task {{taskId}}", "level": "info" } }
+      ]
+    },
+
+    "REWORK": {
+      "name": "Rework",
+      "role": "developer",
+      "description": "Developer fixes QA findings.",
+      "prompt": "QA found issues. Read the QA verification report in evidence/, fix each gap, push fixes to origin, and report completion.\n\nTypeScript strict mode: In catch blocks, the error variable is type 'unknown'. Always use 'catch (err: unknown)' and cast before accessing properties, e.g. '(err as Error).message' or guard with 'if (err instanceof Error)'.",
+      "allowedTools": ["terminal", "file_ops", "reporting"],
+      "transitions": {
+        "onSuccess": "VERIFICATION",
+        "onFailure": "ESCALATED"
+      },
+      "exitEvaluation": {
+        "prompt": "Based on the rework just completed, did ALL of the following succeed: (1) all QA-identified issues addressed, (2) all tests pass when running npx jest, (3) REQ annotations present in all source and test files, and (4) changes committed and pushed to origin? Answer with a single word: true or false.",
+        "responseFormat": "boolean",
+        "mapping": { "true": "success", "false": "failure" },
+        "defaultOutcome": "failure"
+      },
+      "maxRetries": 1,
+      "onEntryCommands": [
+        { "command": "git fetch origin", "reason": "Fetch latest remote tracking references to see QA's verification evidence.", "failOnError": false },
+        { "command": "git checkout {{branch}}", "reason": "Switch to the {{branch}} branch. If it does not exist locally, create it with: git checkout -b {{branch}}. If uncommitted changes block checkout, use: git checkout -f {{branch}}.", "failOnError": false },
+        { "command": "git reset --hard origin/{{branch}}", "reason": "Force-sync to origin/{{branch}} so you see QA's failure evidence and the current code state.", "failOnError": false }
+      ],
+      "onExitCommands": [
+        { "command": "git add -A", "reason": "Stage all rework changes.", "failOnError": false },
+        { "command": "git commit -m '{{role}}: {{state}} for {{taskId}}'", "reason": "Commit rework fixes. If there is nothing new to commit, use the --allow-empty flag.", "failOnError": false },
+        { "command": "git rev-parse HEAD", "reason": "Capture the commit SHA for downstream traceability.", "captureAs": "commitSha" },
+        { "command": "git push origin {{branch}}", "reason": "Push rework fixes to origin so QA can re-verify. This is critical.", "failOnError": false }
+      ]
+    },
+
+    "ACCEPTANCE": {
+      "name": "Requirements Acceptance",
+      "role": "requirements-analyst",
+      "description": "RA reviews QA evidence and issues final accept/reject verdict.",
+      "prompt": "You are the RA performing final acceptance for this task's requirement in your workspace/project directory.\n\n1. Pull latest from origin (main branch -- QA merged verified code here)\n2. Read evidence/verification-report.md and evidence/traceability-matrix.md\n3. Note the Verified Commit hash from the QA report\n4. Check annotations: grep -rn 'REQ-HCDP' src/ tests/ --include='*.ts'\n5. Create or update evidence/acceptance-verdict.md with a row for this requirement:\n\n   | Requirement | Criteria Met | Evidence | Verdict |\n\n   Include the verified commit hash and overall verdict (ACCEPTED / REJECTED)\n\n6. Push and report completion.\n\nIf QA verdict was PASS and annotations exist, the verdict should be ACCEPTED.",
+      "allowedTools": ["terminal", "file_ops", "reporting"],
+      "transitions": {
+        "onSuccess": "DONE",
+        "onFailure": "REWORK_ACCEPTANCE"
+      },
+      "exitEvaluation": {
+        "prompt": "Based on the RA acceptance work just completed, did the Requirements Analyst issue an ACCEPTED verdict for all requirements under review? Answer with a single word: true or false.",
+        "responseFormat": "boolean",
+        "mapping": { "true": "success", "false": "failure" },
+        "defaultOutcome": "failure"
+      },
+      "onEntryCommands": [
+        { "command": "git fetch origin", "reason": "Fetch latest remote tracking references to see QA's merged and verified code.", "failOnError": false },
+        { "command": "git checkout {{branch}}", "reason": "Switch to the {{branch}} branch. If it does not exist locally, create it with: git checkout -b {{branch}}. If uncommitted changes block checkout, use: git checkout -f {{branch}}.", "failOnError": false },
+        { "command": "git reset --hard origin/{{branch}}", "reason": "Force-sync to origin/{{branch}} to ensure you see QA-verified code and evidence.", "failOnError": false }
+      ],
+      "onExitCommands": [
+        { "command": "git add -A", "reason": "Stage acceptance verdict and any updated evidence.", "failOnError": false },
+        { "command": "git commit -m '{{role}}: {{state}} for {{taskId}}'", "reason": "Commit acceptance verdict. If there is nothing new to commit, use the --allow-empty flag.", "failOnError": false },
+        { "command": "git rev-parse HEAD", "reason": "Capture the commit SHA for audit trail.", "captureAs": "commitSha" },
+        { "command": "git push origin {{branch}}", "reason": "Push acceptance evidence to origin. This is critical for audit trail.", "failOnError": false }
+      ],
+      "entryActions": [
+        { "type": "log", "params": { "message": "RA acceptance phase for task {{taskId}}", "level": "info" } }
+      ]
+    },
+
+    "REWORK_ACCEPTANCE": {
+      "name": "Rework (Acceptance)",
+      "role": "developer",
+      "description": "Developer fixes RA rejection issues.",
+      "prompt": "RA rejected the delivery. Fix the listed gaps, push, and report completion.",
+      "allowedTools": ["terminal", "file_ops", "reporting"],
+      "transitions": {
+        "onSuccess": "VERIFICATION",
+        "onFailure": "ESCALATED"
+      },
+      "exitEvaluation": {
+        "prompt": "Based on the acceptance rework just completed, did ALL of the following succeed: (1) all RA-identified rejection issues addressed, (2) all tests pass, (3) REQ annotations present in all source and test files, and (4) changes committed and pushed to origin? Answer with a single word: true or false.",
+        "responseFormat": "boolean",
+        "mapping": { "true": "success", "false": "failure" },
+        "defaultOutcome": "failure"
+      },
+      "maxRetries": 1,
+      "onEntryCommands": [
+        { "command": "git fetch origin", "reason": "Fetch latest remote tracking references to see RA's rejection feedback.", "failOnError": false },
+        { "command": "git checkout {{branch}}", "reason": "Switch to the {{branch}} branch. If it does not exist locally, create it with: git checkout -b {{branch}}. If uncommitted changes block checkout, use: git checkout -f {{branch}}.", "failOnError": false },
+        { "command": "git reset --hard origin/{{branch}}", "reason": "Force-sync to origin/{{branch}} to see the RA's rejection evidence and current code.", "failOnError": false }
+      ],
+      "onExitCommands": [
+        { "command": "git add -A", "reason": "Stage all rework changes.", "failOnError": false },
+        { "command": "git commit -m '{{role}}: {{state}} for {{taskId}}'", "reason": "Commit rework fixes. If there is nothing new to commit, use the --allow-empty flag.", "failOnError": false },
+        { "command": "git rev-parse HEAD", "reason": "Capture the commit SHA for downstream traceability.", "captureAs": "commitSha" },
+        { "command": "git push origin {{branch}}", "reason": "Push rework fixes to origin so QA can re-verify. This is critical.", "failOnError": false }
+      ]
+    },
+
+    "DONE": {
+      "name": "Complete",
+      "role": "requirements-analyst",
+      "description": "V-model complete. Terminal state -- the completing agent cleans up locally.",
+      "prompt": "",
+      "allowedTools": [],
+      "transitions": { "onSuccess": null, "onFailure": null },
+      "entryActions": [
+        { "type": "log", "params": { "message": "V-model DONE for task {{taskId}}", "level": "info" } }
+      ]
+    },
+
+    "ESCALATED": {
+      "name": "Escalated",
+      "role": "requirements-analyst",
+      "description": "Failed after retries. Terminal state -- the failing agent logs escalation.",
+      "prompt": "",
+      "allowedTools": [],
+      "transitions": { "onSuccess": null, "onFailure": null }
+    }
+  }
+}

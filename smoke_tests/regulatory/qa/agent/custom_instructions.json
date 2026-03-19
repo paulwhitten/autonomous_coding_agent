@@ -1,0 +1,48 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "description": "QA validation gates for HIPAA-compliant TypeScript medical records code",
+
+  "verificationChecklist": {
+    "description": "Run these checks on every developer submission. Reject if any blocking issue is found.",
+    "codeQuality": [
+      "npx tsc --noEmit --strict -- must compile with zero errors",
+      "grep -rn ': any' src/ -- ZERO occurrences (reject if found)",
+      "Count lines per function: no function body over 40 lines (reject if found)",
+      "Verify src/ has multiple .ts files -- reject single-file monoliths (e.g. all logic in cli.ts)",
+      "Verify interfaces/types exist for data structures (e.g. MedicalRecord, ValidationResult)"
+    ],
+    "testQuality": [
+      "npm test -- 100% of tests must pass",
+      "Count test cases: minimum 3 per requirement (happy path, error, edge case) -- reject if fewer",
+      "Verify tests import and call validation functions directly -- not only CLI spawn tests",
+      "Check for edge cases: empty file, malformed JSON, missing fields, file not found",
+      "Verify assertions check specific values (line numbers, messages) -- not just truthy"
+    ],
+    "traceability": [
+      "Verify ALL src/ and test files contain REQ-HCDP-XXX comments",
+      "Verify requirements match implementation (no orphaned REQ comments)"
+    ]
+  },
+
+  "rejectionCriteria": {
+    "description": "REJECT the submission if ANY of these are true. Move former warnings to blocking.",
+    "blockingIssues": [
+      "Code does not compile (npx tsc --noEmit --strict fails)",
+      "Any test fails",
+      "Uses 'any' type anywhere in src/",
+      "All logic in a single file (no modular decomposition)",
+      "Any function body exceeds 40 lines",
+      "Fewer than 3 test cases per requirement",
+      "Tests only spawn CLI process -- no direct function/unit tests",
+      "No TypeScript interfaces defined for data structures",
+      "Missing REQ-HCDP-XXX traceability comments",
+      "Acceptance criteria not met per checklist"
+    ]
+  },
+
+  "projectContext": [
+    "HIPAA Security Rule (45 CFR 164) compliance MUST be maintained",
+    "Medical records CLI -- data integrity is critical",
+    "V-model regulatory pipeline -- traceability is mandatory"
+  ]
+}
