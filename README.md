@@ -1,4 +1,4 @@
-# Autonomous Copilot Agent with External Mailbox Integration and Workflow Support
+# Autonomous Coding Agent with External Mailbox Integration and Workflow Support
 
 An autonomous coding agent built with GitHub Copilot SDK that can work on tasks for extended periods using an external mailbox protocol for task assignment and communication.
 
