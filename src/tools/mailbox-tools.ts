@@ -2,6 +2,7 @@
 
 import { defineTool } from '@github/copilot-sdk';
 import { MailboxManager } from '../mailbox.js';
+import { enrichTeamAgent, mergeCapabilitiesAndSkills } from '../agent-card.js';
 import pino from 'pino';
 
 // Create logger for tool invocations
@@ -125,7 +126,7 @@ export function createMailboxTools(mailbox: MailboxManager, onMessageSent?: OnMe
   });
   
   const sendCompletionReport = defineTool('send_completion_report', {
-    description: 'Send a task completion report to the manager',
+    description: 'Send a completion report to the manager when an entire assignment is finished. The agent runtime calls this automatically after all work items complete -- do not call it from individual work items.',
     parameters: {
       type: 'object',
       properties: {
@@ -193,12 +194,15 @@ export function createMailboxTools(mailbox: MailboxManager, onMessageSent?: OnMe
           message: 'No team.json file found in mailbox. Team roster not configured.'
         };
       }
+
+      // Enrich each agent with A2A-inspired agent card fields
+      const enrichedAgents = roster.agents.map(a => enrichTeamAgent(a));
       
       return {
         available: true,
         team: roster.team,
-        agentCount: roster.agents.length,
-        agents: roster.agents,
+        agentCount: enrichedAgents.length,
+        agents: enrichedAgents,
         roles: roster.roles
       };
     }
@@ -243,13 +247,13 @@ export function createMailboxTools(mailbox: MailboxManager, onMessageSent?: OnMe
   });
   
   const findAgentsByCapability = defineTool('find_agents_by_capability', {
-    description: 'Find agents with a specific capability or skill (e.g., "python", "validation", "circuit-processing")',
+    description: 'Find agents with a specific capability, skill, or tag (e.g., "python", "validation", "circuit-processing")',
     parameters: {
       type: 'object',
       properties: {
         capability: {
           type: 'string',
-          description: 'The capability to search for (e.g., "python", "validation")'
+          description: 'The capability, skill ID, or tag to search for (e.g., "python", "validation")'
         }
       },
       required: ['capability']
@@ -263,10 +267,20 @@ export function createMailboxTools(mailbox: MailboxManager, onMessageSent?: OnMe
           message: 'Team roster not available'
         };
       }
+
+      const capLower = capability.toLowerCase();
       
-      const agents = roster.agents.filter(agent => 
-        agent.capabilities?.includes(capability)
-      );
+      // Search flat capabilities[] and also structured skills[].tags
+      const agents = roster.agents.filter(agent => {
+        // Check flat capabilities
+        if (agent.capabilities?.some(c => c.toLowerCase() === capLower)) return true;
+        // Check structured skills by id and tags
+        const skills = mergeCapabilitiesAndSkills(agent.capabilities, agent.skills, agent.role);
+        return skills.some(s =>
+          s.id.toLowerCase() === capLower ||
+          s.tags.some(t => t.toLowerCase() === capLower)
+        );
+      });
       
       return {
         found: agents.length > 0,
@@ -276,7 +290,8 @@ export function createMailboxTools(mailbox: MailboxManager, onMessageSent?: OnMe
           id: a.id,
           hostname: a.hostname,
           role: a.role,
-          description: a.description
+          description: a.description,
+          skills: mergeCapabilitiesAndSkills(a.capabilities, a.skills, a.role)
         }))
       };
     }

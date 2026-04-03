@@ -1,0 +1,157 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "Team Roster Configuration",
+  "description": "Defines the team structure, agents, and their capabilities for multi-agent collaboration",
+  "type": "object",
+  "required": ["team", "agents"],
+  "properties": {
+    "team": {
+      "type": "object",
+      "required": ["name"],
+      "properties": {
+        "name": {
+          "type": "string",
+          "description": "Unique team name",
+          "examples": ["circuit-analysis-team", "research-agents"]
+        },
+        "description": {
+          "type": "string",
+          "description": "Human-readable team description"
+        },
+        "created": {
+          "type": "string",
+          "format": "date",
+          "description": "Team creation date (YYYY-MM-DD)"
+        },
+        "updated": {
+          "type": "string",
+          "format": "date",
+          "description": "Last update date (YYYY-MM-DD)"
+        }
+      }
+    },
+    "agents": {
+      "type": "array",
+      "description": "List of all agents on the team",
+      "items": {
+        "type": "object",
+        "required": ["id", "hostname", "role"],
+        "properties": {
+          "id": {
+            "type": "string",
+            "description": "Unique agent identifier (hostname_role)",
+            "examples": ["dev-server-1_developer", "qa-server_qa"]
+          },
+          "hostname": {
+            "type": "string",
+            "description": "Agent's hostname or server name"
+          },
+          "role": {
+            "type": "string",
+            "description": "Agent's role (must match roles.json)",
+            "enum": ["developer", "qa", "manager", "researcher"]
+          },
+          "description": {
+            "type": "string",
+            "description": "Human-readable agent description"
+          },
+          "capabilities": {
+            "type": "array",
+            "description": "Agent's specific skills or specializations",
+            "items": {
+              "type": "string"
+            },
+            "examples": [["python", "circuit-processing"], ["validation", "csv-analysis"]]
+          },
+          "timezone": {
+            "type": "string",
+            "description": "Agent's timezone (for coordination)",
+            "examples": ["America/Los_Angeles", "UTC", "Europe/London"]
+          },
+          "contact": {
+            "type": "string",
+            "description": "Optional contact information for the agent owner"
+          },
+          "skills": {
+            "type": "array",
+            "description": "Structured skill descriptions (A2A-inspired). Richer alternative to flat capabilities[].",
+            "items": {
+              "type": "object",
+              "required": ["id", "name", "description", "tags"],
+              "properties": {
+                "id": { "type": "string", "description": "Unique skill identifier" },
+                "name": { "type": "string", "description": "Human-readable skill name" },
+                "description": { "type": "string", "description": "What this skill does" },
+                "tags": { "type": "array", "items": { "type": "string" }, "description": "Searchable tags" },
+                "inputModes": { "type": "array", "items": { "type": "string" }, "description": "Accepted input MIME types" },
+                "outputModes": { "type": "array", "items": { "type": "string" }, "description": "Produced output MIME types" },
+                "examples": { "type": "array", "items": { "type": "string" }, "description": "Example usage patterns" }
+              }
+            }
+          },
+          "inputModes": {
+            "type": "array",
+            "items": { "type": "string" },
+            "description": "Accepted input MIME types at the agent level"
+          },
+          "outputModes": {
+            "type": "array",
+            "items": { "type": "string" },
+            "description": "Produced output MIME types at the agent level"
+          },
+          "protocolVersion": {
+            "type": "string",
+            "description": "A2A protocol version (e.g., '0.3.0') if this agent speaks A2A"
+          },
+          "url": {
+            "type": "string",
+            "format": "uri",
+            "description": "Network endpoint URL for A2A communication"
+          },
+          "provider": {
+            "type": "object",
+            "properties": {
+              "organization": { "type": "string" },
+              "url": { "type": "string", "format": "uri" }
+            },
+            "required": ["organization"],
+            "description": "Provider or organization metadata"
+          },
+          "security": {
+            "type": "array",
+            "description": "Authentication requirements",
+            "items": {
+              "type": "object",
+              "required": ["type"],
+              "properties": {
+                "type": { "type": "string", "enum": ["bearer", "apiKey", "oauth2", "none"] },
+                "in": { "type": "string", "enum": ["header", "query"] },
+                "name": { "type": "string" }
+              }
+            }
+          }
+        }
+      }
+    },
+    "roles": {
+      "type": "object",
+      "description": "Summary of agents grouped by role",
+      "additionalProperties": {
+        "type": "object",
+        "properties": {
+          "agents": {
+            "type": "array",
+            "description": "List of agent IDs with this role",
+            "items": {
+              "type": "string"
+            }
+          },
+          "description": {
+            "type": "string",
+            "description": "Role description"
+          }
+        }
+      }
+    }
+  }
+}

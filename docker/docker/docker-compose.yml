@@ -1,0 +1,72 @@
+version: '3.8'
+
+services:
+  agent:
+    build:
+      context: ..
+      dockerfile: docker/Dockerfile
+      args:
+        # Uncomment to install optional language toolchains
+        # INSTALL_PYTHON: "true"
+        # INSTALL_RUST: "true"
+        # INSTALL_GO: "true"
+        # INSTALL_JAVA: "true"
+        # GO_VERSION: "1.23.6"
+    container_name: copilot-agent
+    restart: unless-stopped
+    
+    environment:
+      # Connect to Copilot CLI running on host
+      # For Docker Desktop (Mac/Windows): host.docker.internal
+      # For Linux with host network: localhost
+      - COPILOT_CLI_URL=host.docker.internal:3000
+      
+      # Optional: Override config settings
+      # - AGENT_HOSTNAME=docker-agent
+      # - LOG_LEVEL=info
+    
+    volumes:
+      # Persistent state (required)
+      - ./workspace:/app/workspace
+      - ./mailbox:/app/mailbox
+      - ./logs:/app/logs
+      
+      # Configuration (required)
+      - ./config.json:/app/config.json:ro
+      
+      # Git SSH credentials for mailbox sync (optional, if using SSH)
+      - ~/.ssh:/root/.ssh:ro
+      
+      # Git config for HTTPS credentials (optional, if using HTTPS)
+      # - ~/.gitconfig:/root/.gitconfig:ro
+      # - ~/.git-credentials:/root/.git-credentials:ro
+    
+    # For Linux hosts, use host networking instead of host.docker.internal
+    # network_mode: "host"
+    
+    # For Linux with bridge network, add this:
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+
+# Multi-agent example:
+# Uncomment to run multiple agents with different roles
+#
+#  developer-agent:
+#    extends: agent
+#    container_name: copilot-developer
+#    volumes:
+#      - ./workspace-dev:/app/workspace
+#      - ./mailbox:/app/mailbox
+#      - ./logs-dev:/app/logs
+#      - ./config-developer.json:/app/config.json:ro
+#      - ~/.ssh:/root/.ssh:ro
+#
+#  qa-agent:
+#    extends: agent
+#    container_name: copilot-qa
+#    volumes:
+#      - ./workspace-qa:/app/workspace
+#      - ./mailbox:/app/mailbox
+#      - ./logs-qa:/app/logs
+#      - ./config-qa.json:/app/config.json:ro
+#      - ~/.ssh:/root/.ssh:ro

@@ -19,8 +19,9 @@
       "Verify assertions check specific values (line numbers, messages) -- not just truthy"
     ],
     "traceability": [
-      "Verify ALL src/ and test files contain REQ-HCDP-XXX comments",
-      "Verify requirements match implementation (no orphaned REQ comments)"
+      "The workflow engine ran `git log --oneline --grep='REQ-HCDP-'` before you started and stored the result as reqCommits -- check this captured value; if it is empty, record a FAIL and do not proceed to PASS",
+      "Verify test files contain REQ-HCDP-XXX comments in the describe() blocks that cover each requirement -- utility/helper tests that do not directly cover a named requirement do not need REQ comments",
+      "Do NOT check src/ files for REQ-HCDP-XXX comments -- traceability belongs in tests/ and git commit messages only, not source code"
     ]
   },
 
@@ -35,7 +36,8 @@
       "Fewer than 3 test cases per requirement",
       "Tests only spawn CLI process -- no direct function/unit tests",
       "No TypeScript interfaces defined for data structures",
-      "Missing REQ-HCDP-XXX traceability comments",
+      "No REQ-HCDP-XXX comment in any describe() block in tests/ for a requirement listed in the task acceptance criteria",
+      "No git commit on the feature branch references a required REQ-HCDP-XXX ID (git log --oneline --grep='REQ-HCDP-' returns nothing)",
       "Acceptance criteria not met per checklist"
     ]
   },

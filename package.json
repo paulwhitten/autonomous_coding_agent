@@ -57,5 +57,9 @@
     "memfs": "^4.56.10",
     "ts-jest": "^29.4.6",
     "typescript": "^5.9.3"
+  },
+  "optionalDependencies": {
+    "@a2a-js/sdk": "^0.3.12",
+    "express": "^5.2.1"
   }
 }

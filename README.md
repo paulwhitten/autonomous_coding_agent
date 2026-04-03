@@ -1,4 +1,4 @@
-# Autonomous Coding Agent with External Mailbox Integration and Workflow Support
+# Autonomous Copilot Agent with External Mailbox Integration and Workflow Support
 
 An autonomous coding agent built with GitHub Copilot SDK that can work on tasks for extended periods using an external mailbox protocol for task assignment and communication.
 
@@ -7,9 +7,9 @@ An autonomous coding agent built with GitHub Copilot SDK that can work on tasks 
 - **[Quick Start Guide](QUICKSTART.md)** - Get the agent running in 5 minutes
 - **[Workflow Hello World](WORKFLOW_HELLO_WORLD.md)** - Create your first workflow in 30 minutes
 - **[Config Validator](CONFIG_VALIDATOR.md)** - Validate config.json before running
+- **[A2A Protocol Integration](A2A_INTEGRATION.md)** - HTTP-based inter-agent communication
 - **[Workflow Schema](workflows/workflow.schema.json)** - Complete workflow field reference
 - **[Smoke Tests](smoke_tests/)** - Complete working examples
-- **[Critical Assessment](CRITICAL_ASSESSMENT.md)** - Honest limitations and trade-offs
 
 ## Architecture
 
@@ -34,6 +34,7 @@ While work items exist on disk, the agent will work trough them and move to comp
 - **Autonomous task processing** - Runs continuously, checks mailbox periodically
 - **Git-based mailbox sync** - Automatic pull before check, push after changes
 - **External mailbox protocol** - Git external mailbox protocol for multi-agent coordination
+- **A2A protocol support** - HTTP-based Agent2Agent (A2A) protocol runs alongside the git mailbox for cross-network agent communication; add a `communication.a2a` block to enable both concurrently with FIFO timestamp ordering
 - **Broadcast messages** - Support for `to_all/` team-wide messages
 - **Attachments support** - Share files via `attachments/` folder
 - **JSON configuration** - Flexible config file for all settings
@@ -553,7 +554,24 @@ The team will now coordinate via the shared mailbox:
 
 See `ROLES.md` for detailed role definitions and `smoke_tests/multi-agent/` for a working example.
 
-## Project Structure
+### A2A Protocol (Always-On)
+
+For teams that need HTTP-based inter-agent communication across network boundaries, the agent supports the Agent2Agent (A2A) protocol running alongside the git mailbox. Both backends are always active when configured -- incoming messages are merged into a single FIFO queue ordered by timestamp (earliest first). Add a `communication.a2a` block to `config.json`:
+
+```json
+{
+  "communication": {
+    "a2a": {
+      "serverPort": 4000,
+      "transport": "json-rpc"
+    }
+  }
+}
+```
+
+With this configuration the agent receives task assignments from both the git mailbox and the A2A HTTP server. Incoming A2A assignments are persisted as timestamped files in `a2a_inbox/` and archived to `a2a_archive/` after completion.
+
+See [A2A_INTEGRATION.md](A2A_INTEGRATION.md) for full configuration options, the component architecture, and the `smoke_tests/a2a/` example.
 
 ```
 autonomous_copilot_agent/

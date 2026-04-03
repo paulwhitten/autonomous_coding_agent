@@ -1,7 +1,7 @@
 // CompletionTracker - Handles assignment completion tracking and reporting
 
 import { WorkspaceManager, WorkItem } from './workspace-manager.js';
-import { MailboxManager } from './mailbox.js';
+import { CommunicationBackend } from './communication-backend.js';
 import pino from 'pino';
 import path from 'path';
 import fs from 'fs/promises';
@@ -23,6 +23,8 @@ export interface MessageStats {
 export interface CompletionTrackerConfig {
   managerHostname: string;
   managerRole: string;
+  /** Transport URI for the manager agent (defaults to mailbox when absent). */
+  managerUri?: string;
   agentId: string;
   workspacePath: string;
   gitSync: boolean;
@@ -33,12 +35,33 @@ export interface CompletionTrackerConfig {
  * Tracks work item completion and generates reports
  */
 export class CompletionTracker {
+  /** Lazily resolved manager URI from team roster (avoids repeated lookups). */
+  private resolvedManagerUri: string | undefined | null = null;
+
   constructor(
     private workspace: WorkspaceManager,
-    private mailbox: MailboxManager,
+    private backend: CommunicationBackend,
     private config: CompletionTrackerConfig,
     private logger: pino.Logger
   ) {}
+
+  /**
+   * Build an AgentAddress for the manager, enriching the URI from the
+   * team roster when the config does not provide one.
+   */
+  private async getManagerAddress(): Promise<{ hostname: string; role: string; uri?: string }> {
+    let uri = this.config.managerUri;
+    if (!uri && this.resolvedManagerUri === null) {
+      // One-time roster lookup
+      const roster = await this.backend.getTeamRoster();
+      const entry = roster?.find(a => a.role === this.config.managerRole);
+      this.resolvedManagerUri = entry?.uri;
+      uri = this.resolvedManagerUri ?? undefined;
+    } else if (!uri) {
+      uri = this.resolvedManagerUri ?? undefined;
+    }
+    return { hostname: this.config.managerHostname, role: this.config.managerRole, uri };
+  }
   
   /**
    * Check if message assignment is complete and handle reporting
@@ -113,13 +136,16 @@ ${gitChanges}
 **Next steps:**
 Review the changes in the project workspace if needed.`;
 
-    await this.mailbox.sendMessage(
-      this.config.managerHostname,
-      this.config.managerRole,
-      subject,
-      content,
-      'NORMAL',
-      'status',
+    const managerAddr = await this.getManagerAddress();
+    await this.backend.sendMessage(
+      managerAddr,
+      {
+        to: managerAddr,
+        subject,
+        content,
+        priority: 'NORMAL',
+        messageType: 'status',
+      },
     );
     
     this.logger.info(`Sent completion report to manager for assignment ${messageSeq}`);
@@ -170,7 +196,7 @@ This demonstrates the agent's ability to adapt and recover from failures at the 
   private async escalateFailedAssignment(messageSeq: string, stats: MessageStats): Promise<void> {
     const failedSummary = await this.workspace.getFailedSummaryForMessage(messageSeq);
     
-    await this.mailbox.escalate(
+    await this.backend.escalate(
       `Assignment ${messageSeq} failed completely`,
       `Assignment ${messageSeq} failed with no successful work items.
 
@@ -234,20 +260,23 @@ ${summary}
 
 All tasks from the project have been completed and tested.`;
 
-    await this.mailbox.sendMessage(
-      this.config.managerHostname,
-      this.config.managerRole,
-      'Project Completed',
-      report,
-      'NORMAL',
-      'status',
+    const managerAddr = await this.getManagerAddress();
+    await this.backend.sendMessage(
+      managerAddr,
+      {
+        to: managerAddr,
+        subject: 'Project Completed',
+        content: report,
+        priority: 'NORMAL',
+        messageType: 'status',
+      },
     );
     
     this.logger.info('Completion report sent');
     
     // Git sync
     if (this.config.gitSync && this.config.autoCommit) {
-      await this.mailbox.syncToRemote('Project completion report');
+      await this.backend.syncToRemote('Project completion report');
     }
   }
 }

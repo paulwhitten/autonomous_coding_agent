@@ -1,0 +1,61 @@
+---
+title: Mailbox Message to Work Item Flow
+---
+
+flowchart TD
+
+    MSG["Mailbox Message"]
+    CLASSIFY{"Classify message"}
+
+    MSG --> CLASSIFY
+
+    CLASSIFY -- "workflow" --> WF_RECV["receiveAssignment<br/>Hydrate state, render prompt"]
+    CLASSIFY -- "oob" --> BREAKDOWN
+    CLASSIFY -- "unstructured<br/>(no workflow)" --> BREAKDOWN
+    CLASSIFY -- "unstructured<br/>(workflow active)" --> SKIP["Skip"]
+
+    %% ---- Workflow entry ----
+    WF_RECV --> TERMINAL_CHK{"Terminal<br/>state?"}
+    TERMINAL_CHK -- yes --> WF_DONE["Remove task,<br/>clear context"]
+    TERMINAL_CHK -- no --> ENTRY_CMD["onEntryCommands<br/>(git sync, captureAs)"]
+    ENTRY_CMD --> EMPTY{"Empty prompt<br/>or manager?"}
+    EMPTY -- "yes (mechanical)" --> TRANSITION
+    EMPTY -- no --> PRE_DECOMP{"Pre-decomposed<br/>work items?"}
+    PRE_DECOMP -- yes --> QUEUE
+    PRE_DECOMP -- no --> BREAKDOWN
+
+    %% ---- LLM decomposition ----
+    BREAKDOWN["LLM decomposes task<br/>into work items"]
+    BREAKDOWN --> QUEUE["Work Item Queue"]
+
+    %% ---- Main agent loop ----
+    QUEUE --> LOOP{"Pending<br/>work items?"}
+
+    LOOP -- yes --> EXEC["Execute via Copilot SDK"]
+
+    RESULT{"Success?"}
+    EXEC --> RESULT
+
+    RESULT -- yes --> ACCUM["Complete, accumulate text"]
+    ACCUM --> LOOP
+
+    RESULT -- "fail" --> RETRY{"Retries?"}
+    RETRY -- yes --> EXEC
+    RETRY -- no --> FAIL_WI["Mark failed"]
+    FAIL_WI --> LOOP
+
+    %% ---- All work items done ----
+    LOOP -- "all done" --> WF_CHECK{"Workflow<br/>active?"}
+    WF_CHECK -- no --> REPORT["Send report, archive"]
+    REPORT --> MSG
+
+    WF_CHECK -- yes --> TRANSITION
+
+    %% ---- Transition ----
+    TRANSITION["Determine outcome<br/>(exitEvaluation or regex fallback)<br/>+ extract agent notes"]
+    TRANSITION --> EXIT_CMD["onExitCommands<br/>(quality gates, git push,<br/>captureAs)"]
+    EXIT_CMD --> ADVANCE["Advance state machine"]
+    ADVANCE --> DONE_CHK{"Terminal?"}
+    DONE_CHK -- yes --> WF_DONE
+    DONE_CHK -- no --> ROUTE["Route to next role"]
+    ROUTE --> MSG
