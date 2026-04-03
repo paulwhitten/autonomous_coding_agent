@@ -47,7 +47,11 @@ ${workItem.content}
   }
 
   // Non-manager roles: standard execution prompt
-  return `You are continuing work on a multi-step project.
+  return `You are executing one work item from a decomposed assignment.
+The agent runtime decomposed a mailbox/A2A assignment into sequential work items.
+Work items are internal to this agent -- other agents cannot see them.
+The agent runtime handles completion reporting and state transitions automatically
+when all work items finish. Focus only on the current work item.
 
 **CRITICAL: Working Directory**
 - ALL project code must be created in: ${workingDir}
@@ -75,6 +79,7 @@ ${workItem.content}
    - Verify code compiles/runs successfully
    - If tests fail, debug and fix the issues
 7. Only consider work complete when you've verified it works
+8. Do NOT call send_completion_report() -- the agent runtime sends it automatically when all work items for this assignment finish
 
 Begin this work item:`;
 }

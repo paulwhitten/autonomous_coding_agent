@@ -19,19 +19,29 @@ import { WorkflowEngine } from './workflow-engine.js';
 import { WorkflowAssignment, OutOfBandMessage, StateExecutionResult, StateCommand, ExitEvaluation } from './workflow-types.js';
 import { detectFailureIndicators } from './fail-pattern-detector.js';
 import { composeEvaluationPrompt, parseEvaluationResponse } from './exit-evaluation.js';
+import { CommunicationBackend, AgentAddress, AgentMessage } from './communication-backend.js';
+import { createBackend } from './backend-factory.js';
+import { CompositeBackend } from './backends/composite-backend.js';
+import { resolveTargetAddress } from './agent-uri.js';
 import pino from 'pino';
 import path from 'path';
 import fs from 'fs/promises';
 import { execSync } from 'child_process';
 
+/** Format an AgentAddress as a flat "hostname_role" string. */
+function formatAgentId(addr: AgentAddress): string {
+  return `${addr.hostname}_${addr.role}`;
+}
+
 export class AutonomousAgent {
   private client: CopilotClient;
-  private mailbox: MailboxManager;
+  private backend!: CommunicationBackend;
+  private mailbox!: MailboxManager;
   private workspace: WorkspaceManager;
   private timeoutManager: TimeoutManager;
   private sessionManager: SessionManager;
   private workItemExecutor: WorkItemExecutor;
-  private completionTracker: CompletionTracker;
+  private completionTracker!: CompletionTracker;
   private permissionHandler: ReturnType<typeof createPermissionHandler>;
   private permissionOverrides: PermissionOverrides = {};
   private toolHealthMonitor: ToolHealthMonitor;
@@ -39,7 +49,9 @@ export class AutonomousAgent {
   private configWatcher: ConfigWatcher | null = null;
   private configPath: string;
   private logger: pino.Logger;
+  private baseLogger: pino.Logger;
   private quotaManager: QuotaManager;
+  private hostname: string;
   private workflowEngine: WorkflowEngine | null = null;
   /** Task ID currently active in the workflow engine (set when a workflow
    *  assignment message is received, consumed during work item execution). */
@@ -66,6 +78,7 @@ export class AutonomousAgent {
     this.config = config;
     this.configPath = configPath || path.resolve(process.argv[2] || 'config.json');
     const baseLogger = createLogger(path.resolve(config.logging.path));
+    this.baseLogger = baseLogger;
     this.logger = createComponentLogger(baseLogger, 'AutonomousAgent');
     
     // Support external Copilot CLI via environment variable
@@ -78,24 +91,12 @@ export class AutonomousAgent {
       createComponentLogger(baseLogger, 'SessionManager')
     );
     
-    const hostname = config.agent.hostname === 'auto-detect' 
-      ? require('os').hostname() 
-      : config.agent.hostname;
-    
-    this.mailbox = new MailboxManager(
-      config.mailbox.repoPath,
-      hostname,
-      config.agent.role,
-      config.mailbox.gitSync,
-      config.mailbox.autoCommit,
-      config.mailbox.commitMessage,
-      config.mailbox.supportBroadcast,
-      config.mailbox.supportAttachments,
-      config.mailbox.supportPriority ?? true,  // Default to true
-      config.manager?.hostname ?? hostname  // Manager hostname for completion reports / escalations
-    );
-    
     this.quotaManager = new QuotaManager(config, this.logger);
+
+    // Resolve hostname once for use throughout the agent lifecycle
+    this.hostname = config.agent.hostname === 'auto-detect'
+      ? require('os').hostname()
+      : config.agent.hostname;
 
     // Create WorkflowEngine (loading deferred to initialize())
     this.workflowEngine = new WorkflowEngine(
@@ -168,26 +169,13 @@ export class AutonomousAgent {
       this.toolHealthMonitor
     );
     
-    // Create CompletionTracker
-    this.completionTracker = new CompletionTracker(
-      this.workspace,
-      this.mailbox,
-      {
-        managerHostname: config.manager?.hostname ?? hostname,
-        managerRole: config.manager?.role ?? config.agent.role,
-        agentId: `${hostname}_${config.agent.role}`,
-        workspacePath: config.workspace.path,
-        gitSync: config.mailbox.gitSync,
-        autoCommit: config.mailbox.autoCommit
-      },
-      createComponentLogger(baseLogger, 'CompletionTracker')
-    );
+    // CompletionTracker is created in initialize() after the backend is ready
     
     this.contextFile = path.resolve(config.workspace.path, 'session_context.json');
     
     // Initialize context (will be loaded from file if exists)
     this.context = {
-      agentId: `${hostname}_${config.agent.role}`,
+      agentId: `${this.hostname}_${config.agent.role}`,
       lastMailboxCheck: new Date(),
       messagesProcessed: 0,
       status: 'idle',
@@ -205,9 +193,52 @@ export class AutonomousAgent {
     await fs.mkdir(path.dirname(this.config.logging.path), { recursive: true });
     await fs.mkdir(this.context.workingDirectory, { recursive: true });
     
+    // Create and initialize the communication backend.
+    // The CompositeBackend always includes both the git mailbox and
+    // the A2A HTTP server (sensible defaults when unconfigured).
+    this.backend = await createBackend(this.config, this.baseLogger);
+    await this.backend.initialize();
+
+    // Extract MailboxManager from the composite backend for tool wiring
+    // and CompletionTracker compatibility.
+    if (this.backend instanceof CompositeBackend) {
+      this.mailbox = this.backend.getMailboxBackend().getMailboxManager();
+    } else {
+      // Fallback for tests or non-composite backends
+      this.mailbox = new MailboxManager(
+        this.config.mailbox.repoPath,
+        this.hostname,
+        this.config.agent.role,
+        this.config.mailbox.gitSync,
+        this.config.mailbox.autoCommit,
+        this.config.mailbox.commitMessage,
+        this.config.mailbox.supportBroadcast,
+        this.config.mailbox.supportAttachments,
+        this.config.mailbox.supportPriority ?? true,
+        this.config.manager?.hostname ?? this.hostname,
+      );
+      await this.mailbox.initialize();
+    }
+
+    // Create CompletionTracker now that the backend is available
+    this.completionTracker = new CompletionTracker(
+      this.workspace,
+      this.backend,
+      {
+        managerHostname: this.config.manager?.hostname ?? this.hostname,
+        managerRole: this.config.manager?.role ?? this.config.agent.role,
+        managerUri: this.config.manager?.uri,
+        agentId: `${this.hostname}_${this.config.agent.role}`,
+        workspacePath: this.config.workspace.path,
+        gitSync: this.config.mailbox.gitSync,
+        autoCommit: this.config.mailbox.autoCommit,
+      },
+      createComponentLogger(this.baseLogger, 'CompletionTracker'),
+    );
+
     this.logger.info({
       agentId: this.context.agentId,
-      mailboxPath: this.mailbox.getMailboxPath(),
+      backend: this.backend.name,
       gitSync: this.config.mailbox.gitSync
     }, 'Initializing autonomous agent');
     
@@ -222,9 +253,6 @@ export class AutonomousAgent {
       this.logger.warn({ error: String(error) }, 'Failed to generate copilot instructions');
     }
     
-    // Initialize mailbox
-    await this.mailbox.initialize();
-    
     // Initialize workspace manager
     await this.workspace.initialize();
     
@@ -234,10 +262,10 @@ export class AutonomousAgent {
     // Initialize timeout manager
     await this.timeoutManager.initialize();
     
-    // Initial git sync
+    // Initial git sync (via backend abstraction)
     if (this.config.mailbox.gitSync) {
       this.logger.info('Performing initial git sync...');
-      const syncResult = await this.mailbox.syncFromRemote();
+      const syncResult = await this.backend.syncFromRemote();
       if (syncResult.success) {
         this.logger.info('Git sync successful');
       } else {
@@ -271,7 +299,22 @@ export class AutonomousAgent {
       this.configPath,
       this.config,
       (updated, fullConfig) => this.applyConfigChanges(updated, fullConfig),
-      createComponentLogger(createLogger(path.resolve(this.config.logging.path)), 'ConfigWatcher')
+      createComponentLogger(createLogger(path.resolve(this.config.logging.path)), 'ConfigWatcher'),
+      {
+        onTeamRosterChange: () => {
+          this.mailbox.clearTeamRosterCache();
+          // Reload A2A known agents so updated URIs take effect
+          if (this.backend instanceof CompositeBackend) {
+            const a2a = this.backend.getA2ABackend();
+            if (a2a) {
+              a2a.reloadKnownAgents().catch(err => {
+                this.logger.warn({ error: String(err) }, 'Failed to reload A2A known agents');
+              });
+            }
+          }
+          this.logger.info('Team roster cache invalidated (team.json changed)');
+        },
+      },
     );
     this.configWatcher.start();
 
@@ -297,6 +340,16 @@ export class AutonomousAgent {
     }
 
     this.logger.info('Agent initialized successfully');
+  }
+
+  /**
+   * Resolve a team member address by role.  Checks config.teamMembers
+   * first, then enriches with the uri from the team roster (team.json)
+   * when the config entry does not provide one.
+   */
+  private async resolveTargetByRole(role: string): Promise<AgentAddress | undefined> {
+    const roster = await this.backend.getTeamRoster();
+    return resolveTargetAddress(role, this.config.teamMembers, roster);
   }
 
   /**
@@ -464,8 +517,11 @@ export class AutonomousAgent {
     await saveJSON(this.contextFile, this.context);
     
     if (this.config.mailbox.gitSync && this.config.mailbox.autoCommit) {
-      await this.mailbox.syncToRemote('Agent shutdown');
+      await this.backend.syncToRemote('Agent shutdown');
     }
+
+    // Shut down the communication backend (stops servers, flushes buffers)
+    await this.backend.shutdown();
     
     // Delete the current session so it does not accumulate in the VS
     // Code session list.  This is a lightweight SDK call (HTTP DELETE)
@@ -738,14 +794,14 @@ export class AutonomousAgent {
     // Git sync before checking mailbox
     if (this.config.mailbox.gitSync) {
       this.logger.debug('Syncing from git remote...');
-      const syncResult = await this.mailbox.syncFromRemote();
+      const syncResult = await this.backend.syncFromRemote();
       if (!syncResult.success) {
         this.logger.warn({ error: syncResult.message }, 'Git sync failed');
       }
     }
     
     // Get all messages (priority will be first in the list)
-    const messages = await this.mailbox.checkForNewMessages();
+    const messages = await this.backend.receiveMessages();
     
     // Filter for only HIGH priority messages
     let priorityMessages = messages.filter(msg => msg.priority === 'HIGH');
@@ -788,7 +844,7 @@ export class AutonomousAgent {
       try {
         this.context.status = 'breaking_down_task';
         this.context.currentTask = {
-          messageId: message.filename,
+          messageId: message.id,
           subject: message.subject,
           description: message.content,
           acceptanceCriteria: [],
@@ -804,8 +860,8 @@ export class AutonomousAgent {
         }
         
         // Archive the message after breaking it down
-        await this.mailbox.archiveMessage(message);
-        this.logger.info(`Archived HIGH priority message: ${message.filename}`);
+        await this.backend.acknowledgeMessage(message.id);
+        this.logger.info(`Archived HIGH priority message: ${message.id}`);
         
         this.context.messagesProcessed++;
         this.context.status = 'idle';
@@ -825,9 +881,9 @@ export class AutonomousAgent {
             { subject: message.subject },
             'Suppressing re-escalation of already-escalated message to prevent infinite loop',
           );
-          await this.mailbox.archiveMessage(message);
+          await this.backend.acknowledgeMessage(message.id);
         } else {
-          await this.mailbox.escalate(
+          await this.backend.escalate(
             `Failed to break down HIGH priority task: ${message.subject}`,
             `Error: ${String(error)}\n\nOriginal message:\n${message.content}`
           );
@@ -839,7 +895,7 @@ export class AutonomousAgent {
     
     // Git sync after processing priority messages
     if (this.config.mailbox.gitSync) {
-      await this.mailbox.syncToRemote();
+      await this.backend.syncToRemote();
     }
     
     return true; // Indicate priority messages were processed
@@ -854,7 +910,7 @@ export class AutonomousAgent {
     // Git sync before checking mailbox
     if (this.config.mailbox.gitSync) {
       this.logger.debug('Syncing from git remote...');
-      const syncResult = await this.mailbox.syncFromRemote();
+      const syncResult = await this.backend.syncFromRemote();
       if (!syncResult.success) {
         this.logger.warn({ error: syncResult.message }, 'Git sync failed');
       }
@@ -862,7 +918,7 @@ export class AutonomousAgent {
     
     this.context.lastMailboxCheck = new Date();
     
-    const messages = await this.mailbox.checkForNewMessages();
+    const messages = await this.backend.receiveMessages();
     
     // Filter out HIGH priority messages (already handled by checkPriorityMailbox)
     const normalMessages = this.config.mailbox.supportPriority 
@@ -888,7 +944,7 @@ export class AutonomousAgent {
     try {
       this.context.status = 'breaking_down_task';
       this.context.currentTask = {
-        messageId: message.filename,
+        messageId: message.id,
         subject: message.subject,
         description: message.content,
         acceptanceCriteria: [],
@@ -899,12 +955,12 @@ export class AutonomousAgent {
       await this.classifyAndProcessMessage(message);
       
       // Archive the message after breaking it down
-      await this.mailbox.archiveMessage(message);
-      this.logger.info(`Archived message: ${message.filename}`);
+      await this.backend.acknowledgeMessage(message.id);
+      this.logger.info(`Archived message: ${message.id}`);
       
       // Git sync after archiving
       if (this.config.mailbox.gitSync && this.config.mailbox.autoCommit) {
-        await this.mailbox.syncToRemote(`Break down task: ${message.subject}`);
+        await this.backend.syncToRemote(`Break down task: ${message.subject}`);
       }
       
       this.context.messagesProcessed++;
@@ -923,9 +979,9 @@ export class AutonomousAgent {
           { subject: message.subject },
           'Suppressing re-escalation of already-escalated message to prevent infinite loop',
         );
-        await this.mailbox.archiveMessage(message);
+        await this.backend.acknowledgeMessage(message.id);
       } else {
-        await this.mailbox.escalate(
+        await this.backend.escalate(
           `Failed to break down task: ${message.subject}`,
           `Error: ${String(error)}\n\nOriginal message:\n${message.content}`
         );
@@ -982,7 +1038,7 @@ export class AutonomousAgent {
         reworkCycle
       }, `Rework cycle limit exceeded (${reworkCycle}/${maxReworkCycles}), escalating to manager`);
       
-      await this.mailbox.escalate(
+      await this.backend.escalate(
         `QA rejection cycle limit reached: ${originalTask}`,
         `This task has been rejected by QA ${reworkCycle} times and I cannot resolve the issues.\n\n` +
         `**Latest QA rejection:**\n${message.content}\n\n` +
@@ -1001,7 +1057,7 @@ export class AutonomousAgent {
 This is a rework of a previously completed task that was rejected by QA.
 Address ALL failures listed below before resubmitting.
 
-**From QA:** ${message.from}
+**From QA:** ${formatAgentId(message.from)}
 
 ---
 
@@ -1023,7 +1079,7 @@ ${message.content}
         title: `Rework: ${originalTask}`,
         content: reworkContent
       }],
-      message.filename
+      message.id
     );
     
     this.logger.info({
@@ -1180,27 +1236,29 @@ ${message.content}
     if (isManager) {
       if (assignment.targetRole !== 'manager') {
         // Route to the designated team member
-        const target = this.config.teamMembers?.find(m => m.role === assignment.targetRole);
+        const target = await this.resolveTargetByRole(assignment.targetRole);
         if (target) {
           // Forward using strict schema -- re-serialize the assignment as payload
-          const filepath = await this.mailbox.sendMessage(
-            target.hostname,
-            target.role,
-            message.subject || `[Workflow] ${assignment.targetState}: ${assignment.taskId}`,
-            '', // body unused when payload provided
-            'NORMAL',
-            'workflow',
-            assignment as unknown as Record<string, unknown>,
+          const sendResult = await this.backend.sendMessage(
+            target,
+            {
+              to: target,
+              subject: message.subject || `[Workflow] ${assignment.targetState}: ${assignment.taskId}`,
+              content: '',
+              priority: 'NORMAL',
+              messageType: 'workflow',
+              payload: assignment as unknown as Record<string, unknown>,
+            },
           );
           
-          // Notify WIP tracking callback (needed because we're calling mailbox.sendMessage
+          // Notify WIP tracking callback (needed because we're calling backend.sendMessage
           // directly, not via the send_message tool which normally triggers this)
           if (this.onMessageSentCallback) {
             this.onMessageSentCallback({
               toHostname: target.hostname,
               toRole: target.role,
               subject: message.subject || `[Workflow] ${assignment.targetState}: ${assignment.taskId}`,
-              filepath,
+              filepath: sendResult.ref,
             });
           }
           
@@ -1814,7 +1872,7 @@ ${message.content}
         const hasTeamRoster = this.config.teamMembers && this.config.teamMembers.length > 0;
 
         if (terminalRole && terminalRole !== myRole && hasTeamRoster) {
-          const target = this.config.teamMembers!.find(m => m.role === terminalRole);
+          const target = await this.resolveTargetByRole(terminalRole);
           if (target) {
             const subject = `[Workflow] ${transition.newState}: ${this.context.currentTask?.subject || taskId}`;
             const payload = buildTerminalNotificationPayload({
@@ -1824,14 +1882,16 @@ ${message.content}
               targetRole: terminalRole,
               taskPrompt: this.context.currentTask?.description || '',
             });
-            this.mailbox.sendMessage(
-              target.hostname,
-              target.role,
-              subject,
-              '',
-              'NORMAL',
-              'workflow',
-              payload,
+            this.backend.sendMessage(
+              target,
+              {
+                to: target,
+                subject,
+                content: '',
+                priority: 'NORMAL',
+                messageType: 'workflow',
+                payload,
+              },
             ).then(() => {
               this.logger.info({
                 taskId,
@@ -1893,18 +1953,20 @@ ${message.content}
 
         // Resolve role to hostname via team roster (or self)
         const target = isSelfLoop
-          ? { hostname: this.config.agent.hostname, role: this.config.agent.role }
-          : this.config.teamMembers!.find(m => m.role === transition.role);
+          ? { hostname: this.config.agent.hostname, role: this.config.agent.role, uri: undefined }
+          : await this.resolveTargetByRole(transition.role!);
         if (target) {
           // Send using strict schema -- JSON payload, no embedded markers
-          const routedFilepath = await this.mailbox.sendMessage(
-            target.hostname,
-            target.role,
-            subject,
-            '', // body unused when payload provided
-            'NORMAL',
-            'workflow',
-            assignment as unknown as Record<string, unknown>,
+          const routeResult = await this.backend.sendMessage(
+            target,
+            {
+              to: target,
+              subject,
+              content: '',
+              priority: 'NORMAL',
+              messageType: 'workflow',
+              payload: assignment as unknown as Record<string, unknown>,
+            },
           );
 
           // Record WIP delegation so the manager's WIP gate blocks
@@ -1914,7 +1976,7 @@ ${message.content}
               toHostname: target.hostname,
               toRole: target.role,
               subject,
-              filepath: routedFilepath,
+              filepath: routeResult.ref,
             });
           }
 
@@ -1942,12 +2004,16 @@ ${message.content}
           taskId,
         );
 
-        await this.mailbox.sendMessage(
-          this.config.manager.hostname,
-          this.config.manager.role ?? this.config.agent.role,
-          `[Workflow Complete] ${this.context.currentTask?.subject || taskId}`,
-          `Phase completed successfully.\n\n${taskState}`,
-          'NORMAL',
+        const managerAddr = { hostname: this.config.manager.hostname, role: this.config.manager.role ?? this.config.agent.role, uri: this.config.manager.uri };
+        await this.backend.sendMessage(
+          managerAddr,
+          {
+            to: managerAddr,
+            subject: `[Workflow Complete] ${this.context.currentTask?.subject || taskId}`,
+            content: `Phase completed successfully.\n\n${taskState}`,
+            priority: 'NORMAL',
+            messageType: 'status' as const,
+          },
         );
         this.logger.info(
           { taskId, managerHostname: this.config.manager.hostname },
@@ -2212,7 +2278,7 @@ ${message.content}
     
     if (!quotaCheck.canProcess) {
       this.logger.warn(`Cannot process task: ${quotaCheck.reason}`);
-      await this.mailbox.escalate(
+      await this.backend.escalate(
         `Quota limit reached - task paused`,
         `Unable to break down task: ${message.subject}\n\nReason: ${quotaCheck.reason}`
       );
@@ -2241,7 +2307,7 @@ ${message.content}
     
     // Construct the breakdown prompt (role-aware)
     const breakdownPrompt = buildBreakdownPrompt({
-      from: message.from,
+      from: typeof message.from === 'string' ? message.from : formatAgentId(message.from),
       subject: message.subject,
       priority: message.priority || 'NORMAL',
       content: message.content,
@@ -2265,7 +2331,7 @@ ${message.content}
       this.logger.info(`Created ${workItems.length} work items`);
       
       // Create work item files with mailbox file tracking
-      await this.workspace.createWorkItems(workItems, message.filename);
+      await this.workspace.createWorkItems(workItems, message.id);
       
       // Record quota usage
       await this.quotaManager.recordTaskCompletion(quotaCheck.model, priority);
@@ -2575,7 +2641,7 @@ ${message.content}
    */
   private async checkForCompletionMessages(): Promise<void> {
     const completionPattern = /\[Workflow Complete\]|\[Workflow\] (?:DONE|ESCALATED)|Assignment \d+ completed|completion report/i;
-    const candidates = await this.mailbox.peekMessages(completionPattern);
+    const candidates = await this.backend.peekMessages(completionPattern);
     if (candidates.length === 0) {
       this.logger.debug('WIP gate: no completion messages found');
       return;
@@ -2584,15 +2650,16 @@ ${message.content}
     const delegations = this.context.inFlightDelegations ?? {};
     for (const msg of candidates) {
       let matched = false;
+      const senderStr = msg.from ? formatAgentId(msg.from) : '';
       for (const [key, d] of Object.entries(delegations)) {
-        const senderMatch = msg.from?.includes(d.delegatedTo.split('_')[0]);
+        const senderMatch = senderStr.includes(d.delegatedTo.split('_')[0]);
         const subjectOverlap = d.subject && msg.subject?.includes(
           d.subject.replace(/^\[Workflow\]\s*\S+:\s*/, '').trim().substring(0, 30),
         );
         if (senderMatch || subjectOverlap) {
-          this.logger.info({ key, from: msg.from, subject: msg.subject }, 'WIP: matched completion message');
+          this.logger.info({ key, from: senderStr, subject: msg.subject }, 'WIP: matched completion message');
           matched = true;
-          await this.mailbox.archiveMessage(msg);
+          await this.backend.acknowledgeMessage(msg.id);
           if (d.workflowTaskId && this.workflowEngine) {
             this.activeWorkflowTaskId = d.workflowTaskId;
             await this.classifyAndProcessMessage(msg);
@@ -2602,7 +2669,7 @@ ${message.content}
         }
       }
       if (!matched) {
-        this.logger.debug({ from: msg.from, subject: msg.subject }, 'WIP: completion candidate did not match any in-flight delegation -- leaving in mailbox');
+        this.logger.debug({ from: senderStr, subject: msg.subject }, 'WIP: completion candidate did not match any in-flight delegation -- leaving in mailbox');
       }
     }
   }

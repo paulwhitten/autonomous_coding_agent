@@ -1,0 +1,10 @@
+{
+  "flowchart": {
+    "padding": 20,
+    "nodeSpacing": 30,
+    "rankSpacing": 40,
+    "htmlLabels": true,
+    "wrappingWidth": 200
+  },
+  "themeCSS": "foreignObject { overflow: visible !important; } .nodeLabel { line-height: 1.4; }"
+}

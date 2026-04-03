@@ -119,5 +119,26 @@
       }
     },
     "sharedQuotaUrl": "https://github.com/settings/billing"  // URL for quota monitoring
-  }
+  },
+  
+  // Communication configuration
+  // Both git mailbox and A2A HTTP are always active with sensible defaults.
+  // Add a "communication.a2a" block only to override defaults (port, TLS, etc.).
+  // Uncomment the block below to customize A2A settings:
+  //
+  // "communication": {
+  //   "a2a": {
+  //     "serverPort": 4000,              // HTTP port (default: 4000, 0 = OS-assigned)
+  //     "transport": "jsonrpc",          // "jsonrpc" | "rest" | "grpc"
+  //     "tls": { "enabled": false },     // Enable TLS for production
+  //     "authentication": { "scheme": "none" },  // "bearer" | "apiKey" | "none"
+  //     "knownAgentUrls": [],            // Direct-configured A2A agent URLs
+  //     "auditDir": "audit/a2a"          // Git-tracked audit log directory
+  //   }
+  // },
+
+  // Team member routing
+  // URI scheme determines transport: a2a://host:port for A2A, mailbox://id
+  // for explicit mailbox, or omit uri for default mailbox routing.
+  "teamMembers": []
 }

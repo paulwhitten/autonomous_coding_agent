@@ -87,6 +87,8 @@ export interface AgentConfig {
     hostname: string;
     role: string;
     escalationPriority: 'HIGH' | 'NORMAL' | 'LOW';
+    /** Transport URI for the manager agent (defaults to mailbox when absent). */
+    uri?: string;
   };
   quota?: {
     enabled: boolean;
@@ -99,7 +101,101 @@ export interface AgentConfig {
     hostname: string;
     role: string;
     responsibilities: string;
+    /**
+     * Transport URI indicating how to reach this agent.
+     * Schemes: `a2a://host:port`, `mailbox://agent_id`, or absent (defaults to mailbox).
+     */
+    uri?: string;
   }>;
+  /** Communication backend configuration (defaults to git mailbox). */
+  communication?: CommunicationConfig;
+}
+
+// ---------------------------------------------------------------------------
+// Communication Backend Configuration
+// ---------------------------------------------------------------------------
+
+/**
+ * User-configurable fields for the A2A Agent Card.
+ * All fields are optional -- sensible defaults are derived from
+ * agent.hostname, agent.role, and other A2AConfig values.
+ */
+export interface AgentCardConfig {
+  /** Display name for this agent (default: "<hostname>_<role>"). */
+  name?: string;
+  /** Human-readable description (default: "Autonomous <role> agent"). */
+  description?: string;
+  /** Semantic version of the agent (default: "1.0.0"). */
+  version?: string;
+  /** Provider / organization metadata. */
+  provider?: { organization: string; url?: string };
+  /** Extra skills to advertise beyond those auto-derived from capabilities.
+   *  Merged (additive) with the auto-derived skill list. */
+  skills?: Array<{
+    id: string;
+    name: string;
+    description: string;
+    tags: string[];
+    inputModes?: string[];
+    outputModes?: string[];
+    examples?: string[];
+  }>;
+  /** Accepted input MIME types (default: ["text/plain"]). */
+  inputModes?: string[];
+  /** Produced output MIME types (default: ["text/plain"]). */
+  outputModes?: string[];
+  /** Opaque protocol extensions map. */
+  extensions?: Record<string, unknown>;
+}
+
+/**
+ * A2A-specific configuration options.
+ */
+export interface A2AConfig {
+  /** HTTP port for the A2A server (default: 4000). */
+  serverPort?: number;
+  /** Path to serve the agent card (default: "/.well-known/agent-card.json"). */
+  agentCardPath?: string;
+  /** Transport protocol: "jsonrpc" | "rest" | "grpc" (default: "jsonrpc"). */
+  transport?: 'jsonrpc' | 'rest' | 'grpc';
+  /** Customizable fields for the agent card served at the agentCardPath.
+   *  All fields are optional -- defaults are derived from agent identity. */
+  agentCard?: AgentCardConfig;
+  /** TLS configuration. */
+  tls?: {
+    enabled?: boolean;
+    certPath?: string;
+    keyPath?: string;
+  };
+  /** Authentication scheme for serving and consuming A2A endpoints. */
+  authentication?: {
+    scheme?: 'bearer' | 'apiKey' | 'none';
+    token?: string;
+    headerName?: string;
+  };
+  /** Push notification configuration for long-running tasks. */
+  pushNotifications?: {
+    enabled?: boolean;
+    webhookUrl?: string;
+  };
+  /** URLs of known A2A agents for direct discovery. */
+  knownAgentUrls?: string[];
+  /** Optional registry URL for catalog-based discovery. */
+  registryUrl?: string;
+  /** Directory for git-backed audit logs (relative to repo root). */
+  auditDir?: string;
+}
+
+/**
+ * Top-level communication configuration.
+ *
+ * Both the mailbox (filesystem) and the A2A HTTP server are always
+ * active with sensible defaults.  Add an `a2a` block only when you
+ * need to override defaults (port, TLS, known agents, etc.).
+ */
+export interface CommunicationConfig {
+  /** A2A overrides.  Omit entirely to use all defaults. */
+  a2a?: A2AConfig;
 }
 
 /**
@@ -142,6 +238,30 @@ export interface TeamAgent {
   capabilities?: string[];       // e.g., ["python", "circuit-processing"]
   timezone?: string;             // e.g., "America/Los_Angeles"
   contact?: string;              // Optional contact info
+
+  // A2A-inspired enrichment fields (all optional, backward-compatible)
+  /** Structured skill descriptions -- richer alternative to flat capabilities[]. */
+  skills?: import('./agent-card.js').AgentSkill[];
+  /** Accepted input MIME types (e.g., ["text/plain", "application/json"]). */
+  inputModes?: string[];
+  /** Produced output MIME types. */
+  outputModes?: string[];
+  /** A2A protocol version if this agent speaks A2A (e.g., "0.3.0"). */
+  protocolVersion?: string;
+  /** Network endpoint URL for A2A communication. */
+  url?: string;
+  /**
+   * Transport URI indicating how to reach this agent.
+   * Schemes: `a2a://host:port`, `mailbox://agent_id`, or absent (defaults to mailbox).
+   * When present, overrides the url field for routing decisions.
+   */
+  uri?: string;
+  /** Provider / organization metadata. */
+  provider?: { organization: string; url?: string };
+  /** Authentication requirements for this agent endpoint. */
+  security?: Array<{ type: string; in?: string; name?: string }>;
+  /** Protocol extensions (opaque key-value map). */
+  extensions?: Record<string, unknown>;
 }
 
 export interface TeamRoleInfo {

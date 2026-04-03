@@ -1,0 +1,203 @@
+{
+  "$schema": "./workflow.schema.json",
+  "id": "dev-qa-merge",
+  "name": "Development with QA Gate",
+  "description": "Standard workflow: Manager assigns task, Developer implements on feature branch, QA validates and merges to main.",
+  "version": "2.0.0",
+  "initialState": "ASSIGN",
+  "terminalStates": ["DONE", "ESCALATED"],
+  "globalContext": {
+    "projectPath": "workspace/project",
+    "communityStack": "workspace/profinet-community-stack",
+    "specs": "workspace/specs",
+    "strategyDoc": "workspace/community_stack_strategy.md",
+    "portingGuide": "workspace/porting_guide.md",
+    "protocolComparison": "workspace/protocol_comparison.md",
+    "buildCommand": "cargo build",
+    "testCommand": "cargo test",
+    "lintCommand": "cargo clippy -- -D warnings"
+  },
+  "states": {
+    "ASSIGN": {
+      "name": "Task Assignment",
+      "role": "manager",
+      "description": "Manager routes the task specification to the developer without modification. The workflow engine handles routing mechanically. No decomposition or analysis—the developer receives the full specification and performs all analysis and decomposition.",
+      "prompt": "",
+      "allowedTools": [],
+      "transitions": {
+        "onSuccess": "IMPLEMENTING",
+        "onFailure": "ESCALATED"
+      }
+    },
+
+    "IMPLEMENTING": {
+      "name": "Implementation",
+      "role": "developer",
+      "description": "Developer analyzes the task specification, decomposes it into work items, and implements on a feature branch from latest main.",
+      "prompt": "You are receiving a complete task specification. Your job is to implement it on the current feature branch.\n\nYou are ALREADY on branch dev/{{taskId}} -- the entry commands created it from main. Do NOT create branches or run git checkout. Just implement.\n\n**Procedure:**\n1. cd {{projectPath}}\n2. Execute each work item sequentially\n3. After completing all items:\n   - Run: {{buildCommand}}\n   - Run: {{testCommand}}\n   - Run: {{lintCommand}}\n4. Fix ALL errors -- do not proceed with failures\n\nDo NOT call send_completion_report() or send_message() -- the workflow engine handles state transitions and routing automatically.\n\nIMPORTANT: Do NOT create a new branch. Do NOT run git checkout. The exit commands will commit and push dev/{{taskId}} automatically.",
+      "tasks": [
+        "unit tests including round-trip (serialize/parse) tests for every public struct and enum, with 90%+ line coverage, covering every public API and error path",
+        "cargo tarpaulin coverage verification (90%+ line coverage)",
+        "cargo fmt formatting",
+        "validation that all unit tests pass"
+      ],
+      "decompositionPrompt": "Place test-writing work items AFTER implementation items but BEFORE any final verification step. Each test work item should reference the specific module and public items to test.",
+      "allowedTools": ["terminal", "file_ops", "reporting", "mailbox:read"],
+      "transitions": {
+        "onSuccess": "VALIDATING",
+        "onFailure": "IMPLEMENTING"
+      },
+      "maxRetries": 2,
+      "timeoutMs": 600000,
+      "onEntryCommands": [
+        { "command": "rm -f .git/index.lock .git/HEAD.lock 2>/dev/null; git merge --abort 2>/dev/null; git rebase --abort 2>/dev/null; git cherry-pick --abort 2>/dev/null; true", "reason": "Remove stale lock files and abort any stuck merge/rebase/cherry-pick from a prior LLM session.", "failOnError": false },
+        { "command": "git fetch origin", "reason": "Fetch latest remote tracking references.", "failOnError": false },
+        { "command": "git reset --hard HEAD", "reason": "Discard any uncommitted changes left by a prior LLM session.", "failOnError": false },
+        { "command": "git clean -fd", "reason": "Remove untracked files left by prior LLM session (reports, artifacts, etc.).", "failOnError": false },
+        { "command": "git checkout main", "reason": "Switch to main branch.", "failOnError": true },
+        { "command": "git pull origin main", "reason": "Sync local main to latest origin/main before branching.", "failOnError": false },
+        { "command": "git checkout -b dev/{{taskId}} || git checkout dev/{{taskId}}", "reason": "Create the feature branch from main. If it already exists, switch to it.", "failOnError": true }
+      ],
+      "onExitCommands": [
+        { "command": "rm -f .git/index.lock .git/HEAD.lock 2>/dev/null; git merge --abort 2>/dev/null; git rebase --abort 2>/dev/null; git cherry-pick --abort 2>/dev/null; true", "reason": "Remove stale lock files and abort any stuck merge/rebase/cherry-pick the LLM may have triggered.", "failOnError": false },
+        { "command": "git stash pop 2>/dev/null; true", "reason": "Recover any changes the LLM may have stashed.", "failOnError": false },
+        { "command": "cargo fmt 2>/dev/null; true", "reason": "Auto-format code before commit. Failure must not block push.", "failOnError": false },
+        { "command": "git add -A", "reason": "Stage all new and modified files.", "failOnError": false },
+        { "command": "git diff --cached --quiet || git commit -m '{{role}}: {{state}} for {{taskId}}'", "reason": "Commit staged changes if any exist.", "failOnError": false },
+        { "command": "git push origin HEAD:dev/{{taskId}}", "reason": "Push current HEAD to origin dev/{{taskId}}. This MUST run so QA can see the code.", "failOnError": false },
+        { "command": "git rev-parse HEAD", "reason": "Capture the commit SHA for downstream traceability.", "captureAs": "commitSha" }
+      ],
+      "exitActions": [
+        { "type": "set_context", "params": { "key": "implementationComplete", "value": "true" } },
+        { "type": "set_context", "params": { "key": "branch", "value": "dev/{{taskId}}" } },
+        { "type": "log", "params": { "message": "Implementation pushed for task {{taskId}}", "level": "info" } }
+      ]
+    },
+
+    "VALIDATING": {
+      "name": "QA Validation",
+      "role": "qa",
+      "description": "QA checks out the feature branch and runs build, test, and lint. Read-only validation only -- QA must not modify any source files.",
+      "prompt": "",
+      "allowedTools": [],
+      "permissions": {
+        "write": "deny"
+      },
+      "transitions": {
+        "onSuccess": "MERGING",
+        "onFailure": "REWORK"
+      },
+      "maxRetries": 2,
+      "onEntryCommands": [
+        { "command": "rm -f .git/index.lock .git/HEAD.lock 2>/dev/null; git merge --abort 2>/dev/null; git rebase --abort 2>/dev/null; git cherry-pick --abort 2>/dev/null; true", "reason": "Remove stale lock files and abort any stuck merge/rebase/cherry-pick from a prior LLM session.", "failOnError": false },
+        { "command": "git fetch origin", "reason": "Fetch latest remote tracking references to see the developer's pushed branch.", "failOnError": false },
+        { "command": "git reset --hard HEAD", "reason": "Discard any uncommitted changes from a prior LLM session.", "failOnError": false },
+        { "command": "git clean -fd", "reason": "Remove untracked files (reports, artifacts) left by prior LLM session.", "failOnError": false },
+        { "command": "git checkout dev/{{taskId}} || git checkout -b dev/{{taskId}} origin/dev/{{taskId}}", "reason": "Switch to the feature branch. Create from origin if it does not exist locally.", "failOnError": true },
+        { "command": "git reset --hard origin/dev/{{taskId}}", "reason": "Force-sync to origin/dev/{{taskId}} so you are validating exactly what the developer pushed.", "failOnError": true },
+        { "command": "git rev-parse HEAD", "reason": "Record the exact commit SHA being validated.", "captureAs": "validatedSha" },
+        { "command": "cargo fmt --check", "reason": "Mechanical fast-fail: reject immediately if pushed code is unformatted. Saves LLM invocation.", "failOnError": true },
+        { "command": "{{buildCommand}}", "reason": "Mechanical fast-fail: reject immediately if pushed code does not build.", "failOnError": true },
+        { "command": "{{testCommand}}", "reason": "Mechanical fast-fail: reject immediately if pushed code fails tests.", "failOnError": true },
+        { "command": "{{lintCommand}}", "reason": "Mechanical fast-fail: reject immediately if pushed code has lint warnings.", "failOnError": true }
+      ],
+      "onExitCommands": [
+        { "command": "git rev-parse HEAD", "reason": "Capture the validated commit SHA for downstream traceability.", "captureAs": "commitSha" }
+      ],
+      "exitActions": [
+        { "type": "set_context", "params": { "key": "validationComplete", "value": "true" } },
+        { "type": "log", "params": { "message": "QA validation completed for task {{taskId}}", "level": "info" } }
+      ]
+    },
+
+    "REWORK": {
+      "name": "Rework",
+      "role": "developer",
+      "description": "Developer fixes QA-reported issues on the same feature branch.",
+      "prompt": "Fix the issues found by QA. You are ALREADY on branch dev/{{taskId}} -- the entry commands checked it out. Do NOT create branches, switch branches, or run git checkout.\n\n**QA Rejection Reason:**\n{{rejectionReason}}\n\nThe 'Agent notes' section in the prior workflow history above contains QA's detailed findings.\n\n**Evaluate the findings first.** If you believe QA's rejection is incorrect or based on a misunderstanding:\n- Run the quality gates yourself to confirm the code is correct\n- Do NOT make unnecessary changes -- your summary note (captured automatically when this phase ends) will explain your reasoning to QA\n- QA will see your note in the next validation cycle\n\nIf the findings are valid, address EACH specific issue.\n\n**Procedure:**\n1. cd {{projectPath}}\n2. Address each valid issue from the QA findings (or confirm no changes needed)\n3. Run: cargo fmt\n4. Run: {{buildCommand}}\n5. Run: {{testCommand}}\n6. Run: {{lintCommand}}\n7. Fix ALL errors -- do not proceed with failures\n\nDo NOT call send_completion_report() or send_message() -- the workflow engine handles state transitions and routing automatically.\n\nIMPORTANT: Do NOT create a new branch. Do NOT run git checkout. The exit commands will commit and push dev/{{taskId}} automatically.",
+      "allowedTools": ["terminal", "file_ops", "reporting", "mailbox:read"],
+      "requiredOutputs": ["commitSha"],
+      "transitions": {
+        "onSuccess": "VALIDATING",
+        "onFailure": "ESCALATED"
+      },
+      "maxRetries": 2,
+      "onEntryCommands": [
+        { "command": "rm -f .git/index.lock .git/HEAD.lock 2>/dev/null; git merge --abort 2>/dev/null; git rebase --abort 2>/dev/null; git cherry-pick --abort 2>/dev/null; true", "reason": "Remove stale lock files and abort any stuck merge/rebase/cherry-pick from a prior LLM session.", "failOnError": false },
+        { "command": "git fetch origin", "reason": "Fetch latest remote tracking references to see QA's validation evidence.", "failOnError": false },
+        { "command": "git reset --hard HEAD", "reason": "Discard any uncommitted changes from a prior LLM session.", "failOnError": false },
+        { "command": "git clean -fd", "reason": "Remove untracked files left by prior LLM session.", "failOnError": false },
+        { "command": "git checkout dev/{{taskId}}", "reason": "Switch to the feature branch.", "failOnError": true },
+        { "command": "git reset --hard origin/dev/{{taskId}}", "reason": "Force-sync to origin/dev/{{taskId}} so you see the current code state.", "failOnError": true }
+      ],
+      "onExitCommands": [
+        { "command": "rm -f .git/index.lock .git/HEAD.lock 2>/dev/null; git merge --abort 2>/dev/null; git rebase --abort 2>/dev/null; git cherry-pick --abort 2>/dev/null; true", "reason": "Remove stale lock files and abort any stuck merge/rebase/cherry-pick the LLM may have triggered.", "failOnError": false },
+        { "command": "git stash pop 2>/dev/null; true", "reason": "Recover any changes the LLM may have stashed.", "failOnError": false },
+        { "command": "cargo fmt 2>/dev/null; true", "reason": "Auto-format rework code before commit. Failure must not block push.", "failOnError": false },
+        { "command": "git add -A", "reason": "Stage all rework changes.", "failOnError": false },
+        { "command": "git diff --cached --quiet || git commit -m '{{role}}: {{state}} fix for {{taskId}}'", "reason": "Commit rework fixes if any staged changes exist.", "failOnError": false },
+        { "command": "git push origin HEAD:dev/{{taskId}}", "reason": "Push rework fixes to origin dev/{{taskId}}. This MUST run so QA can see the fixes.", "failOnError": false },
+        { "command": "git rev-parse HEAD", "reason": "Capture the commit SHA for downstream traceability.", "captureAs": "commitSha" }
+      ]
+    },
+
+    "MERGING": {
+      "name": "Merge to Main",
+      "role": "qa",
+      "description": "Fully mechanical: entry commands merge and push, exit commands capture SHA and delete branch. No LLM work needed.",
+      "prompt": "",
+      "allowedTools": [],
+      "transitions": {
+        "onSuccess": "DONE",
+        "onFailure": "ESCALATED"
+      },
+      "maxRetries": 2,
+      "onEntryCommands": [
+        { "command": "rm -f .git/index.lock .git/HEAD.lock 2>/dev/null; git merge --abort 2>/dev/null; git rebase --abort 2>/dev/null; git cherry-pick --abort 2>/dev/null; true", "reason": "Remove stale lock files and abort any stuck merge/rebase/cherry-pick from a prior LLM session.", "failOnError": false },
+        { "command": "git fetch origin", "reason": "Fetch latest remote tracking references.", "failOnError": true },
+        { "command": "git reset --hard HEAD", "reason": "Discard any uncommitted changes from a prior LLM session.", "failOnError": false },
+        { "command": "git clean -fd", "reason": "Remove untracked files left by prior LLM session.", "failOnError": false },
+        { "command": "git checkout dev/{{taskId}} || git checkout -b dev/{{taskId}} origin/dev/{{taskId}}", "reason": "Checkout the feature branch locally. Create from origin if it does not exist locally (e.g., QA agent separate work dir).", "failOnError": true },
+        { "command": "git reset --hard origin/dev/{{taskId}}", "reason": "Force-sync local feature branch to match origin exactly before rebasing.", "failOnError": true },
+        { "command": "git rebase origin/main", "reason": "Rebase the feature branch onto latest main. Resolves divergence from concurrent task merges. Fails on conflict to trigger escalation.", "failOnError": true },
+        { "command": "git checkout main", "reason": "Switch to main branch for the merge.", "failOnError": true },
+        { "command": "git reset --hard origin/main", "reason": "Force-sync local main to origin/main for a clean merge base.", "failOnError": true },
+        { "command": "git merge dev/{{taskId}} --no-ff -m 'Merge dev/{{taskId}}: {{taskId}}'", "reason": "Merge the rebased feature branch into main. Guaranteed clean since rebase resolved all conflicts.", "failOnError": true },
+        { "command": "git push origin main", "reason": "Push the merge commit to origin.", "failOnError": true },
+        { "command": "git rev-parse HEAD", "reason": "Capture the merge commit SHA for the audit trail.", "captureAs": "mergeSha" }
+      ],
+      "onExitCommands": [
+        { "command": "git branch -d dev/{{taskId}}", "reason": "Delete the local feature branch after merge.", "failOnError": false },
+        { "command": "git push origin --delete dev/{{taskId}}", "reason": "Delete the remote feature branch after merge.", "failOnError": false }
+      ],
+      "exitActions": [
+        { "type": "set_context", "params": { "key": "mergeComplete", "value": "true" } },
+        { "type": "log", "params": { "message": "Feature branch merged to main for task {{taskId}}", "level": "info" } }
+      ]
+    },
+
+    "DONE": {
+      "name": "Complete",
+      "role": "manager",
+      "description": "Task is complete. Code is merged to main, feature branch deleted.",
+      "prompt": "",
+      "allowedTools": [],
+      "transitions": {
+        "onSuccess": null,
+        "onFailure": null
+      }
+    },
+
+    "ESCALATED": {
+      "name": "Escalated",
+      "role": "manager",
+      "description": "Task failed after max retries. Requires manager intervention.",
+      "prompt": "This task has been escalated after repeated failures.\n\n**Options:**\n1. Split into smaller tasks and re-delegate\n2. Reassign to a different developer\n3. Report blocker to user\n\nDecide how to proceed and take action.",
+      "allowedTools": ["mailbox:send", "team", "mailbox:read"],
+      "transitions": {
+        "onSuccess": null,
+        "onFailure": null
+      }
+    }
+  }
+}

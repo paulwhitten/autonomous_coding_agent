@@ -31,12 +31,15 @@ smoke_tests/
     │   └── src/              # (gitignored, copied from ../../src)
     ├── setup.sh              # Setup script
     └── README.md
+...
+
 ```
 
 ## Test Suite Overview
 
 | Test | Duration | What It Tests | Automation |
 |------|----------|---------------|------------|
+| **a2a** | <10 sec | Backend abstraction, message exchange | **Automated** (run-test.sh) |
 | **basic** | ~5 min | Basic task execution, verification | Manual start |
 | **basic-scm** | ~5-10 min | Git operations, incremental commits | Manual start |
 | **intermediate** | ~30-40 min | Progressive multi-step REST API build | Manual start |

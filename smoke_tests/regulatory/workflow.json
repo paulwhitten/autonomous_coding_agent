@@ -19,7 +19,7 @@
       "name": "Requirements Definition",
       "role": "requirements-analyst",
       "description": "RA writes the initial minimal requirement for a CLI application.",
-      "prompt": "You are the Requirements Analyst. Write or update the requirements specification for the task described below.\n\nWork in your workspace/project directory:\n1. Pull latest from origin (there may be prior work from earlier tasks)\n2. Create or update docs/requirements-specification.md with a section for the requirement described in the task details. Include the REQ-HCDP-XXX identifier and a source annotation line: // REQ: REQ-HCDP-XXX\n3. Create or update docs/acceptance-criteria-checklist.md with acceptance criteria for this requirement\n4. Push to origin and report completion\n\nKeep changes focused on the single requirement in this task.",
+      "prompt": "You are the Requirements Analyst. Write or update the requirements specification for the task described below.\n\nWork in your workspace/project directory:\n1. Pull latest from origin (there may be prior work from earlier tasks)\n2. Create or update docs/requirements-specification.md with a section for the requirement described in the task details. Include the REQ-HCDP-XXX identifier\n3. Create or update docs/acceptance-criteria-checklist.md with acceptance criteria for this requirement\n4. Push to origin and report completion\n\nKeep changes focused on the single requirement in this task.",
       "allowedTools": ["terminal", "file_ops", "reporting"],
       "transitions": {
         "onSuccess": "IMPLEMENTING",
@@ -54,14 +54,14 @@
       "name": "Implementation",
       "role": "developer",
       "description": "Developer builds the minimal CLI app per the requirement.",
-      "prompt": "You are the Developer. Implement the requirement described in the task details.\n\nWork in your workspace/project directory:\n1. Pull latest from origin (there may be prior work from earlier tasks)\n2. Read docs/requirements-specification.md to understand the requirement\n3. Create or update source files in src/ with // REQ: REQ-HCDP-XXX annotation on line 1\n4. Create or update test files in tests/ with // REQ: REQ-HCDP-XXX annotation\n5. Create test fixtures in tests/fixtures/ if needed\n6. If package.json does not exist, create it (name: hcdp-validate) with tsconfig.json and jest.config.js\n7. Run npm install && npx jest -- all tests must pass\n8. Create or update evidence/developer-traceability.md mapping each REQ to its files\n9. Commit and push to origin, report completion with the commit hash\n\nEvery .ts file MUST have a // REQ: REQ-HCDP-XXX comment on line 1. Keep changes focused on this task's requirement.\n\nTypeScript strict mode: In catch blocks, the error variable is type 'unknown'. Always use 'catch (err: unknown)' and cast before accessing properties, e.g. '(err as Error).message' or guard with 'if (err instanceof Error)'.",
+      "prompt": "You are the Developer. Implement the requirement described in the task details.\n\nWork in your workspace/project directory:\n1. Pull latest from origin (there may be prior work from earlier tasks)\n2. Read docs/requirements-specification.md to understand the requirement\n3. Create or update source files in src/\n4. Create or update test files in tests/\n5. Create test fixtures in tests/fixtures/ if needed\n6. If package.json does not exist, create it (name: hcdp-validate) with tsconfig.json and jest.config.js\n7. Run npm install && npx jest -- all tests must pass\n8. Create or update evidence/developer-traceability.md mapping each REQ to its implementation commits and files\n9. Commit with a message that includes the REQ-HCDP-XXX identifier (e.g. 'implement REQ-HCDP-001: add CLI skeleton') and push to origin, report completion with the commit hash\n\nKeep changes focused on this task's requirement.\n\nTypeScript strict mode: In catch blocks, the error variable is type 'unknown'. Always use 'catch (err: unknown)' and cast before accessing properties, e.g. '(err as Error).message' or guard with 'if (err instanceof Error)'.",
       "allowedTools": ["terminal", "file_ops", "reporting"],
       "transitions": {
         "onSuccess": "VERIFICATION",
         "onFailure": "IMPLEMENTING"
       },
       "exitEvaluation": {
-        "prompt": "Based on the implementation work just completed, did ALL of the following succeed: (1) source files created or updated with // REQ: REQ-HCDP-XXX annotations on line 1, (2) test files created or updated with // REQ: REQ-HCDP-XXX annotations, (3) all tests pass when running npx jest, (4) developer-traceability.md updated, and (5) changes committed and pushed to origin? Answer with a single word: true or false.",
+        "prompt": "Based on the implementation work just completed, did ALL of the following succeed: (1) source files created or updated, (2) test files created or updated, (3) all tests pass when running npx jest, (4) developer-traceability.md updated, and (5) changes committed with the REQ-HCDP-XXX identifier in the commit message and pushed to origin? Answer with a single word: true or false.",
         "responseFormat": "boolean",
         "mapping": { "true": "success", "false": "failure" },
         "defaultOutcome": "failure"
@@ -89,14 +89,14 @@
       "name": "QA Verification",
       "role": "qa",
       "description": "QA verifies the developer's implementation against the requirements.",
-      "prompt": "You are QA. Verify the implementation for this task's requirement in your workspace/project directory.\n\n1. Pull latest from origin\n2. Record the verified commit: run `git rev-parse HEAD` and save the hash\n3. Check REQ annotations: grep -rn 'REQ-HCDP' src/ tests/ --include='*.ts'\n4. Run tests: npm install && npx jest\n5. Create or update evidence/traceability-matrix.md with a row for this requirement:\n   | Requirement | Source File | Test File | Annotation Found | Tests Pass | Verified Commit | Status |\n6. Create or update evidence/verification-report.md with the verified commit hash and verdict (PASS or FAIL)\n7. If PASS, merge to main: git checkout main && git merge --no-ff -m 'QA verified' && git push origin main\n8. Push evidence to origin and report completion with the commit hash\n\nWhen updating verification, validation, or traceability reports, preserve all existing entries from prior tasks. Append new rows or sections -- do not overwrite past evidence.\n\nYou produce evidence only. You do NOT accept -- that is the RA's job.",
+      "prompt": "You are QA. Verify the implementation for this task's requirement in your workspace/project directory.\n\nIMPORTANT: The workflow engine already ran `git log --oneline --grep='REQ-HCDP-'` before you started and captured the result as reqCommits. Do NOT re-run this command. Reference the captured output to confirm traceability.\n\n1. Check the reqCommits captured value -- it must contain at least one commit line referencing the requirement. If empty, record a FAIL for traceability.\n2. Record the verified commit: run `git rev-parse HEAD` and save the hash\n3. Run tests: npm install && npx jest\n4. Create or update evidence/traceability-matrix.md with a row for this requirement:\n   | Requirement | Implementation Commit | Tests Pass | Verified Commit | Status |\n5. Create or update evidence/verification-report.md with the verified commit hash and verdict (PASS or FAIL)\n6. If PASS, merge to main: git checkout main && git merge --no-ff -m 'QA verified' && git push origin main\n7. Push evidence to origin and report completion with the commit hash\n\nWhen updating verification, validation, or traceability reports, preserve all existing entries from prior tasks. Append new rows or sections -- do not overwrite past evidence.\n\nYou produce evidence only. You do NOT accept -- that is the RA's job.",
       "allowedTools": ["terminal", "file_ops", "reporting"],
       "transitions": {
         "onSuccess": "ACCEPTANCE",
         "onFailure": "REWORK"
       },
       "exitEvaluation": {
-        "prompt": "Based on the QA verification work just completed, did ALL of the following pass: (1) REQ annotation comments found in every source and test file, (2) all unit tests passed, and (3) the verification report verdict is PASS? Answer with a single word: true or false.",
+        "prompt": "Based on the QA verification work just completed, did ALL of the following pass: (1) the captured reqCommits value is non-empty (at least one commit line references a REQ-HCDP-XXX identifier), (2) all unit tests passed, and (3) the verification report verdict is PASS? Answer with a single word: true or false.",
         "responseFormat": "boolean",
         "mapping": { "true": "success", "false": "failure" },
         "defaultOutcome": "failure"
@@ -106,7 +106,8 @@
       "onEntryCommands": [
         { "command": "git fetch origin", "reason": "Fetch latest remote tracking references to see the developer's pushed implementation.", "failOnError": false },
         { "command": "git checkout {{branch}}", "reason": "Switch to the {{branch}} branch. If it does not exist locally, create it with: git checkout -b {{branch}}. If uncommitted changes block checkout, use: git checkout -f {{branch}}.", "failOnError": false },
-        { "command": "git reset --hard origin/{{branch}}", "reason": "Force-sync local branch to match origin/{{branch}}. This ensures you are verifying exactly what the developer pushed, not stale local files.", "failOnError": false }
+        { "command": "git reset --hard origin/{{branch}}", "reason": "Force-sync local branch to match origin/{{branch}}. This ensures you are verifying exactly what the developer pushed, not stale local files.", "failOnError": false },
+        { "command": "git log --oneline --grep='REQ-HCDP-'", "reason": "Capture all commits whose message references a REQ-HCDP-XXX identifier. Output is stored in reqCommits for use by QA and the exit evaluation. Empty output means the developer did not annotate any commit with a requirement ID and is a traceability failure.", "captureAs": "reqCommits", "failOnError": false }
       ],
       "onExitCommands": [
         { "command": "git add -A", "reason": "Stage all new and modified files including evidence documents.", "failOnError": false },
@@ -124,14 +125,14 @@
       "name": "Rework",
       "role": "developer",
       "description": "Developer fixes QA findings.",
-      "prompt": "QA found issues. Read the QA verification report in evidence/, fix each gap, push fixes to origin, and report completion.\n\nTypeScript strict mode: In catch blocks, the error variable is type 'unknown'. Always use 'catch (err: unknown)' and cast before accessing properties, e.g. '(err as Error).message' or guard with 'if (err instanceof Error)'.",
+      "prompt": "QA found issues. Read the QA verification report in evidence/ and fix EACH gap listed.\n\nTRACEABILITY FIX (if reqCommits was empty or missing a required REQ-HCDP-XXX ID):\n  Do NOT amend or rebase existing commits. Instead add an empty traceability commit:\n    git commit --allow-empty -m 'traceability: REQ-HCDP-XXX reference for {{taskId}}'\n  Replace REQ-HCDP-XXX with the actual identifier from docs/requirements-specification.md.\n  Then push: git push origin {{branch}}\n  This is sufficient -- the next QA run will find it via git log --grep.\n\nFor all other QA failures: fix the code or tests, run npx jest to confirm all tests pass, then push.\n\nTypeScript strict mode: In catch blocks, the error variable is type 'unknown'. Always use 'catch (err: unknown)' and cast before accessing properties, e.g. '(err as Error).message' or guard with 'if (err instanceof Error)'.",
       "allowedTools": ["terminal", "file_ops", "reporting"],
       "transitions": {
         "onSuccess": "VERIFICATION",
         "onFailure": "ESCALATED"
       },
       "exitEvaluation": {
-        "prompt": "Based on the rework just completed, did ALL of the following succeed: (1) all QA-identified issues addressed, (2) all tests pass when running npx jest, (3) REQ annotations present in all source and test files, and (4) changes committed and pushed to origin? Answer with a single word: true or false.",
+        "prompt": "Based on the rework just completed, did ALL of the following succeed: (1) all QA-identified issues addressed, (2) all tests pass when running npx jest, (3) at least one commit in the git log references a REQ-HCDP-XXX identifier (check the reworkReqCommits captured value -- it must be non-empty), and (4) changes committed and pushed to origin? Answer with a single word: true or false.",
         "responseFormat": "boolean",
         "mapping": { "true": "success", "false": "failure" },
         "defaultOutcome": "failure"
@@ -140,7 +141,8 @@
       "onEntryCommands": [
         { "command": "git fetch origin", "reason": "Fetch latest remote tracking references to see QA's verification evidence.", "failOnError": false },
         { "command": "git checkout {{branch}}", "reason": "Switch to the {{branch}} branch. If it does not exist locally, create it with: git checkout -b {{branch}}. If uncommitted changes block checkout, use: git checkout -f {{branch}}.", "failOnError": false },
-        { "command": "git reset --hard origin/{{branch}}", "reason": "Force-sync to origin/{{branch}} so you see QA's failure evidence and the current code state.", "failOnError": false }
+        { "command": "git reset --hard origin/{{branch}}", "reason": "Force-sync to origin/{{branch}} so you see QA's failure evidence and the current code state.", "failOnError": false },
+        { "command": "git log --oneline --grep='REQ-HCDP-'", "reason": "Check whether any commit already references a REQ-HCDP-XXX identifier before rework begins. Developer uses this to know if a traceability commit is needed.", "captureAs": "reworkReqCommits", "failOnError": false }
       ],
       "onExitCommands": [
         { "command": "git add -A", "reason": "Stage all rework changes.", "failOnError": false },
@@ -154,7 +156,7 @@
       "name": "Requirements Acceptance",
       "role": "requirements-analyst",
       "description": "RA reviews QA evidence and issues final accept/reject verdict.",
-      "prompt": "You are the RA performing final acceptance for this task's requirement in your workspace/project directory.\n\n1. Pull latest from origin (main branch -- QA merged verified code here)\n2. Read evidence/verification-report.md and evidence/traceability-matrix.md\n3. Note the Verified Commit hash from the QA report\n4. Check annotations: grep -rn 'REQ-HCDP' src/ tests/ --include='*.ts'\n5. Create or update evidence/acceptance-verdict.md with a row for this requirement:\n\n   | Requirement | Criteria Met | Evidence | Verdict |\n\n   Include the verified commit hash and overall verdict (ACCEPTED / REJECTED)\n\n6. Push and report completion.\n\nIf QA verdict was PASS and annotations exist, the verdict should be ACCEPTED.",
+      "prompt": "You are the RA performing final acceptance for this task's requirement in your workspace/project directory.\n\n1. Pull latest from origin (main branch -- QA merged verified code here)\n2. Read evidence/verification-report.md and evidence/traceability-matrix.md\n3. Note the Verified Commit hash from the QA report\n4. Check traceability: run `git log --oneline | grep REQ-HCDP` to confirm commits reference this requirement\n5. Create or update evidence/acceptance-verdict.md with a row for this requirement:\n\n   | Requirement | Criteria Met | Evidence | Verdict |\n\n   Include the verified commit hash and overall verdict (ACCEPTED / REJECTED)\n\n6. Push and report completion.\n\nIf QA verdict was PASS and at least one commit references the requirement identifier, the verdict should be ACCEPTED.",
       "allowedTools": ["terminal", "file_ops", "reporting"],
       "transitions": {
         "onSuccess": "DONE",
@@ -193,7 +195,7 @@
         "onFailure": "ESCALATED"
       },
       "exitEvaluation": {
-        "prompt": "Based on the acceptance rework just completed, did ALL of the following succeed: (1) all RA-identified rejection issues addressed, (2) all tests pass, (3) REQ annotations present in all source and test files, and (4) changes committed and pushed to origin? Answer with a single word: true or false.",
+        "prompt": "Based on the acceptance rework just completed, did ALL of the following succeed: (1) all RA-identified rejection issues addressed, (2) all tests pass, and (3) changes committed and pushed to origin? Answer with a single word: true or false.",
         "responseFormat": "boolean",
         "mapping": { "true": "success", "false": "failure" },
         "defaultOutcome": "failure"

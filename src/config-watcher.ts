@@ -40,16 +40,20 @@ export class ConfigWatcher {
   private debounceMs: number;
   private debounceTimer: NodeJS.Timeout | null = null;
   private rolesDebounceTimer: NodeJS.Timeout | null = null;
+  private teamDebounceTimer: NodeJS.Timeout | null = null;
   private watching: boolean = false;
   private rolesFilePath: string | null = null;
+  private teamFilePath: string | null = null;
   private lastRolesHash: string = '';
+  private lastTeamHash: string = '';
+  private onTeamRosterChange: (() => void) | null = null;
 
   constructor(
     configPath: string,
     initialConfig: AgentConfig,
     callback: ConfigChangeCallback,
     logger: pino.Logger,
-    options?: { pollIntervalMs?: number; debounceMs?: number }
+    options?: { pollIntervalMs?: number; debounceMs?: number; onTeamRosterChange?: () => void }
   ) {
     this.configPath = configPath;
     this.currentConfig = structuredClone(initialConfig);
@@ -57,6 +61,7 @@ export class ConfigWatcher {
     this.logger = logger;
     this.pollIntervalMs = options?.pollIntervalMs ?? 5000;
     this.debounceMs = options?.debounceMs ?? 1000;
+    this.onTeamRosterChange = options?.onTeamRosterChange ?? null;
   }
 
   /** Start watching the config file and roles file for changes */
@@ -86,6 +91,22 @@ export class ConfigWatcher {
       );
     }
 
+    // Resolve and watch team.json if the mailbox repo path is configured
+    this.teamFilePath = this.resolveTeamFile();
+    if (this.teamFilePath && existsSync(this.teamFilePath)) {
+      readFile(this.teamFilePath, 'utf-8')
+        .then(content => { this.lastTeamHash = this.simpleHash(content); })
+        .catch(() => { /* ignore initial read failure */ });
+
+      watchFile(this.teamFilePath, { interval: this.pollIntervalMs }, (_curr, _prev) => {
+        this.handleTeamFileChange();
+      });
+      this.logger.info(
+        { path: this.teamFilePath },
+        'Team roster watcher started (changes will invalidate roster cache)'
+      );
+    }
+
     this.logger.info(
       { path: this.configPath, pollIntervalMs: this.pollIntervalMs },
       'Config watcher started'
@@ -104,6 +125,11 @@ export class ConfigWatcher {
       this.rolesFilePath = null;
     }
 
+    if (this.teamFilePath) {
+      unwatchFile(this.teamFilePath);
+      this.teamFilePath = null;
+    }
+
     if (this.debounceTimer) {
       clearTimeout(this.debounceTimer);
       this.debounceTimer = null;
@@ -112,6 +138,11 @@ export class ConfigWatcher {
     if (this.rolesDebounceTimer) {
       clearTimeout(this.rolesDebounceTimer);
       this.rolesDebounceTimer = null;
+    }
+
+    if (this.teamDebounceTimer) {
+      clearTimeout(this.teamDebounceTimer);
+      this.teamDebounceTimer = null;
     }
 
     this.logger.info('Config watcher stopped');
@@ -300,6 +331,55 @@ export class ConfigWatcher {
       this.logger.error(
         { err: error },
         'Failed to regenerate instructions from roles.json (keeping current instructions)'
+      );
+    }
+  }
+
+  /** Resolve the team.json path from the mailbox repoPath */
+  private resolveTeamFile(): string | null {
+    const repoPath = this.currentConfig.mailbox?.repoPath;
+    if (!repoPath) return null;
+    return path.resolve(repoPath, 'mailbox', 'team.json');
+  }
+
+  /** Handle team.json file change (debounced) */
+  private handleTeamFileChange(): void {
+    if (this.teamDebounceTimer) {
+      clearTimeout(this.teamDebounceTimer);
+    }
+
+    this.teamDebounceTimer = setTimeout(async () => {
+      this.teamDebounceTimer = null;
+      await this.reloadTeam();
+    }, this.debounceMs);
+  }
+
+  /** Re-read team.json and notify via callback if content changed */
+  private async reloadTeam(): Promise<void> {
+    if (!this.teamFilePath) return;
+
+    try {
+      const raw = await readFile(this.teamFilePath, 'utf-8');
+      const newHash = this.simpleHash(raw);
+
+      if (newHash === this.lastTeamHash) {
+        this.logger.debug('Team file touched but content unchanged');
+        return;
+      }
+      this.lastTeamHash = newHash;
+
+      // Validate it's parseable JSON
+      JSON.parse(raw);
+
+      this.logger.info('Team roster changed -- invalidating caches');
+
+      if (this.onTeamRosterChange) {
+        this.onTeamRosterChange();
+      }
+    } catch (error) {
+      this.logger.error(
+        { err: error },
+        'Failed to process team.json change (keeping current roster cache)'
       );
     }
   }

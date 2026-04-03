@@ -72,7 +72,7 @@
       "Fewer than 3 test cases per requirement",
       "Tests only spawn CLI process -- must also have unit tests that import validation functions directly",
       "No TypeScript interfaces defined for data structures",
-      "Missing REQ-HCDP-XXX traceability comments in src/ and tests/",
+      "Missing REQ-HCDP-XXX traceability comments in tests/",
       "Acceptance criteria from the task not fully implemented"
     ]
   },
@@ -81,6 +81,6 @@
     "HIPAA Security Rule (45 CFR 164) compliance required",
     "Medical records validation CLI for healthcare data pipeline",
     "JSONL format: one JSON object per line",
-    "REQ-HCDP-XXX traceability mandatory in all source and test files"
+    "REQ-HCDP-XXX traceability mandatory in all test files"
   ]
 }
