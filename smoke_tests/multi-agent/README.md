@@ -1,68 +1,61 @@
 # Multi-Agent Priority Mailbox Smoke Test
 
-Tests priority mailbox functionality with manager and developer agents interacting.
+Tests priority mailbox functionality: a HIGH priority correction interrupts normal work.
 
 ## Purpose
 
 Validates that:
+
 1. Priority mailboxes work correctly (priority/ > normal/ > background/)
-2. Manager responses (HIGH priority) are processed immediately
-3. Developer can send escalations that get quick responses
-4. Normal work continues in appropriate order
+2. A HIGH priority correction is processed before remaining normal tasks
+3. The correction is applied to previously created code
+4. Normal work continues after the correction is handled
 
 ## Test Scenario
 
-```
+```text
 Timeline:
-1. Manager sends 3 normal tasks to developer
-2. Developer starts Task 1, encounters issue
-3. Developer sends HIGH priority help request to manager
-4. Manager receives help request, responds with HIGH priority guidance
-5. Developer receives manager guidance immediately (skips Tasks 2-3)
-6. Developer applies fix and continues
-7. Developer processes remaining tasks in order
+1. Setup seeds 3 normal tasks in developer mailbox
+2. Developer processes Task 1 (hello.js)
+3. Developer starts Task 2 (math-utils.js with add + multiply)
+4. run-test.sh detects math-utils.js creation, injects HIGH priority correction
+5. Developer processes correction (rename multiply -> multiplyNumbers)
+6. Developer continues with Task 3 (README referencing multiplyNumbers)
 ```
 
 ## Expected Duration
 
-~3-5 minutes
+~5-8 minutes (automated)
 
 ## Running the Test
 
+Fully automated with `run-test.sh`:
+
 ```bash
 cd smoke_tests/multi-agent
+./run-test.sh
+```
+
+The script handles setup, agent startup, timed injection, completion
+waiting, and validation. It exits 0 on success, 1 on failure.
+
+### Manual mode (optional)
+
+For debugging, the individual scripts still work:
+
+```bash
 ./setup.sh
-cd developer/agent
-nohup npm start > ../../test.log 2>&1 &
-```
-
-**Note:** `npm start` automatically:
-1. Compiles TypeScript (`npm run build`)
-2. Runs the compiled JavaScript (`node dist/index.js`)
-
-In another terminal, inject the HIGH priority correction:
-```bash
-cd smoke_tests/multi-agent
+cd developer/agent && npm start &
+# In another terminal, after math-utils.js appears:
 ./inject-manager-correction.sh
-tail -f test.log
 ```
-
-**To stop:**
-```bash
-# Find PID: ps aux | grep "node dist/index.js"
-# Kill: kill <PID>
-```
-
-The test automatically demonstrates:
-- Developer processing normal queue tasks
-- Developer encountering an issue and escalating
-- Manager response arriving in priority queue  
-- Developer immediately handling priority message
-- Developer continuing with remaining normal tasks
 
 ## Success Criteria
 
-- Developer receives priority messages before normal messages
-- Manager responses arrive in priority/ folder
-- Developer processes priority queue first
-- Normal tasks wait while priority items handled
+- All 4 messages processed (3 normal + 1 priority correction)
+- `hello.js` exists and runs
+- `math-utils.js` exports `add` and `multiplyNumbers` (not `multiply`)
+- `multiplyNumbers(4, 5)` returns `20`
+- Agent log shows HIGH priority message detection
+- `README.md` references `multiplyNumbers` (not the pre-correction name)
+- Zero failed work items

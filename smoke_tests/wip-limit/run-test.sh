@@ -111,7 +111,7 @@ echo "Step 5: Checking WIP gate behavior..."
 
 # Check if WIP limit was reached (logged when gate blocks)
 WIP_LOG=$(grep -c "WIP limit reached" test.log 2>/dev/null) || WIP_LOG=0
-INFLIGHT_LOG=$(grep -c "Recorded in-flight delegation" test.log 2>/dev/null) || INFLIGHT_LOG=0
+INFLIGHT_LOG=$(grep -c "WIP: recorded outbound delegation" test.log 2>/dev/null) || INFLIGHT_LOG=0
 
 echo "  In-flight delegations recorded: $INFLIGHT_LOG"
 echo "  WIP limit reached events: $WIP_LOG"
@@ -176,7 +176,7 @@ while [ $(($(date +%s) - COMP_START)) -lt $COMP_WAIT ]; do
     break
   fi
 
-  CLEARED=$(grep -c "Cleared in-flight delegation" test.log 2>/dev/null) || CLEARED=0
+  CLEARED=$(grep -c "WIP: cleared in-flight delegation" test.log 2>/dev/null) || CLEARED=0
   ELAPSED=$(($(date +%s) - COMP_START))
 
   if [ "$CLEARED" -ge 2 ]; then

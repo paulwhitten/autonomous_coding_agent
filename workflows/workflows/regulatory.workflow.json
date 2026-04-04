@@ -1,0 +1,851 @@
+{
+  "$schema": "./workflow.schema.json",
+  "id": "regulatory",
+  "name": "Regulated Development Pipeline",
+  "description": "Industry safety standards compliant pipeline (e.g., IEC 62304, ISO 26262, DO-178C) with static analysis, coverage gates, code review, requirement traceability, and regulatory sign-off.",
+  "version": "2.1.0",
+  "initialState": "ASSIGN",
+  "terminalStates": [
+    "DONE",
+    "ESCALATED"
+  ],
+  "globalContext": {
+    "projectPath": "workspace/project",
+    "buildCommand": "cargo build",
+    "testCommand": "cargo test",
+    "lintCommand": "cargo clippy -- -D warnings",
+    "coverageThreshold": "80",
+    "staticAnalysisCommand": "cargo clippy -- -D warnings -W clippy::pedantic"
+  },
+  "states": {
+    "ASSIGN": {
+      "name": "Task Assignment",
+      "role": "manager",
+      "description": "Manager assigns a task with regulatory requirements and traceability IDs.",
+      "prompt": "Assign a task with regulatory traceability.\n\n**Procedure:**\n1. Use find_agents_by_role('developer') to look up the developer\n2. Call send_message() with:\n   - Branch name: reg/{{taskId}}\n   - Acceptance criteria\n   - Requirement ID(s) for traceability\n   - Risk classification (per applicable industry safety standard)\n\nRules:\n- Priority: NORMAL\n- One task at a time\n- Include requirement ID(s) for regulatory traceability",
+      "allowedTools": [
+        "mailbox:send",
+        "team",
+        "mailbox:read"
+      ],
+      "requiredOutputs": [
+        "assignedTo",
+        "requirementIds"
+      ],
+      "transitions": {
+        "onSuccess": "IMPLEMENTING",
+        "onFailure": "ESCALATED"
+      }
+    },
+    "IMPLEMENTING": {
+      "name": "Implementation",
+      "role": "developer",
+      "description": "Developer implements on a feature branch with safety-critical coding standards.",
+      "prompt": "Implement the assigned task.\n\n**Requirement IDs:** {{requirementIds}}\n\nYou are ALREADY on branch reg/{{taskId}} -- the entry commands created it from main. Do NOT create branches or run git checkout.\n\n**Procedure:**\n1. cd {{projectPath}}\n2. Implement the required changes following deterministic coding practices\n3. Minimize unsafe blocks, document any that are required\n4. Add requirement ID(s) {{requirementIds}} in code comments\n\nQuality gates (build, test, lint) run automatically as exit commands -- fix any errors the gates surface before the state can transition.\n\nDo NOT run git commands (checkout, add, commit, push) -- the entry and exit commands handle all git operations mechanically.\nDo NOT call send_completion_report() -- the workflow engine handles state transitions and routing automatically.",
+      "allowedTools": [
+        "terminal",
+        "file_ops",
+        "reporting",
+        "mailbox:read"
+      ],
+      "requiredOutputs": [
+        "branch",
+        "commitSha"
+      ],
+      "transitions": {
+        "onSuccess": "STATIC_ANALYSIS",
+        "onFailure": "IMPLEMENTING"
+      },
+      "maxRetries": 2,
+      "timeoutMs": 600000,
+      "onEntryCommands": [
+        {
+          "command": "git fetch origin",
+          "reason": "Fetch latest remote refs.",
+          "failOnError": false
+        },
+        {
+          "command": "git checkout main && git pull origin main",
+          "reason": "Sync main before branching.",
+          "failOnError": true
+        },
+        {
+          "command": "git checkout -b reg/{{taskId}} || git checkout reg/{{taskId}}",
+          "reason": "Create feature branch or switch to it.",
+          "failOnError": true
+        }
+      ],
+      "onExitCommands": [
+        {
+          "command": "cd {{projectPath}} && {{buildCommand}}",
+          "reason": "Quality gate: build must pass.",
+          "failOnError": true
+        },
+        {
+          "command": "cd {{projectPath}} && {{testCommand}}",
+          "reason": "Quality gate: tests must pass.",
+          "failOnError": true
+        },
+        {
+          "command": "cd {{projectPath}} && {{lintCommand}}",
+          "reason": "Quality gate: lint must pass.",
+          "failOnError": true
+        },
+        {
+          "command": "git add -A",
+          "reason": "Stage all changes.",
+          "failOnError": false
+        },
+        {
+          "command": "git diff --cached --quiet || git commit -m '{{role}}: {{state}} for {{taskId}}'",
+          "reason": "Commit if changes exist.",
+          "failOnError": false
+        },
+        {
+          "command": "git rev-parse HEAD",
+          "reason": "Capture commit SHA.",
+          "captureAs": "commitSha"
+        },
+        {
+          "command": "git push origin HEAD:reg/{{taskId}}",
+          "reason": "Push to origin.",
+          "failOnError": true
+        }
+      ],
+      "exitEvaluation": {
+        "prompt": "Based on the implementation just completed, was the code implemented with requirement ID annotations and following coding standards? Answer with a single word: true or false.",
+        "responseFormat": "boolean",
+        "mapping": {
+          "true": "success",
+          "false": "failure"
+        },
+        "defaultOutcome": "failure"
+      },
+      "exitActions": [
+        {
+          "type": "set_context",
+          "params": {
+            "key": "branch",
+            "value": "reg/{{taskId}}"
+          }
+        },
+        {
+          "type": "set_context",
+          "params": {
+            "key": "implementationComplete",
+            "value": "true"
+          }
+        },
+        {
+          "type": "log",
+          "params": {
+            "message": "Implementation pushed for task {{taskId}}",
+            "level": "info"
+          }
+        }
+      ]
+    },
+    "STATIC_ANALYSIS": {
+      "name": "Static Analysis Gate",
+      "role": "qa",
+      "description": "QA runs pedantic static analysis on the feature branch.",
+      "prompt": "Run static analysis on branch reg/{{taskId}}. The entry commands have already checked out and synced this branch.\n\n**Procedure:**\n1. cd {{projectPath}}\n2. Run: {{staticAnalysisCommand}}\n3. Run: cargo audit (if available)\n4. Check for unsafe blocks and document each one\n5. Check that no TODO or FIXME comments remain\n\n**Pass criteria:**\n- Zero clippy warnings (pedantic mode)\n- No unaudited unsafe blocks\n- No TODO/FIXME in changed files\n\nDo NOT run git commands (checkout, add, commit, push) -- the entry and exit commands handle all git operations mechanically.\nDo NOT call send_completion_report() -- the workflow engine handles state transitions and routing automatically.",
+      "allowedTools": [
+        "terminal",
+        "file_ops",
+        "reporting",
+        "mailbox:read"
+      ],
+      "requiredOutputs": [
+        "staticAnalysisResults",
+        "verdict"
+      ],
+      "transitions": {
+        "onSuccess": "UNIT_TESTING",
+        "onFailure": "REWORK_STATIC"
+      },
+      "maxRetries": 1,
+      "onEntryCommands": [
+        {
+          "command": "git fetch origin",
+          "reason": "Fetch latest remote refs.",
+          "failOnError": false
+        },
+        {
+          "command": "git checkout reg/{{taskId}} || git checkout -b reg/{{taskId}} origin/reg/{{taskId}}",
+          "reason": "Switch to feature branch.",
+          "failOnError": true
+        },
+        {
+          "command": "git reset --hard origin/reg/{{taskId}}",
+          "reason": "Force-sync to verify exactly what was pushed.",
+          "failOnError": true
+        },
+        {
+          "command": "git rev-parse HEAD",
+          "reason": "Record the exact commit being verified.",
+          "captureAs": "staticAnalysisSha"
+        }
+      ],
+      "onExitCommands": [
+        {
+          "command": "git add -A",
+          "reason": "Stage all changes.",
+          "failOnError": false
+        },
+        {
+          "command": "git diff --cached --quiet || git commit -m '{{role}}: {{state}} for {{taskId}}'",
+          "reason": "Commit if changes exist.",
+          "failOnError": false
+        },
+        {
+          "command": "git rev-parse HEAD",
+          "reason": "Capture commit SHA.",
+          "captureAs": "commitSha"
+        },
+        {
+          "command": "git push origin HEAD:reg/{{taskId}}",
+          "reason": "Push to origin.",
+          "failOnError": true
+        }
+      ],
+      "exitEvaluation": {
+        "prompt": "Based on the static analysis just completed, did all checks pass with zero warnings and no unaudited unsafe blocks? Answer with a single word: true or false.",
+        "responseFormat": "boolean",
+        "mapping": {
+          "true": "success",
+          "false": "failure"
+        },
+        "defaultOutcome": "failure"
+      }
+    },
+    "REWORK_STATIC": {
+      "name": "Rework (Static Analysis)",
+      "role": "developer",
+      "description": "Developer fixes static analysis issues.",
+      "prompt": "Fix static analysis issues on branch reg/{{taskId}}. The entry commands have checked it out.\n\n**Issues:** {{staticAnalysisResults}}\n\n**Procedure:**\n1. cd {{projectPath}}\n2. Address each issue reported by static analysis\n3. Run: {{staticAnalysisCommand}} -- verify clean\n\nDo NOT run git commands (checkout, add, commit, push) -- the entry and exit commands handle all git operations mechanically.\nDo NOT call send_completion_report() -- the workflow engine handles state transitions and routing automatically.",
+      "allowedTools": [
+        "terminal",
+        "file_ops",
+        "reporting",
+        "mailbox:read"
+      ],
+      "requiredOutputs": [
+        "commitSha"
+      ],
+      "transitions": {
+        "onSuccess": "STATIC_ANALYSIS",
+        "onFailure": "ESCALATED"
+      },
+      "maxRetries": 2,
+      "onEntryCommands": [
+        {
+          "command": "git fetch origin",
+          "reason": "Fetch latest remote refs.",
+          "failOnError": false
+        },
+        {
+          "command": "git checkout reg/{{taskId}}",
+          "reason": "Switch to feature branch.",
+          "failOnError": true
+        },
+        {
+          "command": "git reset --hard origin/reg/{{taskId}}",
+          "reason": "Force-sync to latest state.",
+          "failOnError": true
+        }
+      ],
+      "onExitCommands": [
+        {
+          "command": "cd {{projectPath}} && {{buildCommand}}",
+          "reason": "Quality gate: build must pass.",
+          "failOnError": true
+        },
+        {
+          "command": "cd {{projectPath}} && {{testCommand}}",
+          "reason": "Quality gate: tests must pass.",
+          "failOnError": true
+        },
+        {
+          "command": "cd {{projectPath}} && {{lintCommand}}",
+          "reason": "Quality gate: lint must pass.",
+          "failOnError": true
+        },
+        {
+          "command": "git add -A",
+          "reason": "Stage all changes.",
+          "failOnError": false
+        },
+        {
+          "command": "git diff --cached --quiet || git commit -m '{{role}}: {{state}} for {{taskId}}'",
+          "reason": "Commit if changes exist.",
+          "failOnError": false
+        },
+        {
+          "command": "git rev-parse HEAD",
+          "reason": "Capture commit SHA.",
+          "captureAs": "commitSha"
+        },
+        {
+          "command": "git push origin HEAD:reg/{{taskId}}",
+          "reason": "Push to origin.",
+          "failOnError": true
+        }
+      ]
+    },
+    "UNIT_TESTING": {
+      "name": "Unit Testing Gate",
+      "role": "qa",
+      "description": "QA runs unit tests with coverage verification.",
+      "prompt": "Run unit tests with coverage on branch reg/{{taskId}}. The entry commands have already checked out and synced this branch.\n\n**Procedure:**\n1. cd {{projectPath}}\n2. Run: {{testCommand}}\n3. Run coverage measurement (cargo tarpaulin or similar if available)\n4. Verify coverage meets threshold: {{coverageThreshold}}%\n\n**Pass criteria:**\n- All tests pass\n- Coverage >= {{coverageThreshold}}%\n\nDo NOT run git commands (checkout, add, commit, push) -- the entry and exit commands handle all git operations mechanically.\nDo NOT call send_completion_report() -- the workflow engine handles state transitions and routing automatically.",
+      "allowedTools": [
+        "terminal",
+        "file_ops",
+        "reporting",
+        "mailbox:read"
+      ],
+      "requiredOutputs": [
+        "testResults",
+        "coveragePercent",
+        "verdict"
+      ],
+      "transitions": {
+        "onSuccess": "CODE_REVIEW",
+        "onFailure": "REWORK_TESTS"
+      },
+      "maxRetries": 1,
+      "onEntryCommands": [
+        {
+          "command": "git fetch origin",
+          "reason": "Fetch latest remote refs.",
+          "failOnError": false
+        },
+        {
+          "command": "git checkout reg/{{taskId}} || git checkout -b reg/{{taskId}} origin/reg/{{taskId}}",
+          "reason": "Switch to feature branch.",
+          "failOnError": true
+        },
+        {
+          "command": "git reset --hard origin/reg/{{taskId}}",
+          "reason": "Force-sync to verify exactly what was pushed.",
+          "failOnError": true
+        },
+        {
+          "command": "git rev-parse HEAD",
+          "reason": "Record the exact commit being verified.",
+          "captureAs": "unitTestSha"
+        }
+      ],
+      "onExitCommands": [
+        {
+          "command": "git add -A",
+          "reason": "Stage all changes.",
+          "failOnError": false
+        },
+        {
+          "command": "git diff --cached --quiet || git commit -m '{{role}}: {{state}} for {{taskId}}'",
+          "reason": "Commit if changes exist.",
+          "failOnError": false
+        },
+        {
+          "command": "git rev-parse HEAD",
+          "reason": "Capture commit SHA.",
+          "captureAs": "commitSha"
+        },
+        {
+          "command": "git push origin HEAD:reg/{{taskId}}",
+          "reason": "Push to origin.",
+          "failOnError": true
+        }
+      ],
+      "exitEvaluation": {
+        "prompt": "Based on the unit testing just completed, did ALL tests pass and is coverage >= {{coverageThreshold}}%? Answer with a single word: true or false.",
+        "responseFormat": "boolean",
+        "mapping": {
+          "true": "success",
+          "false": "failure"
+        },
+        "defaultOutcome": "failure"
+      }
+    },
+    "REWORK_TESTS": {
+      "name": "Rework (Test Coverage)",
+      "role": "developer",
+      "description": "Developer adds tests to meet coverage threshold.",
+      "prompt": "Improve test coverage on branch reg/{{taskId}}. The entry commands have checked it out.\n\n**Current coverage:** {{coveragePercent}}%\n**Required:** {{coverageThreshold}}%\n**Test Results:** {{testResults}}\n\n**Procedure:**\n1. cd {{projectPath}}\n2. Add missing unit tests for uncovered code paths\n3. Fix any failing tests\n4. Run: {{testCommand}} -- verify improvement\n\nDo NOT run git commands (checkout, add, commit, push) -- the entry and exit commands handle all git operations mechanically.\nDo NOT call send_completion_report() -- the workflow engine handles state transitions and routing automatically.",
+      "allowedTools": [
+        "terminal",
+        "file_ops",
+        "reporting",
+        "mailbox:read"
+      ],
+      "requiredOutputs": [
+        "commitSha"
+      ],
+      "transitions": {
+        "onSuccess": "UNIT_TESTING",
+        "onFailure": "ESCALATED"
+      },
+      "maxRetries": 2,
+      "onEntryCommands": [
+        {
+          "command": "git fetch origin",
+          "reason": "Fetch latest remote refs.",
+          "failOnError": false
+        },
+        {
+          "command": "git checkout reg/{{taskId}}",
+          "reason": "Switch to feature branch.",
+          "failOnError": true
+        },
+        {
+          "command": "git reset --hard origin/reg/{{taskId}}",
+          "reason": "Force-sync to latest state.",
+          "failOnError": true
+        }
+      ],
+      "onExitCommands": [
+        {
+          "command": "cd {{projectPath}} && {{buildCommand}}",
+          "reason": "Quality gate: build must pass.",
+          "failOnError": true
+        },
+        {
+          "command": "cd {{projectPath}} && {{testCommand}}",
+          "reason": "Quality gate: tests must pass.",
+          "failOnError": true
+        },
+        {
+          "command": "cd {{projectPath}} && {{lintCommand}}",
+          "reason": "Quality gate: lint must pass.",
+          "failOnError": true
+        },
+        {
+          "command": "git add -A",
+          "reason": "Stage all changes.",
+          "failOnError": false
+        },
+        {
+          "command": "git diff --cached --quiet || git commit -m '{{role}}: {{state}} for {{taskId}}'",
+          "reason": "Commit if changes exist.",
+          "failOnError": false
+        },
+        {
+          "command": "git rev-parse HEAD",
+          "reason": "Capture commit SHA.",
+          "captureAs": "commitSha"
+        },
+        {
+          "command": "git push origin HEAD:reg/{{taskId}}",
+          "reason": "Push to origin.",
+          "failOnError": true
+        }
+      ]
+    },
+    "CODE_REVIEW": {
+      "name": "Code Review",
+      "role": "qa",
+      "description": "QA performs detailed code review against coding standards.",
+      "prompt": "Review code changes on branch reg/{{taskId}} against main. The entry commands have already checked out and synced this branch.\n\n**Procedure:**\n1. cd {{projectPath}}\n2. git diff main...reg/{{taskId}} -- '*.rs' '*.toml'\n3. Review each changed file for:\n   - Rust idioms: ownership, lifetimes, Result<T,E> error handling\n   - Safety: unsafe blocks documented, minimal scope\n   - Defensive coding practices\n   - Coding standards compliance\n   - Requirement IDs in comments: {{requirementIds}}\n4. Check commit messages reference requirement IDs\n\n**Pass criteria:**\n- Follows coding standards\n- Safety-critical sections documented\n- Requirement traceability present\n\nDo NOT run git commands (checkout, add, commit, push) -- the entry and exit commands handle all git operations mechanically.\nDo NOT call send_completion_report() -- the workflow engine handles state transitions and routing automatically.",
+      "allowedTools": [
+        "terminal",
+        "file_ops",
+        "reporting",
+        "mailbox:read"
+      ],
+      "requiredOutputs": [
+        "reviewFindings",
+        "verdict"
+      ],
+      "transitions": {
+        "onSuccess": "REQUIREMENT_TRACE",
+        "onFailure": "REWORK_REVIEW"
+      },
+      "onEntryCommands": [
+        {
+          "command": "git fetch origin",
+          "reason": "Fetch latest remote refs.",
+          "failOnError": false
+        },
+        {
+          "command": "git checkout reg/{{taskId}} || git checkout -b reg/{{taskId}} origin/reg/{{taskId}}",
+          "reason": "Switch to feature branch.",
+          "failOnError": true
+        },
+        {
+          "command": "git reset --hard origin/reg/{{taskId}}",
+          "reason": "Force-sync to verify exactly what was pushed.",
+          "failOnError": true
+        },
+        {
+          "command": "git rev-parse HEAD",
+          "reason": "Record the exact commit being verified.",
+          "captureAs": "codeReviewSha"
+        }
+      ],
+      "onExitCommands": [
+        {
+          "command": "git add -A",
+          "reason": "Stage all changes.",
+          "failOnError": false
+        },
+        {
+          "command": "git diff --cached --quiet || git commit -m '{{role}}: {{state}} for {{taskId}}'",
+          "reason": "Commit if changes exist.",
+          "failOnError": false
+        },
+        {
+          "command": "git rev-parse HEAD",
+          "reason": "Capture commit SHA.",
+          "captureAs": "commitSha"
+        },
+        {
+          "command": "git push origin HEAD:reg/{{taskId}}",
+          "reason": "Push to origin.",
+          "failOnError": true
+        }
+      ],
+      "exitEvaluation": {
+        "prompt": "Based on the code review just completed, does the code follow coding standards with safety-critical sections documented and requirement traceability present? Answer with a single word: true or false.",
+        "responseFormat": "boolean",
+        "mapping": {
+          "true": "success",
+          "false": "failure"
+        },
+        "defaultOutcome": "failure"
+      }
+    },
+    "REWORK_REVIEW": {
+      "name": "Rework (Code Review)",
+      "role": "developer",
+      "description": "Developer addresses code review findings.",
+      "prompt": "Address code review findings on branch reg/{{taskId}}. The entry commands have checked it out.\n\n**Review Findings:** {{reviewFindings}}\n\n**Procedure:**\n1. cd {{projectPath}}\n2. Address each finding from the code review\n\nQuality gates (build, test, lint) run automatically as exit commands.\n\nDo NOT run git commands (checkout, add, commit, push) -- the entry and exit commands handle all git operations mechanically.\nDo NOT call send_completion_report() -- the workflow engine handles state transitions and routing automatically.",
+      "allowedTools": [
+        "terminal",
+        "file_ops",
+        "reporting",
+        "mailbox:read"
+      ],
+      "requiredOutputs": [
+        "commitSha"
+      ],
+      "transitions": {
+        "onSuccess": "CODE_REVIEW",
+        "onFailure": "ESCALATED"
+      },
+      "maxRetries": 2,
+      "onEntryCommands": [
+        {
+          "command": "git fetch origin",
+          "reason": "Fetch latest remote refs.",
+          "failOnError": false
+        },
+        {
+          "command": "git checkout reg/{{taskId}}",
+          "reason": "Switch to feature branch.",
+          "failOnError": true
+        },
+        {
+          "command": "git reset --hard origin/reg/{{taskId}}",
+          "reason": "Force-sync to latest state.",
+          "failOnError": true
+        }
+      ],
+      "onExitCommands": [
+        {
+          "command": "cd {{projectPath}} && {{buildCommand}}",
+          "reason": "Quality gate: build must pass.",
+          "failOnError": true
+        },
+        {
+          "command": "cd {{projectPath}} && {{testCommand}}",
+          "reason": "Quality gate: tests must pass.",
+          "failOnError": true
+        },
+        {
+          "command": "cd {{projectPath}} && {{lintCommand}}",
+          "reason": "Quality gate: lint must pass.",
+          "failOnError": true
+        },
+        {
+          "command": "git add -A",
+          "reason": "Stage all changes.",
+          "failOnError": false
+        },
+        {
+          "command": "git diff --cached --quiet || git commit -m '{{role}}: {{state}} for {{taskId}}'",
+          "reason": "Commit if changes exist.",
+          "failOnError": false
+        },
+        {
+          "command": "git rev-parse HEAD",
+          "reason": "Capture commit SHA.",
+          "captureAs": "commitSha"
+        },
+        {
+          "command": "git push origin HEAD:reg/{{taskId}}",
+          "reason": "Push to origin.",
+          "failOnError": true
+        }
+      ]
+    },
+    "REQUIREMENT_TRACE": {
+      "name": "Requirement Traceability",
+      "role": "qa",
+      "description": "QA verifies requirement IDs are traced through code, tests, and commits.",
+      "prompt": "Verify requirement traceability for {{requirementIds}} on branch reg/{{taskId}}. The entry commands have already checked out and synced this branch.\n\n**Procedure:**\n1. cd {{projectPath}}\n2. Search for each requirement ID in source code: grep -rn 'REQ-ID' crates/\n3. Search for each requirement ID in test code: grep -rn 'REQ-ID' tests/\n4. Search commit messages: git log main..reg/{{taskId}} --oneline\n5. Build traceability matrix: Requirement -> Source file -> Test file -> Commit\n\n**Pass criteria:**\n- Each requirement ID appears in at least one source file\n- Each requirement ID appears in at least one test\n- At least one commit message references requirements\n\nDo NOT run git commands (checkout, add, commit, push) -- the entry and exit commands handle all git operations mechanically.\nDo NOT call send_completion_report() -- the workflow engine handles state transitions and routing automatically.",
+      "allowedTools": [
+        "terminal",
+        "file_ops",
+        "reporting",
+        "mailbox:read"
+      ],
+      "requiredOutputs": [
+        "traceabilityMatrix",
+        "verdict"
+      ],
+      "transitions": {
+        "onSuccess": "REGULATORY_SIGNOFF",
+        "onFailure": "REWORK_TRACE"
+      },
+      "onEntryCommands": [
+        {
+          "command": "git fetch origin",
+          "reason": "Fetch latest remote refs.",
+          "failOnError": false
+        },
+        {
+          "command": "git checkout reg/{{taskId}} || git checkout -b reg/{{taskId}} origin/reg/{{taskId}}",
+          "reason": "Switch to feature branch.",
+          "failOnError": true
+        },
+        {
+          "command": "git reset --hard origin/reg/{{taskId}}",
+          "reason": "Force-sync to verify exactly what was pushed.",
+          "failOnError": true
+        },
+        {
+          "command": "git rev-parse HEAD",
+          "reason": "Record the exact commit being verified.",
+          "captureAs": "traceabilitySha"
+        }
+      ],
+      "onExitCommands": [
+        {
+          "command": "git add -A",
+          "reason": "Stage all changes.",
+          "failOnError": false
+        },
+        {
+          "command": "git diff --cached --quiet || git commit -m '{{role}}: {{state}} for {{taskId}}'",
+          "reason": "Commit if changes exist.",
+          "failOnError": false
+        },
+        {
+          "command": "git rev-parse HEAD",
+          "reason": "Capture commit SHA.",
+          "captureAs": "commitSha"
+        },
+        {
+          "command": "git push origin HEAD:reg/{{taskId}}",
+          "reason": "Push to origin.",
+          "failOnError": true
+        }
+      ],
+      "exitEvaluation": {
+        "prompt": "Based on the traceability verification, does each requirement ID appear in at least one source file and one test file, with commit messages referencing requirements? Answer with a single word: true or false.",
+        "responseFormat": "boolean",
+        "mapping": {
+          "true": "success",
+          "false": "failure"
+        },
+        "defaultOutcome": "failure"
+      }
+    },
+    "REWORK_TRACE": {
+      "name": "Rework (Traceability)",
+      "role": "developer",
+      "description": "Developer adds missing requirement traceability annotations.",
+      "prompt": "Add missing requirement traceability on branch reg/{{taskId}}. The entry commands have checked it out.\n\n**Missing traceability:** {{traceabilityMatrix}}\n**Requirement IDs:** {{requirementIds}}\n\n**Procedure:**\n1. cd {{projectPath}}\n2. Add requirement ID comments to source files that implement each requirement\n3. Add requirement ID comments to test files that validate each requirement\n4. Ensure test names reference the requirement being tested\n\nDo NOT run git commands (checkout, add, commit, push) -- the entry and exit commands handle all git operations mechanically.\nDo NOT call send_completion_report() -- the workflow engine handles state transitions and routing automatically.",
+      "allowedTools": [
+        "terminal",
+        "file_ops",
+        "reporting",
+        "mailbox:read"
+      ],
+      "requiredOutputs": [
+        "commitSha"
+      ],
+      "transitions": {
+        "onSuccess": "REQUIREMENT_TRACE",
+        "onFailure": "ESCALATED"
+      },
+      "maxRetries": 1,
+      "onEntryCommands": [
+        {
+          "command": "git fetch origin",
+          "reason": "Fetch latest remote refs.",
+          "failOnError": false
+        },
+        {
+          "command": "git checkout reg/{{taskId}}",
+          "reason": "Switch to feature branch.",
+          "failOnError": true
+        },
+        {
+          "command": "git reset --hard origin/reg/{{taskId}}",
+          "reason": "Force-sync to latest state.",
+          "failOnError": true
+        }
+      ],
+      "onExitCommands": [
+        {
+          "command": "git add -A",
+          "reason": "Stage all changes.",
+          "failOnError": false
+        },
+        {
+          "command": "git diff --cached --quiet || git commit -m '{{role}}: {{state}} for {{taskId}}'",
+          "reason": "Commit if changes exist.",
+          "failOnError": false
+        },
+        {
+          "command": "git rev-parse HEAD",
+          "reason": "Capture commit SHA.",
+          "captureAs": "commitSha"
+        },
+        {
+          "command": "git push origin HEAD:reg/{{taskId}}",
+          "reason": "Push to origin.",
+          "failOnError": true
+        }
+      ]
+    },
+    "REGULATORY_SIGNOFF": {
+      "name": "Regulatory Sign-Off",
+      "role": "manager",
+      "description": "Manager reviews the full evidence package and signs off for regulatory compliance.",
+      "prompt": "Review the full evidence package for regulatory sign-off.\n\n**Required evidence:**\n- Static analysis: clean (pedantic mode)\n- Test coverage: >= {{coverageThreshold}}%\n- Code review: passed\n- Requirement traceability: complete for {{requirementIds}}\n\n**Procedure:**\n1. Review all QA reports for this task\n2. Verify all gates passed without waivers\n3. Approve the merge by sending to QA for final merge\n\nIf any evidence is missing or inadequate, escalate.\n\nDo NOT call send_completion_report() -- the workflow engine handles routing.",
+      "allowedTools": [
+        "mailbox:send",
+        "mailbox:read",
+        "team",
+        "reporting"
+      ],
+      "requiredOutputs": [
+        "signoffVerdict"
+      ],
+      "transitions": {
+        "onSuccess": "MERGING",
+        "onFailure": "ESCALATED"
+      },
+      "exitEvaluation": {
+        "prompt": "Based on the regulatory review just completed, is the evidence package complete and adequate for sign-off (all gates passed, traceability complete, no waivers needed)? Answer with a single word: true or false.",
+        "responseFormat": "boolean",
+        "mapping": {
+          "true": "success",
+          "false": "failure"
+        },
+        "defaultOutcome": "failure"
+      }
+    },
+    "MERGING": {
+      "name": "Merge to Main",
+      "role": "qa",
+      "description": "Fully mechanical merge. Entry commands merge the validated branch to main and capture the merge SHA. Exit commands clean up the feature branch. No LLM work required.",
+      "prompt": "",
+      "allowedTools": [],
+      "transitions": {
+        "onSuccess": "DONE",
+        "onFailure": "MERGING"
+      },
+      "maxRetries": 2,
+      "onEntryCommands": [
+        {
+          "command": "git fetch origin",
+          "reason": "Fetch latest remote refs.",
+          "failOnError": false
+        },
+        {
+          "command": "git checkout main",
+          "reason": "Switch to main.",
+          "failOnError": true
+        },
+        {
+          "command": "git pull origin main",
+          "reason": "Ensure main is current.",
+          "failOnError": false
+        },
+        {
+          "command": "git merge reg/{{taskId}} --no-ff -m 'Merge reg/{{taskId}}: {{taskId}}'",
+          "reason": "Merge validated branch.",
+          "failOnError": true
+        },
+        {
+          "command": "git push origin main",
+          "reason": "Push merge commit.",
+          "failOnError": true
+        },
+        {
+          "command": "git rev-parse HEAD",
+          "reason": "Capture merge SHA.",
+          "captureAs": "mergeSha"
+        }
+      ],
+      "onExitCommands": [
+        {
+          "command": "git branch -d reg/{{taskId}}",
+          "reason": "Delete local feature branch.",
+          "failOnError": false
+        },
+        {
+          "command": "git push origin --delete reg/{{taskId}}",
+          "reason": "Delete remote feature branch.",
+          "failOnError": false
+        }
+      ],
+      "exitActions": [
+        {
+          "type": "set_context",
+          "params": {
+            "key": "mergeComplete",
+            "value": "true"
+          }
+        },
+        {
+          "type": "log",
+          "params": {
+            "message": "Branch merged to main for task {{taskId}}",
+            "level": "info"
+          }
+        }
+      ]
+    },
+    "DONE": {
+      "name": "Complete",
+      "role": "manager",
+      "description": "Task is complete. All regulatory gates passed. Code merged to main.",
+      "prompt": "",
+      "allowedTools": [],
+      "transitions": {
+        "onSuccess": null,
+        "onFailure": null
+      }
+    },
+    "ESCALATED": {
+      "name": "Escalated",
+      "role": "manager",
+      "description": "Task failed a regulatory gate after max retries. Requires manager intervention.",
+      "prompt": "This task has been escalated after failing a regulatory gate.\n\n**Options:**\n1. Split into smaller tasks and re-delegate\n2. Reassign to a different developer\n3. Request a waiver (document justification)\n4. Report blocker to user\n\nDecide how to proceed.",
+      "allowedTools": [
+        "mailbox:send",
+        "team",
+        "mailbox:read"
+      ],
+      "transitions": {
+        "onSuccess": null,
+        "onFailure": null
+      }
+    }
+  }
+}

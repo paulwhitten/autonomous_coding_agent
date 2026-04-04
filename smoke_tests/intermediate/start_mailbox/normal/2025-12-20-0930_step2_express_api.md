@@ -1,51 +1,49 @@
 Date: 2026-02-01T00:01:00Z
-From: test_manager
-To: developer
-Subject: Step 2 - Refactor to Express REST API with OpenAPI
+From: localhost_manager
+To: smoke-test-agent_developer
+Subject: Step 2 - Express REST API
 Priority: NORMAL
+MessageType: unstructured
+---
 
-Please refactor the Hello World function into a full REST API with Express.js and OpenAPI documentation.
+Wrap the existing `sayHello` function in an Express REST API.
 
 ## Requirements
 
-### 1. Express.js API
-- Install express (`npm install express`)
-- Create `src/server.js` with an Express server on port 3000
-- Refactor the `sayHello` function to support both generic and personalized greetings
+### 1. Install Express
 
-### 2. API Endpoints
+Run `npm install express` in the project root.
 
-**Endpoint 1: Generic Hello (GET)**
-- Path: `GET /api/hello`
-- Response: `{"message": "Hello, World!"}`
+### 2. Create `src/app.js`
 
-**Endpoint 2: Personalized Hello (POST)**
-- Path: `POST /api/hello`
-- Request body: `{"name": "Alice"}`
-- Response: `{"message": "Hello, Alice!"}`
-- If no name provided, default to "World"
+Export an Express app (do **not** call `app.listen()` in this file -- that goes in `src/server.js`). Define two routes:
 
-### 3. OpenAPI Documentation
-- Install swagger dependencies: `npm install swagger-ui-express swagger-jsdoc`
-- Create `openapi.yaml` or use JSDoc annotations
-- Document both endpoints with request/response schemas
-- Serve Swagger UI at `/api-docs`
+**GET /api/hello**
+- Response: `{ "message": "Hello, World!" }` (status 200)
 
-### 4. Project Structure
-```
-src/
-  hello.js       (refactored to support name parameter)
-  server.js      (Express app with routes)
-openapi.yaml     (API documentation)
-package.json     (with start script: "node src/server.js")
-```
+**POST /api/hello**
+- Accepts JSON body `{ "name": "<string>" }`
+- Response: `{ "message": "Hello, <name>!" }` (status 200)
+- If body is missing or `name` is empty/absent, respond with `{ "message": "Hello, World!" }`
+- Use `express.json()` middleware for body parsing
+
+Both routes must call `sayHello` from `./hello.js`.
+
+### 3. Create `src/server.js`
+
+Import `app` from `./app.js` and call `app.listen(3000)`. Add a console.log confirming the port. Set `module.exports = app` for testing.
+
+### 4. Update `package.json`
+
+Set `"start": "node src/server.js"` in scripts.
 
 ## Acceptance Criteria
-- Server starts and responds on port 3000
-- GET /api/hello returns generic greeting
-- POST /api/hello with {"name": "Bob"} returns "Hello, Bob!"
-- OpenAPI docs accessible at /api-docs
-- All endpoints documented in OpenAPI spec
+
+- `npm start` starts the server on port 3000 without errors
+- `curl http://localhost:3000/api/hello` returns `{"message":"Hello, World!"}`
+- `curl -X POST -H "Content-Type: application/json" -d '{"name":"Bob"}' http://localhost:3000/api/hello` returns `{"message":"Hello, Bob!"}`
+- `src/app.js` exports the Express app without calling `.listen()`
 
 ## Notes
-Build on your existing hello.js from Step 1. The function should now accept an optional name parameter.
+
+Step 2 of 4. Separating `app.js` from `server.js` lets step 4 test the app with supertest without port conflicts.

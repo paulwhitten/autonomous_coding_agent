@@ -53,7 +53,7 @@ else
 fi
 
 # Check agent started
-STARTED=$(grep -c "Agent loop started\|Starting agent\|Checking mailbox" "$LOG" 2>/dev/null) || STARTED=0
+STARTED=$(grep -c "Agent initialized successfully\|Agent loop started\|Starting agent\|Check Interval" "$LOG" 2>/dev/null) || STARTED=0
 if [ "$STARTED" -ge 1 ]; then
   check "Agent main loop executed" 0 "Found $STARTED lifecycle events"
 else
@@ -88,19 +88,19 @@ else
   check "Developer received 2 delegated tasks" 1 "No messages in developer mailbox"
 fi
 
-# Look for delegation artifacts in log
-DELEGATE_LOG=$(grep -c "Sending.*assignment\|Delegating\|handleWorkflowTransition\|workflow.*ASSIGN.*IMPLEMENTING" "$LOG" 2>/dev/null) || DELEGATE_LOG=0
+# Look for delegation artifacts in log (workflow-based routing)
+DELEGATE_LOG=$(grep -c "Peer-routed workflow assignment\|routed workflow assignment to target role\|mechanical routing\|Empty prompt -- mechanical routing" "$LOG" 2>/dev/null) || DELEGATE_LOG=0
 if [ "$DELEGATE_LOG" -ge 1 ]; then
   check "Delegation activity logged" 0 "Found $DELEGATE_LOG delegation events"
 else
-  check "Delegation activity logged" 2 "No delegation events found (may use different log keys)"
+  check "Delegation activity logged" 2 "No delegation events found (check log keys)"
 fi
 echo ""
 
 # -- Category C: WIP Tracking --
 echo "Category C: WIP Tracking"
 
-INFLIGHT=$(grep -c "Recorded in-flight delegation\|recordInFlightDelegation\|in.flight" "$LOG" 2>/dev/null) || INFLIGHT=0
+INFLIGHT=$(grep -c "WIP: recorded outbound delegation\|Recorded in-flight delegation\|recordInFlightDelegation" "$LOG" 2>/dev/null) || INFLIGHT=0
 if [ "$INFLIGHT" -ge 1 ]; then
   check "In-flight delegations tracked" 0 "Found $INFLIGHT tracking events"
 else
@@ -147,7 +147,7 @@ echo ""
 # -- Category E: Completion Processing --
 echo "Category E: Completion Processing"
 
-CLEARED=$(grep -c "Cleared in-flight delegation\|clearInFlightDelegation\|completion.*processed" "$LOG" 2>/dev/null) || CLEARED=0
+CLEARED=$(grep -c "WIP: cleared in-flight delegation\|Cleared in-flight delegation\|clearInFlightDelegation" "$LOG" 2>/dev/null) || CLEARED=0
 if [ "$CLEARED" -ge 2 ]; then
   check "Both WIP slots cleared after completions" 0 "Found $CLEARED clearance events"
 elif [ "$CLEARED" -ge 1 ]; then

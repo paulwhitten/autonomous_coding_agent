@@ -66,25 +66,36 @@ $CLI init-mailbox --base manager/runtime_mailbox --agent smoke-wip-mgr --role ma
 $CLI init-mailbox --base manager/runtime_mailbox --agent smoke-wip-dev --role developer
 $CLI init-mailbox --base manager/runtime_mailbox --agent smoke-wip-qa --role qa
 
-# Seed TWO task messages in the manager's normal mailbox.
-# These are plain messages (not workflow assignments) that the manager
-# should break down, create workflow tasks for, and delegate.
-echo "Seeding task message 1 of 2..."
-$CLI create-message \
+# Seed TWO workflow assignments in the manager's mailbox.
+# These are proper workflow messages (messageType: workflow) targeting the
+# ASSIGN state so the manager processes them through the workflow path.
+# The workflow path uses backend.sendMessage() to actually delegate to
+# the developer's mailbox, unlike unstructured messages which create
+# "DELEGATE to..." work items that the SDK session cannot execute.
+echo "Seeding workflow assignment 1 of 2..."
+$CLI pack-workflow \
   --base manager/runtime_mailbox --agent smoke-wip-mgr --role manager --queue normal \
+  --workflow-id "wip-smoke-workflow" \
+  --task-id "wip-task-001" \
+  --state "ASSIGN" \
+  --target-role "manager" \
   --from "user" \
   --to "smoke-wip-mgr_manager" \
   --subject "Task 1: Create constants module" \
-  --body "Please implement a constants module in protocol-core that defines protocol-specific constants and basic frame type identifiers. Acceptance criteria: 1) File crates/protocol-core/src/constants.rs exists 2) Contains protocol constants 3) cargo build succeeds" \
+  --prompt "Implement a constants module in protocol-core that defines protocol-specific constants and basic frame type identifiers. Acceptance criteria: 1) File crates/protocol-core/src/constants.rs exists 2) Contains protocol constants 3) cargo build succeeds" \
   --filename "001_task1_create_constants_module.md"
 
-echo "Seeding task message 2 of 2..."
-$CLI create-message \
+echo "Seeding workflow assignment 2 of 2..."
+$CLI pack-workflow \
   --base manager/runtime_mailbox --agent smoke-wip-mgr --role manager --queue normal \
+  --workflow-id "wip-smoke-workflow" \
+  --task-id "wip-task-002" \
+  --state "ASSIGN" \
+  --target-role "manager" \
   --from "user" \
   --to "smoke-wip-mgr_manager" \
   --subject "Task 2: Create error types" \
-  --body "Please implement error types in protocol-core using thiserror. Define ProtocolError enum with variants: ParseError, FrameError, TimeoutError, InvalidState. Acceptance criteria: 1) File crates/protocol-core/src/error.rs exists 2) ProtocolError enum defined 3) cargo build succeeds" \
+  --prompt "Implement error types in protocol-core using thiserror. Define ProtocolError enum with variants: ParseError, FrameError, TimeoutError, InvalidState. Acceptance criteria: 1) File crates/protocol-core/src/error.rs exists 2) ProtocolError enum defined 3) cargo build succeeds" \
   --filename "002_task2_create_error_types.md"
 
 echo ""
@@ -92,7 +103,7 @@ echo "WIP limit smoke test setup complete!"
 echo ""
 echo "Test structure:"
 echo "  - Manager agent with wipLimit: 2"
-echo "  - 2 task messages seeded in manager's normal mailbox"
+echo "  - 2 workflow assignments seeded in manager's normal mailbox"
 echo "  - Developer and QA mailboxes ready to receive delegations"
 echo "  - Workflow: ASSIGN -> IMPLEMENTING -> DONE"
 echo ""

@@ -65,10 +65,10 @@ $CLI init-mailbox --base runtime_mailbox --agent scm-test-agent --role developer
 echo "Seeding task message..."
 $CLI create-message \
   --base runtime_mailbox --agent scm-test-agent --role developer --queue normal \
-  --from "test_manager" \
+  --from "localhost_manager" \
   --to "scm-test-agent_developer" \
   --subject "Incremental Git Project" \
-  --body "Build a small TypeScript calculator module incrementally in the project working folder. Git Workflow: The project folder is already a git repo. After each step, stage and commit changes. Each step MUST have its own separate commit. Steps: 1. Create calculator.ts with add(a,b) function, commit. 2. Add subtract and multiply functions, commit. 3. Create calculator.test.ts with tests for all three functions (2+ cases each), commit. 4. Update README.md to describe the calculator module, commit. Success Criteria: 4 separate git commits, all functions exist, tests cover all functions, README describes module." \
+  --body "Build a small TypeScript calculator module incrementally in the project working folder. Git Workflow: The project folder is already a git repo with user config set. After each step, stage and commit changes. Each step MUST have its own separate commit. Do NOT combine steps. Steps: 1. Create calculator.ts with exported add(a: number, b: number): number function, commit with feat: initial calculator with add function. 2. Add exported subtract(a,b) and multiply(a,b) functions to calculator.ts, commit with feat: add subtract and multiply functions. 3. Create calculator.test.ts with tests for all three functions (at least 2 cases per function, 6 total minimum), commit with test: add unit tests for calculator. 4. Update README.md to describe the calculator module with usage examples, commit with docs: add README for calculator module. Acceptance Criteria: calculator.ts exists with exported add, subtract, multiply; calculator.test.ts has 6+ test cases; README.md has description and usage examples; git log --oneline shows 4+ commits after setup; git status shows clean working tree." \
   --filename "001_incremental_git_project.md"
 
 echo ""

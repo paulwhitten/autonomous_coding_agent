@@ -13,23 +13,31 @@ This test validates:
 ## Test Scenario
 
 ### Step 1: Hello World Function (5-7 min)
-Creates a simple Node.js module with a `sayHello()` function.
+
+Creates a Node.js module with a `sayHello(name?)` function supporting an optional name parameter.
 
 ### Step 2: Express REST API (10-15 min)
-Refactors the function into a full REST API with:
-- Express.js server on port 3000
+
+Wraps the function in an Express API with:
+- `src/app.js` exporting the Express app (no `.listen()`)
+- `src/server.js` starting the server on port 3000
 - GET /api/hello (generic greeting)
 - POST /api/hello (personalized greeting)
-- OpenAPI/Swagger documentation at /api-docs
 
-### Step 3: Client & Tests (15-20 min)
-Generates an API client and writes comprehensive tests:
-- OpenAPI client generation
-- Jest integration tests with supertest
-- Test coverage for all endpoints
-- Server lifecycle management
+### Step 3: OpenAPI Documentation (5-10 min)
 
-**Total Duration**: ~30-40 minutes
+Adds Swagger/OpenAPI documentation:
+- Hand-written `openapi.yaml` spec
+- Swagger UI served at /api-docs via `swagger-ui-express`
+
+### Step 4: Integration Tests (10-15 min)
+
+Writes Jest + supertest integration tests:
+- In-process testing via `supertest(app)` (no port conflicts)
+- 4+ test cases covering both endpoints and Swagger UI
+- `npx jest` passes with exit code 0
+
+**Total Duration**: ~30-45 minutes
 
 ## Setup
 
@@ -46,7 +54,7 @@ This will:
 4. Seed `workspace/project/` with a `package.json` (`"type": "commonjs"`) and `.gitignore`
 5. Initialize an isolated git repo in `workspace/project/` (prevents inheriting the parent repo)
 6. Install dependencies
-7. Set up mailbox with 3 work items
+7. Set up mailbox with 4 work items
 
 ## Running the Test
 

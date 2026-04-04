@@ -53,18 +53,18 @@ $CLI init-mailbox --base runtime_mailbox --agent smoke-test-agent --role develop
 echo "Seeding task messages..."
 $CLI create-message \
   --base runtime_mailbox --agent smoke-test-agent --role developer --queue normal \
-  --from "test_manager" \
+  --from "localhost_manager" \
   --to "smoke-test-agent_developer" \
-  --subject "Basic Smoke Test" \
-  --body "Simple test to verify agent functionality with basic tasks. Test Tasks: 1. Create a simple TypeScript file 2. Write tests for the file 3. Run the tests 4. Verify results. Expected Duration: ~5 minutes. Success Criteria: All work items completed, no failures, agent processes tasks sequentially, verification passes." \
+  --subject "Create sum module with tests" \
+  --body "Create a TypeScript module that exports a sum function, write Jest tests for it, and verify the tests pass. Requirements: 1. Create sum.ts in the project root directory. Export a function sum(a: number, b: number): number that returns the sum of a and b. 2. Update package.json so the test script runs Jest: set scripts.test to jest. 3. Create sum.test.ts in the project root directory. Import sum from ./sum. Test cases: two positive numbers (sum(2,3) returns 5), mixed positive and negative (sum(-2,3) returns 1), two negative numbers (sum(-2,-3) returns -5), zero as argument (sum(0,5) returns 5). 4. Run npx jest from the project root and confirm all tests pass. Acceptance Criteria: sum.ts exists and exports a typed sum function; sum.test.ts exists with at least 4 test cases; npx jest exits with code 0; package.json scripts.test is jest." \
   --filename "001_basic_task.md"
 
 $CLI create-message \
   --base runtime_mailbox --agent smoke-test-agent --role developer --queue normal \
-  --from "test_manager" \
+  --from "localhost_manager" \
   --to "smoke-test-agent_developer" \
-  --subject "Create and Test Simple Code" \
-  --body "Create a simple TypeScript utility function, write tests, and verify it works. Requirements: 1. Create a file workspace/utils.ts with a simple utility function: addNumbers that takes two numbers and returns their sum with type annotations. 2. Create a test file workspace/utils.test.ts with 3 test cases (positive numbers, negative numbers, zero). 3. Run the tests and verify they pass. 4. Create a summary file workspace/test_results.txt with test results. Success Criteria: workspace/utils.ts exists with typed function, workspace/utils.test.ts exists with 3 tests, workspace/test_results.txt exists, all tests pass." \
+  --subject "Create string utilities with tests" \
+  --body "Create a TypeScript module with string utility functions, write Jest tests, and verify the tests pass. Note: a sum.ts module already exists in the project from a prior task -- do not duplicate or overwrite it. Requirements: 1. Create string-utils.ts in the project root directory. Export capitalize(s: string): string (first char uppercased) and reverse(s: string): string (string reversed). 2. Create string-utils.test.ts in the project root directory. Test cases for capitalize: lowercase word (capitalize('hello') returns 'Hello'), already capitalized ('Hello' returns 'Hello'), empty string returns ''. Test cases for reverse: normal word (reverse('hello') returns 'olleh'), palindrome (reverse('racecar') returns 'racecar'), empty string returns ''. 3. Run npx jest from the project root and confirm all tests pass (including pre-existing tests). 4. Create test_results.txt in the project root with the actual Jest console output. Acceptance Criteria: string-utils.ts exists and exports both functions with type annotations; string-utils.test.ts exists with at least 6 test cases; npx jest exits with code 0; test_results.txt contains actual Jest output showing pass/fail status." \
   --filename "002_create_and_test_code.md"
 
 echo ""

@@ -5,7 +5,7 @@
 # into ./external_dist (a separate git repo).
 #
 # Included:
-#   - src/              Source code (excluding __tests__)
+#   - src/              Source code (including unit tests)
 #   - workflows/         Workflow definitions and schema
 #   - smoke_tests/       Smoke test suites (setup scripts, configs, READMEs)
 #   - scripts/           Utility scripts (smoke-test-cli, validate-config, etc.)
@@ -21,7 +21,6 @@
 #   - .gitignore (generated for the distribution)
 #
 # Excluded:
-#   - Unit tests (src/__tests__/)
 #   - Internal dev notes (most top-level *.md docs)
 #   - research/, coverage/, temp/, .copilot-tracking/
 #   - node_modules/, dist/, .git/
@@ -109,21 +108,19 @@ if $CLEAN; then
 fi
 
 # ---------------------------------------------------------------------------
-# Source code (exclude unit tests)
+# Source code (including unit tests)
 # ---------------------------------------------------------------------------
 
 log "Copying source code ..."
 if $DRY_RUN; then
-  echo "  CPDIR src/ -> src/ (excluding __tests__/)"
+  echo "  CPDIR src/ -> src/"
 else
   mkdir -p "${DIST_DIR}/src"
-  # Use rsync if available for clean exclude; fall back to cp + rm
   if command -v rsync &>/dev/null; then
-    rsync -a --delete --exclude='__tests__/' \
+    rsync -a --delete \
       "${PROJECT_ROOT}/src/" "${DIST_DIR}/src/"
   else
     cp -r "${PROJECT_ROOT}/src/"* "${DIST_DIR}/src/" 2>/dev/null || true
-    rm -rf "${DIST_DIR}/src/__tests__"
   fi
 fi
 

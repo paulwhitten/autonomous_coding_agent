@@ -87,27 +87,35 @@ $CLI init-mailbox --base runtime_mailbox --agent smoke-test-agent --role develop
 echo "Seeding task messages..."
 $CLI create-message \
   --base runtime_mailbox --agent smoke-test-agent --role developer --queue normal \
-  --from "test_manager" \
+  --from "localhost_manager" \
   --to "smoke-test-agent_developer" \
   --subject "Step 1 - Create Hello World function" \
-  --body "Please create a simple Hello World function as the foundation for our API project. Requirements: 1. Create a new file src/hello.js with a function named sayHello. 2. The function should return the string Hello, World! 3. Export the function using CommonJS (module.exports). Acceptance Criteria: Function exists and is exported, returns exactly Hello, World!, code is clean and simple. This is step 1 of a 3-step project." \
+  --body "Create a Hello World function as the foundation for our API project. Requirements: 1. Create src/hello.js with a function named sayHello that accepts an optional name parameter. 2. If name is provided, return Hello, <name>! -- otherwise return Hello, World! 3. Export the function using CommonJS (module.exports = { sayHello }). Acceptance Criteria: src/hello.js exists and exports sayHello; sayHello() returns Hello, World!; sayHello('Alice') returns Hello, Alice!; node -e \"const {sayHello}=require('./src/hello'); console.log(sayHello())\" prints Hello, World! Notes: Step 1 of 4. The function accepts an optional name parameter now so step 2 can use it directly." \
   --filename "001_step1_hello_function.md"
 
 $CLI create-message \
   --base runtime_mailbox --agent smoke-test-agent --role developer --queue normal \
-  --from "test_manager" \
+  --from "localhost_manager" \
   --to "smoke-test-agent_developer" \
-  --subject "Step 2 - Refactor to Express REST API with OpenAPI" \
-  --body "Refactor the Hello World function into a full REST API with Express.js and OpenAPI documentation. Requirements: 1. Install express, create src/server.js on port 3000. 2. GET /api/hello returns {message: Hello, World!}. POST /api/hello with {name: Alice} returns {message: Hello, Alice!}. 3. Install swagger-ui-express swagger-jsdoc, create openapi.yaml, serve Swagger UI at /api-docs. Acceptance Criteria: Server starts, both endpoints work, Swagger UI accessible." \
+  --subject "Step 2 - Express REST API" \
+  --body "Wrap the existing sayHello function in an Express REST API. Requirements: 1. Run npm install express. 2. Create src/app.js exporting an Express app (do NOT call app.listen() in this file). Define GET /api/hello returning {message: Hello, World!} and POST /api/hello accepting {name: string} returning {message: Hello, <name>!}. Use express.json() middleware. Both routes call sayHello from ./hello.js. 3. Create src/server.js importing app from ./app.js, calling app.listen(3000). Export app for testing. 4. Set package.json start script to node src/server.js. Acceptance Criteria: npm start starts server on port 3000; GET /api/hello returns {message:Hello, World!}; POST /api/hello with {name:Bob} returns {message:Hello, Bob!}; src/app.js exports app without calling .listen(). Notes: Step 2 of 4. Separating app.js from server.js lets step 4 test with supertest without port conflicts." \
   --filename "002_step2_express_api.md"
 
 $CLI create-message \
   --base runtime_mailbox --agent smoke-test-agent --role developer --queue normal \
-  --from "test_manager" \
+  --from "localhost_manager" \
   --to "smoke-test-agent_developer" \
-  --subject "Step 3 - Generate API client and write integration tests" \
-  --body "Create an API client from the OpenAPI spec and write comprehensive integration tests using Jest. Requirements: 1. Generate a JavaScript client from openapi.yaml in src/client/. 2. Install jest and supertest, create tests/integration.test.js. 3. Test cases: GET /api/hello returns 200 with Hello, World!; POST /api/hello with name returns personalized greeting; POST with no name defaults to World; GET /api-docs returns 200. Acceptance Criteria: All tests pass, client is generated." \
-  --filename "003_step3_client_tests.md"
+  --subject "Step 3 - Add OpenAPI documentation" \
+  --body "Add OpenAPI/Swagger documentation to the Express API from step 2. Requirements: 1. Run npm install swagger-ui-express. Do not install swagger-jsdoc -- use a hand-written spec file. 2. Create openapi.yaml (or openapi.json) in the project root with an OpenAPI 3.0 spec documenting GET /api/hello and POST /api/hello, including request body schema for POST and response schemas. 3. Mount Swagger UI at /api-docs in src/app.js using swagger-ui-express. Acceptance Criteria: openapi.yaml or openapi.json exists with valid OpenAPI 3.0 content; both endpoints documented; GET /api-docs/ returns HTML containing swagger; server still starts with npm start. Notes: Step 3 of 4. Keep the spec simple." \
+  --filename "003_step3_openapi_docs.md"
+
+$CLI create-message \
+  --base runtime_mailbox --agent smoke-test-agent --role developer --queue normal \
+  --from "localhost_manager" \
+  --to "smoke-test-agent_developer" \
+  --subject "Step 4 - Write integration tests" \
+  --body "Write integration tests for the Express API using Jest and supertest. Requirements: 1. Run npm install --save-dev jest supertest. 2. Create tests/integration.test.js. Use supertest with const app = require('../src/app') -- no .listen() needed, supertest binds to an ephemeral port. 3. Write at least 4 tests: (a) GET /api/hello returns 200 with {message:Hello, World!}; (b) POST /api/hello with {name:Alice} returns 200 with {message:Hello, Alice!}; (c) POST /api/hello with {} returns 200 with {message:Hello, World!}; (d) GET /api-docs/ returns 200 or 301 with response containing swagger. 4. Set package.json scripts.test to jest. 5. Run npx jest, all tests must pass. Acceptance Criteria: tests/integration.test.js exists with 4+ tests; npx jest exits with code 0; no port conflicts or hanging processes; package.json scripts.test is jest. Notes: Step 4 of 4. Completes the project." \
+  --filename "004_step4_integration_tests.md"
 
 echo ""
 echo "Intermediate smoke test setup complete!"

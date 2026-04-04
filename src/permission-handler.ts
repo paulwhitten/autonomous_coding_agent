@@ -129,6 +129,20 @@ export const DEFAULT_SHELL_ALLOWLIST: ReadonlySet<string> = new Set([
   'bash',
   'sh',
   'zsh',
+
+  // Shell keywords / builtins — control flow constructs that appear as the
+  // first token when the SDK sends compound commands like "for i in …; do …; done".
+  // These are no more dangerous than 'bash' (already allowlisted); the real
+  // security-relevant commands are the ones *inside* the construct.
+  'for',
+  'while',
+  'until',
+  'if',
+  'case',
+  'select',
+  '[',              // test synonym
+  '[[',             // extended test
+
   'cat',
   'echo',
   'grep',
