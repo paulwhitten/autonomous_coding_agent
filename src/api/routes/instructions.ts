@@ -1,6 +1,6 @@
 // Custom instructions CRUD — read and write custom_instructions.json
 
-import { Router, Request, Response } from 'express';
+import { Router, Request, Response } from '../express-compat.js';
 import { readFile, writeFile } from 'fs/promises';
 import path from 'path';
 

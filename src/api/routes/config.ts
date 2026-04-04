@@ -1,6 +1,6 @@
 // Config CRUD API routes
 
-import { Router, Request, Response } from 'express';
+import { Router, Request, Response } from '../express-compat.js';
 import { readFile, writeFile, readdir, unlink } from 'fs/promises';
 import path from 'path';
 import { validateConfig } from '../validation.js';

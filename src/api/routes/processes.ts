@@ -1,6 +1,6 @@
 // Agent process management — start, stop, and monitor agent sessions
 
-import { Router, Request, Response } from 'express';
+import { Router, Request, Response } from '../express-compat.js';
 import { spawn, ChildProcess } from 'child_process';
 import { readdir } from 'fs/promises';
 import path from 'path';

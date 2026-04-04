@@ -1,6 +1,6 @@
 // Mailbox read/write API routes
 
-import { Router, Request, Response } from 'express';
+import { Router, Request, Response } from '../express-compat.js';
 import { readFile, writeFile, readdir, mkdir, stat } from 'fs/promises';
 import path from 'path';
 

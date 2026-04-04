@@ -4,7 +4,7 @@
 // require the key in the X-API-Key header or ?apiKey query parameter.
 // When API_KEY is not set, auth is disabled (development mode).
 
-import { Request, Response, NextFunction } from 'express';
+import { Request, Response, NextFunction } from './express-compat.js';
 import crypto from 'crypto';
 
 const API_KEY = process.env.API_KEY || '';

@@ -1,6 +1,7 @@
 // Express API server for the Autonomous Coding Agent web UI
 
 import express from 'express';
+import type { Request, Response, NextFunction } from './express-compat.js';
 import cors from 'cors';
 import { createServer } from 'http';
 import path from 'path';
@@ -123,7 +124,7 @@ export async function createApiServer(projectRoot: string, port: number = 3001) 
   app.use('/api/instructions', createInstructionsRouter(projectRoot));
 
   // Health check
-  app.get('/api/health', (_req, res) => {
+  app.get('/api/health', (_req: Request, res: Response) => {
     res.json({ status: 'ok', timestamp: new Date().toISOString() });
   });
 
@@ -131,12 +132,12 @@ export async function createApiServer(projectRoot: string, port: number = 3001) 
   const webDist = path.join(projectRoot, 'web', 'dist');
   app.use(express.static(webDist));
   // SPA fallback — serve index.html for non-API routes
-  app.use((_req, res, next) => {
+  app.use((_req: Request, res: Response, next: NextFunction) => {
     if (_req.path.startsWith('/api') || _req.path.startsWith('/socket.io')) {
       next();
       return;
     }
-    res.sendFile(path.join(webDist, 'index.html'), (err) => {
+    res.sendFile(path.join(webDist, 'index.html'), (err: Error | undefined) => {
       if (err) next();
     });
   });

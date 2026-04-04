@@ -1,6 +1,6 @@
 // Agent status and management API routes
 
-import { Router, Request, Response } from 'express';
+import { Router, Request, Response } from '../express-compat.js';
 import { readFile, readdir, stat } from 'fs/promises';
 import path from 'path';
 

@@ -1,6 +1,6 @@
 // Workflow CRUD API routes
 
-import { Router, Request, Response } from 'express';
+import { Router, Request, Response } from '../express-compat.js';
 import { readFile, writeFile, readdir } from 'fs/promises';
 import path from 'path';
 import { validateWorkflow } from '../validation.js';
