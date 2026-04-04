@@ -55,7 +55,7 @@ $CLI create-message \
   --from "smoke-test-mgr_manager" \
   --to "smoke-test-dev_developer" \
   --subject "Task 1 - Create Hello World" \
-  --body "Please create a simple Hello World program. Requirements: Create a file hello.js that prints Hello, World! using console.log(). Keep it simple. This task should complete quickly and successfully." \
+  --body "Create a simple Hello World program. Requirements: Create a file hello.js that prints Hello, World! to stdout using console.log(). Export nothing -- this is a standalone script. Acceptance Criteria: hello.js exists; running node hello.js prints exactly Hello, World!" \
   --filename "001_task1_hello_world.md"
 
 $CLI create-message \
@@ -63,7 +63,7 @@ $CLI create-message \
   --from "smoke-test-mgr_manager" \
   --to "smoke-test-dev_developer" \
   --subject "Task 2 - Add Math Function" \
-  --body "Create a math utility function. Requirements: Create file math-utils.js. Add function add(a, b) that returns sum. Add function multiply(a, b) that returns product. Export both functions. This task has a deliberate issue -- the multiply function should be called multiplyNumbers not multiply. You will need manager help to fix this." \
+  --body "Create a math utility module. Requirements: First create package.json with {\"type\":\"commonjs\"} if it does not exist. Then create exactly one file named math-utils.js (not .mjs, not .cjs -- must be math-utils.js). Use CommonJS format. Add function add(a, b) that returns the sum. Add function multiply(a, b) that returns the product. Export both: module.exports = { add, multiply }; Acceptance Criteria: math-utils.js exists; node -e 'const m = require(\\\"./math-utils\\\"); console.log(m.add(2,3), m.multiply(4,5))' prints 5 20." \
   --filename "002_task2_math_function.md"
 
 $CLI create-message \
@@ -71,7 +71,7 @@ $CLI create-message \
   --from "smoke-test-mgr_manager" \
   --to "smoke-test-dev_developer" \
   --subject "Task 3 - Create README" \
-  --body "Create documentation for the code. Requirements: Create README.md file. Document the hello.js program. Document the math-utils.js functions. Include usage examples. This task should be straightforward." \
+  --body "Create documentation for the project. Requirements: Create README.md. Document hello.js -- what it does and how to run it. Document each exported function in math-utils.js with parameter descriptions. Include at least one usage example per function. Acceptance Criteria: README.md exists; mentions hello.js and math-utils.js; contains code examples showing how to call add and multiplyNumbers." \
   --filename "003_task3_create_readme.md"
 
 echo ""

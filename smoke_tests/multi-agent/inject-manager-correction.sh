@@ -18,7 +18,7 @@ $CLI create-message \
   --from "smoke-test-mgr_manager" \
   --to "smoke-test-dev_developer" \
   --subject "Correction - Function Naming" \
-  --body "URGENT CORRECTION: I noticed an error in Task 2 requirements. The multiply function should be named multiplyNumbers (not just multiply). Please update math-utils.js to use the correct function name before continuing with Task 3. This ensures naming consistency across the project." \
+  --body "URGENT CORRECTION: The multiply function in math-utils.js must be renamed to multiplyNumbers for naming consistency. Do NOT split into .cjs/.mjs files -- keep the single math-utils.js file. Requirements: 1. Open math-utils.js and rename the function from multiply to multiplyNumbers. 2. Update module.exports to export multiplyNumbers instead of multiply. 3. Verify: node -e 'const m = require(\"./math-utils\"); console.log(m.multiplyNumbers(4,5))' prints 20. Acceptance Criteria: math-utils.js still exists as a single CommonJS file; exports add and multiplyNumbers (not multiply); multiplyNumbers(4,5) returns 20. Apply this fix before continuing with Task 3 (README)." \
   --priority HIGH \
   --filename "correction_function_naming.md"
 

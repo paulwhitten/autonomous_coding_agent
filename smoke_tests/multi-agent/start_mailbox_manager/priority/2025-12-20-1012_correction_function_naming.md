@@ -1,14 +1,24 @@
-Date: 2025-12-20 10:12 UTC
+Date: 2025-12-20T10:12:00Z
 From: smoke-test-mgr_manager
 To: smoke-test-dev_developer
 Subject: Correction - Function Naming
 Priority: HIGH
+MessageType: unstructured
+---
 
 URGENT CORRECTION:
 
-I noticed an error in Task 2 requirements. The multiply function should be named:
-- `multiplyNumbers` (not just `multiply`)
+The multiply function in `math-utils.js` must be renamed from `multiply` to `multiplyNumbers` for naming consistency.
 
-Please update math-utils.js to use the correct function name before continuing with Task 3.
+## Requirements
 
-This ensures naming consistency across the project.
+1. Rename the function from `multiply` to `multiplyNumbers` in `math-utils.js`
+2. Update `module.exports` to export `multiplyNumbers` instead of `multiply`
+3. Verify the module still works: `node -e "const m = require('./math-utils'); console.log(m.multiplyNumbers(4,5))"`
+
+## Acceptance Criteria
+
+- `math-utils.js` exports `add` and `multiplyNumbers` (not `multiply`)
+- `multiplyNumbers(4, 5)` returns `20`
+
+Apply this fix before continuing with Task 3 (README).

@@ -1,65 +1,41 @@
 Date: 2026-02-01T00:02:00Z
-From: test_manager
-To: developer
-Subject: Step 3 - Generate API client and write integration tests
+From: localhost_manager
+To: smoke-test-agent_developer
+Subject: Step 3 - Add OpenAPI documentation
 Priority: NORMAL
+MessageType: unstructured
+---
 
-Please create an API client from the OpenAPI spec and write comprehensive integration tests using Jest.
+Add OpenAPI/Swagger documentation to the Express API from step 2.
 
 ## Requirements
 
-### 1. Generate API Client
-- Install openapi-generator-cli: `npm install --save-dev @openapitools/openapi-generator-cli`
-- Generate a JavaScript client from openapi.yaml
-- Place generated client in `src/client/` directory
-- Document how to use the generated client
+### 1. Install Swagger dependencies
 
-### 2. Integration Tests with Jest
-- Install Jest: `npm install --save-dev jest`
-- Install supertest for HTTP testing: `npm install --save-dev supertest`
-- Create `tests/integration.test.js`
+Run `npm install swagger-ui-express` in the project root. Do **not** install `swagger-jsdoc` -- use a hand-written spec file instead.
 
-### 3. Test Cases
-Write tests that verify:
+### 2. Create `openapi.yaml` in the project root
 
-**Test 1: Generic Hello Endpoint**
-- GET /api/hello returns 200 status
-- Response contains {"message": "Hello, World!"}
+Write an OpenAPI 3.0 spec documenting both endpoints:
 
-**Test 2: Personalized Hello Endpoint**
-- POST /api/hello with {"name": "Alice"} returns 200 status
-- Response contains {"message": "Hello, Alice!"}
+- `GET /api/hello` -- returns `{ "message": "string" }`
+- `POST /api/hello` -- accepts `{ "name": "string" }`, returns `{ "message": "string" }`
 
-**Test 3: Personalized Hello with Empty Name**
-- POST /api/hello with no name defaults to "World"
-- Response contains {"message": "Hello, World!"}
+Include `info.title`, `info.version`, `paths`, request body schema for POST, and response schema for both.
 
-**Test 4: OpenAPI Documentation**
-- GET /api-docs returns 200 status
-- Swagger UI is accessible
+### 3. Mount Swagger UI in `src/app.js`
 
-**Test 5: Using Generated Client**
-- Import generated client
-- Make requests using client methods
-- Verify responses match expected format
-
-### 4. Package.json Scripts
-Add these scripts:
-```json
-{
-  "test": "jest",
-  "test:watch": "jest --watch",
-  "test:coverage": "jest --coverage"
-}
-```
+- Load `openapi.yaml` using `fs.readFileSync` and `yaml` parsing (install `js-yaml` if needed, or use JSON format instead)
+- Serve Swagger UI at `/api-docs` using `swagger-ui-express`
+- `GET /api-docs` should render the interactive Swagger UI page
 
 ## Acceptance Criteria
-- API client successfully generated from OpenAPI spec
-- All 5 integration tests pass
-- Tests use supertest for HTTP assertions
-- Tests run with `npm test`
-- Code coverage includes all endpoints
-- Tests are readable and well-documented
+
+- `openapi.yaml` (or `openapi.json`) exists in the project root with valid OpenAPI 3.0 content
+- Both `GET /api/hello` and `POST /api/hello` are documented in the spec
+- `curl -s http://localhost:3000/api-docs/ | head -20` returns HTML containing "swagger"
+- Server still starts cleanly with `npm start`
 
 ## Notes
-This completes the 3-step project. Make sure the server is properly started/stopped in test lifecycle (beforeAll/afterAll hooks).
+
+Step 3 of 4. Keep the spec simple -- do not over-engineer with components/refs for a two-endpoint API.

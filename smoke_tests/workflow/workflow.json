@@ -16,7 +16,6 @@
       "description": "Developer implements a simple task to verify workflow engine integration.",
       "prompt": "You are working inside a WORKFLOW ENGINE smoke test.\n\nYour task is simple: create a file called 'workflow_proof.txt' in the working directory that contains the text 'WORKFLOW_ENGINE_ACTIVE'.\n\nThis proves the workflow engine injected context into your prompt.\n\nSteps:\n1. Create file 'workflow_proof.txt' with content 'WORKFLOW_ENGINE_ACTIVE'\n2. Verify the file exists\n3. Report completion",
       "allowedTools": ["terminal", "file_ops"],
-      "requiredOutputs": ["branch"],
       "transitions": {
         "onSuccess": "DONE",
         "onFailure": "DONE"

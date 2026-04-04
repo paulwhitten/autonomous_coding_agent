@@ -1,31 +1,35 @@
-# Dependency Test - Dependent Task
+Date: 2025-12-28T12:30:00Z
+From: localhost_manager
+To: smoke-test-agent_researcher
+Subject: Dependency test - process setup data
+Priority: NORMAL
+MessageType: unstructured
+---
 
-This task depends on output from task 005, which failed.
-
-## Expected Behavior
-- Agent attempts to read file from task 005
-- File doesn't exist (task 005 failed)
-- Agent should detect missing dependency
-- Question: Does agent skip? Fail? Continue blindly?
+Process the data file created by the previous "create setup data" task.
 
 ## Task
-Process the data file created by task 005:
+
+Execute the following shell commands:
 
 ```bash
 echo "Starting dependent task at $(date)"
-# This should fail because task 005 didn't create the file
-if [ -f "workspace/setup_data.txt" ]; then
-    cat workspace/setup_data.txt > workspace/dependent_result.txt
+if [ -f "setup_data.txt" ]; then
+    cat setup_data.txt > dependent_result.txt
     echo "SUCCESS: Processed dependency data"
 else
-    echo "ERROR: Missing dependency - setup_data.txt not found"
+    echo "ERROR: Missing dependency - setup_data.txt not found" | tee dependent_result.txt
     exit 1
 fi
 ```
 
-## Success Criteria
-- Agent detects missing dependency
-- Agent behavior on missing dependency is logged
+## Acceptance Criteria
+
+- The agent attempts to read `setup_data.txt`
+- Because the previous task failed, `setup_data.txt` does not exist
+- The script exits with code 1 and writes an error message to `dependent_result.txt`
+- The agent logs the failure, noting the missing prerequisite
 
 ## Notes
-This tests: Should dependencies be tracked explicitly? Should agent look backward at failed tasks?
+
+This task depends on output from the previous "create setup data" task, which was designed to fail. The expected outcome is that this task also fails due to the missing file. This tests the agent's behavior when a dependency chain is broken.

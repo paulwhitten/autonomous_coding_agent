@@ -1,24 +1,38 @@
-# Long-Running Task (250 seconds)
+Date: 2025-12-28T10:30:00Z
+From: localhost_manager
+To: smoke-test-agent_researcher
+Subject: Long-running computation (250 seconds)
+Priority: NORMAL
+MessageType: unstructured
+---
 
-This task exceeds even the doubled timeout and should trigger background process strategy.
-
-## Expected Behavior
-- First attempt: SDK timeout at 120s
-- Second attempt: SDK timeout at 240s (Tier 1)
-- Third attempt: Tier 2 strategy - Agent should use background process pattern
+Run a computation that takes approximately 250 seconds and save the results.
 
 ## Task
-Run a 250-second data processing job:
+
+Execute the following shell commands in order:
 
 ```bash
 echo "Starting 250-second task at $(date)"
 sleep 250
-echo "Completed at $(date)" > workspace/long_running_task_result.txt
+echo "Completed at $(date)" > long_running_task_result.txt
 echo "SUCCESS: Long task completed in 250 seconds"
 ```
 
-## Success Criteria
-- Agent recognizes need for background processing
-- Uses nohup pattern: `nohup sleep 250 > log.txt 2>&1 & echo $!`
-- Creates monitoring work item to check status
-- Eventually confirms successful completion
+If the task times out on direct execution, run it as a background process:
+
+```bash
+nohup bash -c 'sleep 250 && echo "Completed at $(date)" > long_running_task_result.txt' > long_task_log.txt 2>&1 &
+echo $!
+```
+
+Then poll for completion by checking whether `long_running_task_result.txt` exists.
+
+## Acceptance Criteria
+
+- File `long_running_task_result.txt` exists in the project working directory
+- The file contains a completion timestamp
+
+## Notes
+
+This task exceeds both the base SDK timeout (120s) and the Tier 1 extended timeout (240s). The agent is expected to use a background process pattern (Tier 2) to complete it.

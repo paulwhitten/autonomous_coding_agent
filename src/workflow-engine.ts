@@ -936,6 +936,55 @@ export class WorkflowEngine {
     const isTerminal = workflow.terminalStates.includes(newState);
     const newStateDef = workflow.states[newState];
 
+    // Execute entryActions (set_context, log) defined on the arriving state.
+    // These run AFTER exitActions of the departing state and AFTER the
+    // task.currentState has been updated, so template variables reflect
+    // the accumulated context including outputs and exitAction mutations.
+    if (newStateDef?.entryActions && newStateDef.entryActions.length > 0) {
+      for (const action of newStateDef.entryActions) {
+        switch (action.type) {
+          case 'set_context': {
+            const key = action.params.key;
+            const rawValue = action.params.value ?? '';
+            const value = this.substituteTemplate(rawValue, {
+              ...task.context,
+              taskId: task.taskId,
+              role: newStateDef.role,
+              state: newState,
+            });
+            task.context[key] = value;
+            this.logger.info(
+              { taskId, action: 'set_context', key, value },
+              'State action: set_context',
+            );
+            break;
+          }
+          case 'log': {
+            const msg = this.substituteTemplate(
+              action.params.message ?? '',
+              { ...task.context, taskId: task.taskId, role: newStateDef.role, state: newState },
+            );
+            const level = action.params.level ?? 'info';
+            if (level === 'warn') {
+              this.logger.warn({ taskId, action: 'log' }, msg);
+            } else {
+              this.logger.info({ taskId, action: 'log' }, msg);
+            }
+            break;
+          }
+          case 'send_to_role':
+            // send_to_role is handled by the agent layer (mailbox routing),
+            // not by the engine.  Skip here.
+            break;
+          default:
+            this.logger.warn(
+              { taskId, actionType: (action as any).type },
+              'Unknown entryAction type -- skipping',
+            );
+        }
+      }
+    }
+
     this.logger.info(
       {
         taskId,
