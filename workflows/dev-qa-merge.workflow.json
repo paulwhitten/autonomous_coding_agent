@@ -8,10 +8,14 @@
   "terminalStates": ["DONE", "ESCALATED"],
   "globalContext": {
     "projectPath": "workspace/project",
+    "communityStack": "workspace/profinet-community-stack",
     "specs": "workspace/specs",
-    "buildCommand": "npm run build",
-    "testCommand": "npm test",
-    "lintCommand": "npm run lint"
+    "strategyDoc": "workspace/community_stack_strategy.md",
+    "portingGuide": "workspace/porting_guide.md",
+    "protocolComparison": "workspace/protocol_comparison.md",
+    "buildCommand": "cargo build",
+    "testCommand": "cargo test",
+    "lintCommand": "cargo clippy -- -D warnings"
   },
   "states": {
     "ASSIGN": {
@@ -155,7 +159,7 @@
         { "command": "git clean -fd", "reason": "Remove untracked files left by prior LLM session.", "failOnError": false },
         { "command": "git checkout dev/{{taskId}} || git checkout -b dev/{{taskId}} origin/dev/{{taskId}}", "reason": "Checkout the feature branch locally. Create from origin if it does not exist locally (e.g., QA agent separate work dir).", "failOnError": true },
         { "command": "git reset --hard origin/dev/{{taskId}}", "reason": "Force-sync local feature branch to match origin exactly before rebasing.", "failOnError": true },
-        { "command": "git rebase origin/main", "reason": "Rebase the feature branch onto latest main. Resolves divergence from concurrent task merges. Fails on conflict to trigger escalation.", "failOnError": true },
+        { "command": "bash /home/pcwhitte/devel/profinet/agents/auto-rebase.sh origin/main", "reason": "Rebase the feature branch onto latest main with auto-resolution of safe additive conflicts (pub mod/use in lib.rs, deps in Cargo.toml). Falls back to abort and fail for non-trivial conflicts.", "failOnError": true },
         { "command": "git checkout main", "reason": "Switch to main branch for the merge.", "failOnError": true },
         { "command": "git reset --hard origin/main", "reason": "Force-sync local main to origin/main for a clean merge base.", "failOnError": true },
         { "command": "git merge dev/{{taskId}} --no-ff -m 'Merge dev/{{taskId}}: {{taskId}}'", "reason": "Merge the rebased feature branch into main. Guaranteed clean since rebase resolved all conflicts.", "failOnError": true },

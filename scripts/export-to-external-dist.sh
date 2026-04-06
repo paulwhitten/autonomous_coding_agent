@@ -5,7 +5,7 @@
 # into ./external_dist (a separate git repo).
 #
 # Included:
-#   - src/              Source code (excluding __tests__)
+#   - src/              Source code (including unit tests)
 #   - workflows/         Workflow definitions and schema
 #   - smoke_tests/       Smoke test suites (setup scripts, configs, READMEs)
 #   - scripts/           Utility scripts (smoke-test-cli, validate-config, etc.)
@@ -13,14 +13,14 @@
 #   - diagrams/          Architecture diagrams (.mmd sources + rendered images)
 #   - examples/          Example configs (sample_mailbox, team collaboration)
 #   - docker/            Dockerfile and compose for containerised runs
-#   - README.md, QUICKSTART.md, ROLES.md
+#   - README.md, QUICKSTART.md, ROLES.md, QUOTA.md
+#   - WORKFLOW_HELLO_WORLD.md, CONFIG_VALIDATOR.md, A2A_INTEGRATION.md
 #   - config.example.json, custom_instructions.example.json, .env.example
 #   - roles.json, quota-presets.json
 #   - package.json, tsconfig.json, jest.config.js
 #   - .gitignore (generated for the distribution)
 #
 # Excluded:
-#   - Unit tests (src/__tests__/)
 #   - Internal dev notes (most top-level *.md docs)
 #   - research/, coverage/, temp/, .copilot-tracking/
 #   - node_modules/, dist/, .git/
@@ -80,6 +80,8 @@ copy_dir() {
     echo "  CPDIR ${src#"${PROJECT_ROOT}/"} -> ${dst#"${DIST_DIR}/"}"
     return
   fi
+  # Remove existing destination to prevent cp -r nesting (e.g. scripts/scripts/)
+  rm -rf "$dst"
   mkdir -p "$(dirname "$dst")"
   cp -r "$src" "$dst"
 }
@@ -108,21 +110,19 @@ if $CLEAN; then
 fi
 
 # ---------------------------------------------------------------------------
-# Source code (exclude unit tests)
+# Source code (including unit tests)
 # ---------------------------------------------------------------------------
 
 log "Copying source code ..."
 if $DRY_RUN; then
-  echo "  CPDIR src/ -> src/ (excluding __tests__/)"
+  echo "  CPDIR src/ -> src/"
 else
   mkdir -p "${DIST_DIR}/src"
-  # Use rsync if available for clean exclude; fall back to cp + rm
   if command -v rsync &>/dev/null; then
-    rsync -a --delete --exclude='__tests__/' \
+    rsync -a --delete \
       "${PROJECT_ROOT}/src/" "${DIST_DIR}/src/"
   else
     cp -r "${PROJECT_ROOT}/src/"* "${DIST_DIR}/src/" 2>/dev/null || true
-    rm -rf "${DIST_DIR}/src/__tests__"
   fi
 fi
 
@@ -225,7 +225,9 @@ copy_dir "${PROJECT_ROOT}/docker" "${DIST_DIR}/docker"
 log "Copying root-level files ..."
 
 # Documentation
-for f in README.md QUICKSTART.md ROLES.md QUOTA.md; do
+for f in README.md QUICKSTART.md ROLES.md QUOTA.md \
+         WORKFLOW_HELLO_WORLD.md CONFIG_VALIDATOR.md \
+         A2A_INTEGRATION.md; do
   if [ -f "${PROJECT_ROOT}/${f}" ]; then
     copy_file "${PROJECT_ROOT}/${f}" "${DIST_DIR}/${f}"
   fi

@@ -131,6 +131,9 @@ function validateConfig(configPath: string): ValidationResult {
   if (config.quota) {
     validateQuota(config.quota, errors, warnings, path.dirname(resolvedPath));
   }
+  if (config.communication) {
+    validateCommunication(config.communication, errors, warnings);
+  }
   
   return {
     configPath: resolvedPath,
@@ -737,6 +740,173 @@ function requireType(
       field,
       message: `Invalid type for ${field}: expected ${types.join(' or ')}, got ${actualType}`,
       fix: `Change to ${types[0]} type`
+    });
+  }
+}
+
+// ============================================================================
+// Communication Validation
+// ============================================================================
+
+function validateCommunication(
+  communication: any,
+  errors: ValidationError[],
+  warnings: ValidationError[],
+): void {
+  if (typeof communication !== 'object' || communication === null) {
+    errors.push({
+      field: 'communication',
+      message: 'communication must be an object',
+      fix: 'See config.example.json for structure',
+    });
+    return;
+  }
+
+  const validBackends = ['mailbox', 'a2a'];
+  if (communication.backend) {
+    warnings.push({
+      field: 'communication.backend',
+      message: 'The "backend" field is deprecated and ignored. Both mailbox and A2A are always active with sensible defaults.',
+      fix: 'Remove the "backend" field from your communication config',
+    });
+  }
+
+  if (communication.a2a && typeof communication.a2a === 'object') {
+    validateA2AConfig(communication.a2a, errors, warnings);
+  }
+}
+
+function validateA2AConfig(
+  a2a: any,
+  errors: ValidationError[],
+  warnings: ValidationError[],
+): void {
+  // serverPort
+  if (a2a.serverPort !== undefined) {
+    if (typeof a2a.serverPort !== 'number' || a2a.serverPort < 0 || a2a.serverPort > 65535) {
+      errors.push({
+        field: 'communication.a2a.serverPort',
+        message: 'serverPort must be 0-65535 (0 = OS-assigned)',
+        fix: 'Set to a valid port number (e.g., 4000)',
+      });
+    }
+  }
+
+  // transport
+  const validTransports = ['jsonrpc', 'rest', 'grpc'];
+  if (a2a.transport && !validTransports.includes(a2a.transport)) {
+    errors.push({
+      field: 'communication.a2a.transport',
+      message: `Invalid transport: "${a2a.transport}"`,
+      fix: 'Must be "jsonrpc", "rest", or "grpc"',
+    });
+  }
+
+  // authentication.scheme
+  if (a2a.authentication?.scheme) {
+    const validSchemes = ['bearer', 'apiKey', 'none'];
+    if (!validSchemes.includes(a2a.authentication.scheme)) {
+      errors.push({
+        field: 'communication.a2a.authentication.scheme',
+        message: `Invalid auth scheme: "${a2a.authentication.scheme}"`,
+        fix: 'Must be "bearer", "apiKey", or "none"',
+      });
+    }
+  }
+
+  // knownAgentUrls must be string[]
+  if (a2a.knownAgentUrls !== undefined) {
+    if (!Array.isArray(a2a.knownAgentUrls)) {
+      errors.push({
+        field: 'communication.a2a.knownAgentUrls',
+        message: 'Must be an array of URL strings',
+      });
+    } else {
+      for (const url of a2a.knownAgentUrls) {
+        if (typeof url !== 'string') {
+          errors.push({
+            field: 'communication.a2a.knownAgentUrls',
+            message: 'Each entry must be a string URL',
+          });
+          break;
+        }
+      }
+    }
+  }
+
+  // agentCard overrides
+  if (a2a.agentCard !== undefined) {
+    validateAgentCardConfig(a2a.agentCard, errors, warnings);
+  }
+}
+
+function validateAgentCardConfig(
+  card: any,
+  errors: ValidationError[],
+  warnings: ValidationError[],
+): void {
+  const prefix = 'communication.a2a.agentCard';
+
+  if (typeof card !== 'object' || card === null) {
+    errors.push({ field: prefix, message: 'agentCard must be an object' });
+    return;
+  }
+
+  // String fields
+  for (const f of ['name', 'description', 'version'] as const) {
+    if (card[f] !== undefined && typeof card[f] !== 'string') {
+      errors.push({ field: `${prefix}.${f}`, message: `${f} must be a string` });
+    }
+  }
+
+  // provider
+  if (card.provider !== undefined) {
+    if (typeof card.provider !== 'object' || card.provider === null) {
+      errors.push({ field: `${prefix}.provider`, message: 'provider must be an object with { organization, url? }' });
+    } else if (typeof card.provider.organization !== 'string') {
+      errors.push({ field: `${prefix}.provider.organization`, message: 'provider.organization is required and must be a string' });
+    }
+  }
+
+  // skills
+  if (card.skills !== undefined) {
+    if (!Array.isArray(card.skills)) {
+      errors.push({ field: `${prefix}.skills`, message: 'skills must be an array' });
+    } else {
+      for (let i = 0; i < card.skills.length; i++) {
+        const s = card.skills[i];
+        for (const req of ['id', 'name', 'description'] as const) {
+          if (typeof s[req] !== 'string') {
+            errors.push({ field: `${prefix}.skills[${i}].${req}`, message: `${req} is required and must be a string` });
+          }
+        }
+        if (!Array.isArray(s.tags)) {
+          errors.push({ field: `${prefix}.skills[${i}].tags`, message: 'tags must be a string array' });
+        }
+      }
+    }
+  }
+
+  // inputModes / outputModes
+  for (const f of ['inputModes', 'outputModes'] as const) {
+    if (card[f] !== undefined) {
+      if (!Array.isArray(card[f]) || card[f].some((m: any) => typeof m !== 'string')) {
+        errors.push({ field: `${prefix}.${f}`, message: `${f} must be a string array of MIME types` });
+      }
+    }
+  }
+
+  // extensions
+  if (card.extensions !== undefined && (typeof card.extensions !== 'object' || card.extensions === null)) {
+    errors.push({ field: `${prefix}.extensions`, message: 'extensions must be an object' });
+  }
+
+  // Warn about url being ignored
+  if ('url' in card) {
+    warnings.push({
+      field: `${prefix}.url`,
+      message: 'url is computed from the runtime port and cannot be overridden',
+      fix: 'Remove the url field; it is set automatically',
     });
   }
 }

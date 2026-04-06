@@ -17,6 +17,28 @@
         "csv-generation",
         "data-analysis"
       ],
+      "skills": [
+        {
+          "id": "python",
+          "name": "Python Development",
+          "description": "Write, debug, and optimize Python scripts",
+          "tags": ["developer", "python", "scripting"]
+        },
+        {
+          "id": "circuit-processing",
+          "name": "Circuit Processing",
+          "description": "Process and analyze circuit netlists and related data",
+          "tags": ["developer", "hardware", "circuit"]
+        },
+        {
+          "id": "csv-generation",
+          "name": "CSV Generation",
+          "description": "Generate and transform CSV datasets",
+          "tags": ["developer", "data", "csv"]
+        }
+      ],
+      "inputModes": ["text/plain", "application/json"],
+      "outputModes": ["text/plain", "application/json"],
       "timezone": "America/Los_Angeles"
     },
     {
