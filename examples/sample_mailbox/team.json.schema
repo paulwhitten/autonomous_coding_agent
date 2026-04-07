@@ -71,6 +71,64 @@
           "contact": {
             "type": "string",
             "description": "Optional contact information for the agent owner"
+          },
+          "skills": {
+            "type": "array",
+            "description": "Structured skill descriptions (A2A-inspired). Richer alternative to flat capabilities[].",
+            "items": {
+              "type": "object",
+              "required": ["id", "name", "description", "tags"],
+              "properties": {
+                "id": { "type": "string", "description": "Unique skill identifier" },
+                "name": { "type": "string", "description": "Human-readable skill name" },
+                "description": { "type": "string", "description": "What this skill does" },
+                "tags": { "type": "array", "items": { "type": "string" }, "description": "Searchable tags" },
+                "inputModes": { "type": "array", "items": { "type": "string" }, "description": "Accepted input MIME types" },
+                "outputModes": { "type": "array", "items": { "type": "string" }, "description": "Produced output MIME types" },
+                "examples": { "type": "array", "items": { "type": "string" }, "description": "Example usage patterns" }
+              }
+            }
+          },
+          "inputModes": {
+            "type": "array",
+            "items": { "type": "string" },
+            "description": "Accepted input MIME types at the agent level"
+          },
+          "outputModes": {
+            "type": "array",
+            "items": { "type": "string" },
+            "description": "Produced output MIME types at the agent level"
+          },
+          "protocolVersion": {
+            "type": "string",
+            "description": "A2A protocol version (e.g., '0.3.0') if this agent speaks A2A"
+          },
+          "url": {
+            "type": "string",
+            "format": "uri",
+            "description": "Network endpoint URL for A2A communication"
+          },
+          "provider": {
+            "type": "object",
+            "properties": {
+              "organization": { "type": "string" },
+              "url": { "type": "string", "format": "uri" }
+            },
+            "required": ["organization"],
+            "description": "Provider or organization metadata"
+          },
+          "security": {
+            "type": "array",
+            "description": "Authentication requirements",
+            "items": {
+              "type": "object",
+              "required": ["type"],
+              "properties": {
+                "type": { "type": "string", "enum": ["bearer", "apiKey", "oauth2", "none"] },
+                "in": { "type": "string", "enum": ["header", "query"] },
+                "name": { "type": "string" }
+              }
+            }
           }
         }
       }
