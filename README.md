@@ -125,6 +125,13 @@ This creates a minimal `config.json`, a mailbox folder with inbox and archive
 directories, and seeds a hello-world task so the first `npm start` has work
 to do. For CI or Docker, use `npm run init -- --non-interactive`.
 
+To wipe runtime state and start over:
+
+```bash
+npm run reset            # prompts before removing workspace, mailbox, logs
+npm run reset -- --full  # also removes config.json for a complete re-scaffold
+```
+
 ### Manual Configuration
 
 Alternatively, create `config.json` by hand with only the two required fields:

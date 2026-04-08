@@ -5,6 +5,7 @@
   "main": "src/index.ts",
   "scripts": {
     "init": "tsx scripts/init.ts",
+    "reset": "tsx scripts/reset.ts",
     "send-message": "tsx scripts/send-message.ts",
     "list-tasks": "tsx scripts/list-tasks.ts",
     "agent-status": "tsx scripts/agent-status.ts",
