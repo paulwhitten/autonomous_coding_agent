@@ -1,144 +1,139 @@
 {
-  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$schema": "./config.schema.json",
+
+  // ╔══════════════════════════════════════════════════════════════════════╗
+  // ║  Convention over Configuration                                      ║
+  // ║                                                                     ║
+  // ║  Only agent.role and mailbox.repoPath are required.                 ║
+  // ║  Everything else has sensible defaults (see config-defaults.ts).    ║
+  // ║  This file shows every available option for reference.              ║
+  // ║  The effective config (defaults + your overrides) is logged on      ║
+  // ║  startup and on every hot-reload.                                   ║
+  // ╚══════════════════════════════════════════════════════════════════════╝
+  //
+  // Minimal config to get started:
+  //
+  //   {
+  //     "agent": { "role": "developer" },
+  //     "mailbox": { "repoPath": "../agent_project_template/template_mailbox_repo" }
+  //   }
+
   "agent": {
-    "hostname": "auto-detect",
-    "role": "researcher",
-    "roleDefinitionsFile": "./roles.json",
+    "hostname": "auto-detect",             // Default: os.hostname()
+    "role": "researcher",                  // REQUIRED: "developer" | "qa" | "manager" | "researcher"
+    "roleDefinitionsFile": "./roles.json", // Default: "./roles.json"
     
-    // Timing configuration - Three different timeout settings:
-    "checkIntervalMs": 60000,      // 1. Mailbox polling: How often to check for new messages (60s)
-                                    //    ⚠️ WARNING: Do not set below 20000 (20s) — may cause
-                                    //    SDK rate-limit errors (HTTP 429).
-    "stuckTimeoutMs": 2700000,      // 2. Stuck / WIP watchdog timeout (2700000ms = 45min)
-                                    //    - LLM stuck detection: agent escalates if stuck on same task beyond this threshold
-                                    //    - WIP delegation watchdog: manager forcibly frees a WIP slot if no completion
-                                    //      message arrives within this window (expireStaleInFlightDelegations)
-    "sdkTimeoutMs": 300000,        // 3. SDK operations: Base timeout for Copilot SDK calls (300s)
-                                    //    - With 60s grace period = 360s total max wait per work item
-                                    //    - Increased from 120s to handle API load/latency
-    
+    // Timing configuration (all have sensible defaults)
+    // "checkIntervalMs": 60000,           // Default: 60000 (1 min) -- mailbox polling interval
+    // "stuckTimeoutMs": 2700000,          // Default: 2700000 (45 min) -- stuck/WIP watchdog
+    // "sdkTimeoutMs": 300000,             // Default: 300000 (5 min) -- SDK call timeout
+
     // Retry configuration
-    "taskRetryCount": 3,           // Number of retries for failed work items (default: 3)
-                                    // Total attempts = 1 initial + taskRetryCount retries
-                                    // Not persisted across agent restarts
+    // "taskRetryCount": 3,                // Default: 3
 
     // Work item decomposition range
-    // Controls how many work items the LLM creates when breaking down a task.
-    // Omit both to use the default range of 5-20.
-    // "minWorkItems": 5,          // Minimum work items per task (default: 5)
-    // "maxWorkItems": 20,         // Maximum work items per task (default: 20)
+    // "minWorkItems": 5,                  // Default: 5
+    // "maxWorkItems": 20,                 // Default: 20
 
-    // Free-form guidance injected into every decomposition prompt.
-    // Applies to all tasks (workflow and non-workflow).  Workflow-level
-    // tasks/decompositionPrompt on StateDefinition layer on top.
+    // Free-form decomposition guidance
     // "decompositionPrompt": "Always include a dedicated work item for writing unit tests.",
     
-    // Adaptive timeout strategy (see ADAPTIVE_TIMEOUT_STRATEGIES.md for details)
-    "timeoutStrategy": {
-      "enabled": true,                      // Enable multi-tier adaptive timeout handling
-      "tier1_multiplier": 1.5,              // Tier 1: Multiply timeout by 1.5x on each retry (no cap)
-      "tier2_backgroundThreshold": 2,       // Tier 2: After 2 timeouts, switch to background pattern
-      "tier3_decomposeThreshold": 3,        // Tier 3: After 3 timeouts, recommend decomposition
-      "tier4_adaptiveWindow": 3600000,      // Tier 4: Pattern detection window (1 hour)
-      "tier4_adaptiveThreshold": 5          // Tier 4: If 5+ timeouts in window, suggest global increase
-    },
+    // Adaptive timeout strategy (defaults shown)
+    // "timeoutStrategy": {
+    //   "enabled": true,
+    //   "tier1_multiplier": 1.5,
+    //   "tier2_backgroundThreshold": 2,
+    //   "tier3_decomposeThreshold": 3,
+    //   "tier4_adaptiveWindow": 3600000,
+    //   "tier4_adaptiveThreshold": 5
+    // },
     
-    // Validation and review configuration
-    "validation": {
-      "mode": "spot_check",                 // Options: "none" | "spot_check" | "always" | "milestone"
-      "reviewEveryNthItem": 5,              // For spot_check: Review every 5th completed item
-      "milestones": []                      // For milestone mode: e.g., [5, 10, 15] - which items to review
-    }
-    // Validation modes explained:
-    // - none: All items go directly to completed/ (no review tracking)
-    // - spot_check: Every Nth item goes to review/ then auto-completes (for audit trail)
-    // - always: All items go to review/ then auto-complete (full audit logging)
-    // - milestone: Specific sequence numbers go to review/ (e.g., major steps)
-    // 
-    // NOTE: Review is internal quality control only. Items auto-approve immediately.
-    // Manager is notified only when ALL work items for a message are complete.
+    // Validation and review configuration (defaults shown)
+    // "validation": {
+    //   "mode": "spot_check",             // "none" | "spot_check" | "always" | "milestone"
+    //   "reviewEveryNthItem": 5,
+    //   "milestones": []
+    // }
+
+    // Backpressure (defaults shown)
+    // "backpressure": {
+    //   "enabled": true,
+    //   "maxPendingWorkItems": 50,
+    //   "maxRecipientMailbox": 10,
+    //   "deferralLogIntervalMs": 300000
+    // }
   },
   "mailbox": {
-    "repoPath": "../agent_project_template/template_mailbox_repo",
-    "gitSync": true,                        // Sync mailbox with git (for remote collaboration)
-    "autoCommit": true,                     // Auto-commit mailbox changes
-    "commitMessage": "Auto-sync: {hostname}_{role} at {timestamp}",
-    "supportBroadcast": true,               // Enable broadcast messages (to all agents)
-    "supportAttachments": true,             // Enable attachment folder (future feature)
-    "supportPriority": true                 // Enable priority mailboxes (priority/, normal/, background/)
-    // Priority mailboxes:
-    // - priority/   : HIGH priority - manager responses, urgent corrections (checked first)
-    // - normal/     : NORMAL priority - regular work assignments (default)
-    // - background/ : LOW priority - optional tasks, processed when idle
-    // When disabled, falls back to root mailbox folder (legacy behavior)
+    "repoPath": "../agent_project_template/template_mailbox_repo"  // REQUIRED
+    // "gitSync": false,                   // Default: false; set true for multi-agent git sync
+    // "autoCommit": true,                 // Default: true
+    // "commitMessage": "Auto-sync: {hostname}_{role} at {timestamp}",
+    // "supportBroadcast": true,           // Default: true
+    // "supportAttachments": true,         // Default: true
+    // "supportPriority": true             // Default: true
   },
-  "copilot": {
-    "model": "gpt-4.1",                     // Model: gpt-4.1, gpt-5, claude-sonnet-4.5, etc.
-    "allowedTools": ["all"],                // Copilot tools access: ["all"] or specific tools
-    "permissions": {
-      "shell": "allowlist",                // Shell: allowlist (common dev tools), allow (any), deny
-      "write": "allow",                     // File write operations - allow/deny/workingDir
-      "read": "allow",                      // File read operations - allow/deny/workingDir
-      "url": "deny",                        // URL/network access - allow/deny
-      "mcp": "deny",                        // MCP server tool calls - allow/deny
-      "shellAllowAdditional": []             // Extra commands beyond built-in dev allowlist
-    },
-    "description": "Streaming mode is always enabled (hardcoded in agent). Permissions control what SDK tool operations are approved. Without a permission handler, ALL operations are silently denied by the SDK. Shell 'allowlist' allows git, npm, python, pip, cargo, gcc, make, and 60+ common dev tools. Add project-specific commands to shellAllowAdditional."
-  },
-  "workspace": {
-    "path": "./workspace",                  // Root workspace directory
-    "tasksFolder": "tasks",                 // Subfolder for work item management
-    "workingFolder": "project",             // Subfolder for generated code/artifacts
-    
-    // Customizable task subfolder names
-    "taskSubfolders": {
-      "pending": "pending",                 // Active work item queue
-      "completed": "completed",             // Successfully finished items
-      "review": "review",                   // Items logged for quality control (auto-approved)
-      "failed": "failed"                    // Failed items needing attention
-    },
-    "persistContext": true                  // Save session context across restarts
-  },
-  "logging": {
-    "level": "info",                        // Log level: "debug" | "info" | "warn" | "error"
-    "path": "./logs/agent.log",             // Log file path
-    "maxSizeMB": 100                        // Max log file size before rotation
-  },
-  "manager": {
-    "hostname": "i9",                       // Manager agent hostname
-    "role": "manager",                      // Manager agent role
-    "escalationPriority": "HIGH"            // Priority for escalation messages
-  },
-  "quota": {
-    "enabled": true,                        // Enable quota management
-    "preset": "adaptive",                   // Preset: "conservative" | "moderate" | "adaptive" | "unlimited"
-    "presetsFile": "./quota-presets.json",  // Quota presets configuration file
-    "overrides": {
-      "limits": {
-        "daily": 25                         // Override daily task limit
-      }
-    },
-    "sharedQuotaUrl": "https://github.com/settings/billing"  // URL for quota monitoring
-  },
+
+  // All copilot fields have defaults -- omit the entire block to use them
+  // "copilot": {
+  //   "model": "gpt-4.1",                // Default: "gpt-4.1"
+  //   "allowedTools": ["all"],            // Default: ["all"]
+  //   "permissions": {
+  //     "shell": "allowlist",             // Default: "allowlist"
+  //     "write": "allow",                 // Default: "allow"
+  //     "read": "allow",                  // Default: "allow"
+  //     "url": "deny",                    // Default: "deny"
+  //     "mcp": "deny"                     // Default: "deny"
+  //   }
+  // },
+
+  // All workspace fields have defaults -- omit the entire block to use them
+  // "workspace": {
+  //   "path": "./workspace",              // Default: "./workspace"
+  //   "tasksFolder": "tasks",             // Default: "tasks"
+  //   "workingFolder": "project",         // Default: "project"
+  //   "taskSubfolders": {                 // Defaults shown
+  //     "pending": "pending",
+  //     "completed": "completed",
+  //     "review": "review",
+  //     "failed": "failed"
+  //   },
+  //   "persistContext": true              // Default: true
+  // },
+
+  // All logging fields have defaults -- omit the entire block to use them
+  // "logging": {
+  //   "level": "info",                    // Default: "info"
+  //   "path": "./logs/agent.log",         // Default: "./logs/agent.log"
+  //   "maxSizeMB": 100                    // Default: 100
+  // },
+
+  // Manager -- omit for default manager settings, or when this agent IS the manager
+  // "manager": {
+  //   "hostname": "i9",
+  //   "role": "manager",
+  //   "escalationPriority": "HIGH"        // Default: "HIGH"
+  // },
+
+  // Quota -- defaults to enabled with adaptive preset
+  // "quota": {
+  //   "enabled": true,                    // Default: true
+  //   "preset": "adaptive",              // Default: "adaptive"
+  //   "presetsFile": "./quota-presets.json"
+  // },
   
-  // Communication configuration
-  // Both git mailbox and A2A HTTP are always active with sensible defaults.
-  // Add a "communication.a2a" block only to override defaults (port, TLS, etc.).
-  // Uncomment the block below to customize A2A settings:
-  //
+  // Communication -- both git mailbox and A2A HTTP are always active.
+  // Add a "communication.a2a" block only to override defaults:
   // "communication": {
   //   "a2a": {
-  //     "serverPort": 4000,              // HTTP port (default: 4000, 0 = OS-assigned)
-  //     "transport": "jsonrpc",          // "jsonrpc" | "rest" | "grpc"
-  //     "tls": { "enabled": false },     // Enable TLS for production
-  //     "authentication": { "scheme": "none" },  // "bearer" | "apiKey" | "none"
-  //     "knownAgentUrls": [],            // Direct-configured A2A agent URLs
-  //     "auditDir": "audit/a2a"          // Git-tracked audit log directory
+  //     "serverPort": 4000,
+  //     "transport": "jsonrpc",
+  //     "tls": { "enabled": false },
+  //     "authentication": { "scheme": "none" },
+  //     "knownAgentUrls": [],
+  //     "auditDir": "audit/a2a"
   //   }
   // },
 
   // Team member routing
-  // URI scheme determines transport: a2a://host:port for A2A, mailbox://id
-  // for explicit mailbox, or omit uri for default mailbox routing.
   "teamMembers": []
 }

@@ -93,10 +93,8 @@ export class AutonomousAgent {
     
     this.quotaManager = new QuotaManager(config, this.logger);
 
-    // Resolve hostname once for use throughout the agent lifecycle
-    this.hostname = config.agent.hostname === 'auto-detect'
-      ? require('os').hostname()
-      : config.agent.hostname;
+    // Hostname is resolved by applyDefaults() before the agent is constructed
+    this.hostname = config.agent.hostname;
 
     // Create WorkflowEngine (loading deferred to initialize())
     this.workflowEngine = new WorkflowEngine(

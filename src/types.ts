@@ -2,10 +2,20 @@
 
 import { PermissionsConfig } from './permission-handler.js';
 
+/**
+ * Full agent configuration.
+ *
+ * Convention over Configuration: only `agent.role` and `mailbox.repoPath` are
+ * required.  All other fields have sensible defaults defined in
+ * config-defaults.ts and are filled by `applyDefaults()` at startup.
+ *
+ * After `applyDefaults()` runs, every field is guaranteed to be present --
+ * the optional markers here reflect what users may omit in their config file.
+ */
 export interface AgentConfig {
   agent: {
     hostname: string;
-    role: 'developer' | 'qa' | 'manager' | 'researcher';
+    role: string;
     roleDefinitionsFile?: string;
     /** Path to a custom roles overlay JSON (relative to config.json or absolute).
      *  Merged on top of roleDefinitionsFile to add or override role definitions. */
@@ -83,7 +93,7 @@ export interface AgentConfig {
     path: string;
     maxSizeMB: number;
   };
-  manager: {
+  manager?: {
     hostname: string;
     role: string;
     escalationPriority: 'HIGH' | 'NORMAL' | 'LOW';

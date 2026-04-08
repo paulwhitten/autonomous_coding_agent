@@ -11,6 +11,8 @@ import { readFile } from 'fs/promises';
 import { watchFile, unwatchFile, existsSync } from 'fs';
 import path from 'path';
 import { AgentConfig } from './types.js';
+import { applyDefaults, sanitizeConfigForLogging, computeConfigOverrides, DeepPartial } from './config-defaults.js';
+import { validateConfig, formatValidationErrors } from './config-validator.js';
 import pino from 'pino';
 
 /** Fields that can be safely updated at runtime without restarting */
@@ -164,11 +166,27 @@ export class ConfigWatcher {
   private async reloadConfig(): Promise<void> {
     try {
       const raw = await readFile(this.configPath, 'utf-8');
-      const newConfig: AgentConfig = JSON.parse(raw);
+      const userConfig: DeepPartial<AgentConfig> = JSON.parse(raw);
 
-      // Validate required structure
-      if (!newConfig.agent || !newConfig.mailbox || !newConfig.copilot) {
-        this.logger.warn('Config reload skipped: missing required top-level fields');
+      // Validate against JSON Schema before applying defaults
+      const validation = await validateConfig(userConfig as Record<string, unknown>);
+      if (!validation.valid) {
+        this.logger.warn(
+          { errors: validation.errors },
+          `Config reload skipped: ${formatValidationErrors(validation.errors)}`,
+        );
+        return;
+      }
+
+      // Apply convention-over-configuration defaults
+      let newConfig: AgentConfig;
+      try {
+        newConfig = applyDefaults(userConfig);
+      } catch (validationError) {
+        this.logger.warn(
+          { err: validationError },
+          'Config reload skipped: validation failed',
+        );
         return;
       }
 
@@ -208,6 +226,16 @@ export class ConfigWatcher {
 
       // Update our snapshot
       this.currentConfig = structuredClone(newConfig);
+
+      // Log the concise overrides and full config at debug level after merge
+      this.logger.info(
+        { changedFields: changes, overrides: computeConfigOverrides(newConfig) },
+        'Config hot-reload: applied changes (user overrides from defaults)',
+      );
+      this.logger.debug(
+        { effectiveConfig: sanitizeConfigForLogging(newConfig) },
+        'Full effective configuration after hot-reload',
+      );
 
       // Notify the agent
       this.callback(updated, newConfig);

@@ -52,8 +52,8 @@
       },
       "modelFallback": {
         "enabled": true,
-        "primary": "claude-sonnet-4.5",
-        "fallback": "gpt-4.1",
+        "primary": "gpt-4.1",
+        "fallback": "gpt-4.1-mini",
         "switchAt": 0.75
       },
       "priorityRules": {
