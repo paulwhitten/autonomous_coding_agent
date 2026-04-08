@@ -6,21 +6,24 @@ import {
   Users,
   Mail,
   Activity,
-  FileText,
+  FolderOpen,
   Play,
+  Radio,
 } from 'lucide-react';
 import { LogoutButton } from './AuthGate';
 import ThemeToggle from './ThemeToggle';
+import ConnectionStatus from './ConnectionStatus';
 
 const navItems = [
   { to: '/', icon: LayoutDashboard, label: 'Dashboard' },
-  { to: '/config', icon: Settings, label: 'Configuration' },
-  { to: '/instructions', icon: FileText, label: 'Instructions' },
+  { to: '/projects', icon: FolderOpen, label: 'Projects' },
   { to: '/workflows', icon: GitBranch, label: 'Workflows' },
   { to: '/team', icon: Users, label: 'Team' },
   { to: '/mailbox', icon: Mail, label: 'Mailbox' },
   { to: '/processes', icon: Play, label: 'Processes' },
+  { to: '/a2a', icon: Radio, label: 'A2A Protocol' },
   { to: '/monitor', icon: Activity, label: 'Monitor' },
+  { to: '/settings', icon: Settings, label: 'Settings' },
 ];
 
 export default function Layout() {
@@ -51,11 +54,14 @@ export default function Layout() {
             </NavLink>
           ))}
         </nav>
-        <div className="p-4 border-t border-gray-700 text-xs text-gray-500 flex items-center justify-between">
-          <span>v1.0.0</span>
-          <div className="flex items-center gap-2">
-            <ThemeToggle />
-            <LogoutButton />
+        <div className="p-4 border-t border-gray-700 space-y-2">
+          <ConnectionStatus />
+          <div className="text-xs text-gray-500 flex items-center justify-between">
+            <span>v1.0.0</span>
+            <div className="flex items-center gap-2">
+              <ThemeToggle />
+              <LogoutButton />
+            </div>
           </div>
         </div>
       </aside>

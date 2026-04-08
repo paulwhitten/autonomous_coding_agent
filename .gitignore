@@ -3,18 +3,21 @@ dist/
 *.log
 .env
 .DS_Store
+.copilot-tracking/
 
 # Agent runtime artifacts
 session_context.json
 mailbox_state.json
 config.json
 workspace/
+projects/
 logs/
 coverage/
 debug/
 tmp/
 temp/
 autonomous_copilot_agent
+mailbox/
 
 # Smoke test runtime artifacts
 smoke_tests/**/temp/
@@ -39,3 +42,6 @@ smoke_tests/**/agent/*.txt
 smoke_tests/**/agent/*.sh
 smoke_tests/**/agent/*.js
 smoke_tests/**/agent/mailbox/
+
+# tests
+web/test-results/

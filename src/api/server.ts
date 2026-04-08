@@ -5,7 +5,6 @@ import type { Request, Response, NextFunction } from './express-compat.js';
 import cors from 'cors';
 import { createServer } from 'http';
 import path from 'path';
-import { fileURLToPath } from 'url';
 // @ts-expect-error — no type declarations available
 import swaggerJsdoc from 'swagger-jsdoc';
 // @ts-expect-error — no type declarations available
@@ -18,13 +17,13 @@ import { createAgentsRouter } from './routes/agents.js';
 import { createTemplatesRouter } from './routes/templates.js';
 import { createProcessesRouter } from './routes/processes.js';
 import { createInstructionsRouter } from './routes/instructions.js';
-import { initWebSocket } from './websocket.js';
+import { createA2ARouter } from './routes/a2a.js';
+import { createProjectsRouter } from './routes/projects.js';
+import { initWebSocket, broadcast } from './websocket.js';
 import { startFileWatcher } from './file-watcher.js';
 import { loadWorkflowSchema } from './validation.js';
 import { authMiddleware, createAuthCheckRoute } from './auth.js';
-
-const __filename = fileURLToPath(import.meta.url);
-const __dirname = path.dirname(__filename);
+import { startAgentBrowser, stopAgentBrowser } from './agent-browser.js';
 
 export async function createApiServer(projectRoot: string, port: number = 3001) {
   const app = express();
@@ -109,6 +108,18 @@ export async function createApiServer(projectRoot: string, port: number = 3001) 
       get: { summary: 'Read custom instructions', tags: ['Instructions'], responses: { '200': { description: 'Custom instructions JSON' } } },
       put: { summary: 'Write custom instructions', tags: ['Instructions'], responses: { '200': { description: 'Success' } } },
     },
+    '/api/projects': {
+      get: { summary: 'List all projects', tags: ['Projects'], responses: { '200': { description: 'Project list' } } },
+      post: { summary: 'Create a new project', tags: ['Projects'], responses: { '200': { description: 'Created project' } } },
+    },
+    '/api/projects/{id}': {
+      get: { summary: 'Read a project', tags: ['Projects'], parameters: [{ name: 'id', in: 'path', required: true, schema: { type: 'string' } }], responses: { '200': { description: 'Project JSON' } } },
+      put: { summary: 'Update a project', tags: ['Projects'], parameters: [{ name: 'id', in: 'path', required: true, schema: { type: 'string' } }], responses: { '200': { description: 'Updated project' } } },
+      delete: { summary: 'Delete a project', tags: ['Projects'], parameters: [{ name: 'id', in: 'path', required: true, schema: { type: 'string' } }], responses: { '200': { description: 'Success' } } },
+    },
+    '/api/projects/{id}/apply': {
+      post: { summary: 'Apply project — generate configs and custom_instructions', tags: ['Projects'], parameters: [{ name: 'id', in: 'path', required: true, schema: { type: 'string' } }], responses: { '200': { description: 'Apply results' } } },
+    },
   };
 
   app.use('/api-docs', swaggerUi.serve, swaggerUi.setup(swaggerSpec));
@@ -122,6 +133,8 @@ export async function createApiServer(projectRoot: string, port: number = 3001) 
   app.use('/api/templates', createTemplatesRouter(projectRoot));
   app.use('/api/processes', createProcessesRouter(projectRoot));
   app.use('/api/instructions', createInstructionsRouter(projectRoot));
+  app.use('/api/a2a', createA2ARouter(projectRoot));
+  app.use('/api/projects', createProjectsRouter(projectRoot));
 
   // Health check
   app.get('/api/health', (_req: Request, res: Response) => {
@@ -151,6 +164,9 @@ export async function createApiServer(projectRoot: string, port: number = 3001) 
     path.join(projectRoot, 'logs'),
   ];
   startFileWatcher(watchPaths);
+
+  // Persistent mDNS browser for real-time agent discovery
+  startAgentBrowser();
 
   return { app, httpServer, io, port };
 }

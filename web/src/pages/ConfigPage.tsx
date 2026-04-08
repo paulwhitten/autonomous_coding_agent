@@ -1,12 +1,12 @@
 import { useState, useEffect } from 'react';
 import { useForm } from 'react-hook-form';
-import { configApi } from '../lib/api';
-import { Save, Download, ChevronRight, ChevronLeft, Eye, FolderOpen, Trash2, FilePlus } from 'lucide-react';
+import { configApi, workflowApi, agentsApi } from '../lib/api';
+import { Save, Download, ChevronRight, ChevronLeft, Eye, FolderOpen, Trash2, FilePlus, Plus, X, Users } from 'lucide-react';
 
-const STEPS = ['Agent', 'Mailbox', 'Copilot', 'Workspace', 'Logging', 'Manager', 'Quota'] as const;
+const STEPS = ['Agent', 'Mailbox', 'Copilot', 'Workspace', 'Logging', 'Manager', 'Team', 'Quota'] as const;
 
 const MODELS = ['gpt-4.1', 'gpt-5', 'claude-sonnet-4.5', 'claude-opus-4', 'o3-mini'];
-const ROLES = ['developer', 'qa', 'manager', 'researcher'];
+const ROLES = ['developer', 'qa', 'manager', 'researcher', 'requirements-analyst'];
 const VALIDATION_MODES = ['none', 'spot_check', 'always', 'milestone'];
 const QUOTA_PRESETS = ['conservative', 'aggressive', 'adaptive', 'unlimited'];
 
@@ -22,6 +22,7 @@ interface ConfigForm {
     maxWorkItems: number;
     decompositionPrompt: string;
     wipLimit: number;
+    workflowFile: string;
     timeoutStrategy: {
       enabled: boolean;
       tier1_multiplier: number;
@@ -74,6 +75,25 @@ interface ConfigForm {
     enabled: boolean;
     preset: string;
   };
+  communication: {
+    a2a: {
+      serverPort: number;
+    };
+  };
+}
+
+interface TeamMember {
+  hostname: string;
+  role: string;
+  responsibilities: string;
+  uri: string;
+}
+
+interface WorkflowSummary {
+  file: string;
+  id: string;
+  name: string;
+  description: string;
 }
 
 const defaultValues: ConfigForm = {
@@ -88,6 +108,7 @@ const defaultValues: ConfigForm = {
     maxWorkItems: 20,
     decompositionPrompt: '',
     wipLimit: 0,
+    workflowFile: '',
     timeoutStrategy: {
       enabled: true,
       tier1_multiplier: 1.5,
@@ -140,6 +161,11 @@ const defaultValues: ConfigForm = {
     enabled: true,
     preset: 'adaptive',
   },
+  communication: {
+    a2a: {
+      serverPort: 0,
+    },
+  },
 };
 
 export default function ConfigPage() {
@@ -151,7 +177,12 @@ export default function ConfigPage() {
   const [newFileName, setNewFileName] = useState('');
   const [showNewFile, setShowNewFile] = useState(false);
 
-  const { register, handleSubmit, watch, reset } = useForm<ConfigForm>({
+  // Workflow and team state
+  const [workflows, setWorkflows] = useState<WorkflowSummary[]>([]);
+  const [teamMembers, setTeamMembers] = useState<TeamMember[]>([]);
+  const [workflowInfo, setWorkflowInfo] = useState<string | null>(null);
+
+  const { register, handleSubmit, watch, reset, setValue } = useForm<ConfigForm>({
     defaultValues,
   });
 
@@ -159,7 +190,54 @@ export default function ConfigPage() {
 
   useEffect(() => {
     configApi.list().then(data => setConfigFiles(data.configs)).catch(() => {});
+    workflowApi.list().then(data => setWorkflows(data.workflows as WorkflowSummary[])).catch(() => {});
   }, []);
+
+  // When workflow selection changes, fetch workflow details and auto-set role
+  const onWorkflowChange = async (filename: string) => {
+    setValue('agent.workflowFile', filename);
+    setWorkflowInfo(null);
+    if (!filename) return;
+    try {
+      const wf = await workflowApi.get(filename) as { name?: string; description?: string; initialState?: string; states?: Record<string, { role?: string }> };
+      if (wf.initialState && wf.states?.[wf.initialState]?.role) {
+        const role = wf.states[wf.initialState].role!;
+        setValue('agent.role', role);
+        setWorkflowInfo(`${wf.name || filename} — initial role: ${role}`);
+      } else {
+        setWorkflowInfo(wf.name || filename);
+      }
+    } catch { /* ignore */ }
+  };
+
+  const addTeamMember = () => {
+    setTeamMembers(prev => [...prev, { hostname: '', role: 'developer', responsibilities: '', uri: '' }]);
+  };
+
+  const removeTeamMember = (index: number) => {
+    setTeamMembers(prev => prev.filter((_, i) => i !== index));
+  };
+
+  const updateTeamMember = (index: number, field: keyof TeamMember, value: string) => {
+    setTeamMembers(prev => prev.map((m, i) => i === index ? { ...m, [field]: value } : m));
+  };
+
+  const importFromDiscovered = async () => {
+    try {
+      const data = await agentsApi.discovered();
+      const agents = data.agents || [];
+      const newMembers: TeamMember[] = agents.map((a: { hostname: string; role: string; a2aUrl?: string }) => ({
+        hostname: a.hostname,
+        role: a.role,
+        responsibilities: '',
+        uri: a.a2aUrl ? `a2a://${new URL(a.a2aUrl).host}` : '',
+      }));
+      setTeamMembers(prev => {
+        const existing = new Set(prev.map(m => `${m.hostname}_${m.role}`));
+        return [...prev, ...newMembers.filter(m => !existing.has(`${m.hostname}_${m.role}`))];
+      });
+    } catch { /* ignore */ }
+  };
 
   const loadConfig = async (filename: string) => {
     try {
@@ -173,8 +251,16 @@ export default function ConfigPage() {
       if (data.logging) Object.assign(merged.logging, data.logging);
       if (data.manager) Object.assign(merged.manager, data.manager);
       if (data.quota) Object.assign(merged.quota, data.quota);
+      const comm = data.communication as { a2a?: Record<string, unknown> } | undefined;
+      if (comm?.a2a) Object.assign(merged.communication.a2a, comm.a2a);
       reset(merged);
       setActiveFile(filename);
+      // Load team members if present
+      if (Array.isArray(data.teamMembers)) {
+        setTeamMembers(data.teamMembers);
+      } else {
+        setTeamMembers([]);
+      }
       setSaveStatus(`Loaded ${filename}`);
       setTimeout(() => setSaveStatus(null), 3000);
     } catch (err) {
@@ -210,22 +296,33 @@ export default function ConfigPage() {
     setTimeout(() => setSaveStatus(null), 4000);
   };
 
-  const buildConfig = (data: ConfigForm) => ({
-    agent: {
-      ...data.agent,
-      allowedTools: ['all'],
-    },
-    mailbox: data.mailbox,
-    copilot: {
-      model: data.copilot.model,
-      allowedTools: ['all'],
-      permissions: data.copilot.permissions,
-    },
-    workspace: data.workspace,
-    logging: data.logging,
-    manager: data.manager,
-    quota: data.quota,
-  });
+  const buildConfig = (data: ConfigForm) => {
+    const config: Record<string, unknown> = {
+      agent: {
+        ...data.agent,
+        allowedTools: ['all'],
+      },
+      mailbox: data.mailbox,
+      copilot: {
+        model: data.copilot.model,
+        allowedTools: ['all'],
+        permissions: data.copilot.permissions,
+      },
+      workspace: data.workspace,
+      logging: data.logging,
+      manager: data.manager,
+      quota: data.quota,
+    };
+    // Include communication if A2A port is set
+    if (data.communication.a2a.serverPort) {
+      config.communication = data.communication;
+    }
+    // Include team members if any
+    if (teamMembers.length > 0) {
+      config.teamMembers = teamMembers;
+    }
+    return config;
+  };
 
   const onSave = async (data: ConfigForm) => {
     try {
@@ -389,6 +486,26 @@ export default function ConfigPage() {
                 <Field label="WIP Limit" hint="0 = disabled. Manager only.">
                   <input type="number" {...register('agent.wipLimit', { valueAsNumber: true })} className="input" />
                 </Field>
+                <h3 className="text-md font-semibold pt-4">Workflow</h3>
+                <Field label="Workflow File" hint="Select a workflow to assign this agent">
+                  <select
+                    value={formData.agent.workflowFile}
+                    onChange={(e) => onWorkflowChange(e.target.value)}
+                    className="input"
+                  >
+                    <option value="">None</option>
+                    {workflows.map(w => (
+                      <option key={w.file} value={w.file}>{w.name || w.file}</option>
+                    ))}
+                  </select>
+                </Field>
+                {workflowInfo && (
+                  <p className="text-xs text-blue-600 dark:text-blue-400 -mt-2">{workflowInfo}</p>
+                )}
+                <h3 className="text-md font-semibold pt-4">A2A Communication</h3>
+                <Field label="A2A Server Port" hint="0 = OS-assigned. Set to enable agent-to-agent protocol.">
+                  <input type="number" {...register('communication.a2a.serverPort', { valueAsNumber: true })} className="input" />
+                </Field>
                 <h3 className="text-md font-semibold pt-4">Validation</h3>
                 <div className="grid grid-cols-2 gap-4">
                   <Field label="Mode">
@@ -529,6 +646,84 @@ export default function ConfigPage() {
             )}
 
             {step === 6 && (
+              <div className="space-y-4">
+                <div className="flex items-center justify-between mb-4">
+                  <h2 className="text-lg font-semibold flex items-center gap-2">
+                    <Users size={20} /> Team Members
+                  </h2>
+                  <div className="flex gap-2">
+                    <button
+                      type="button"
+                      onClick={importFromDiscovered}
+                      className="flex items-center gap-1 px-3 py-1.5 bg-purple-100 text-purple-700 rounded-lg hover:bg-purple-200 text-sm dark:bg-purple-900/30 dark:text-purple-400"
+                    >
+                      <Download size={14} /> Import Discovered
+                    </button>
+                    <button
+                      type="button"
+                      onClick={addTeamMember}
+                      className="flex items-center gap-1 px-3 py-1.5 bg-green-100 text-green-700 rounded-lg hover:bg-green-200 text-sm dark:bg-green-900/30 dark:text-green-400"
+                    >
+                      <Plus size={14} /> Add Member
+                    </button>
+                  </div>
+                </div>
+                {teamMembers.length === 0 && (
+                  <p className="text-sm text-gray-400 dark:text-gray-500 italic">
+                    No team members configured. Add members manually or import from discovered agents.
+                  </p>
+                )}
+                {teamMembers.map((member, i) => (
+                  <div key={i} className="border dark:border-gray-600 rounded-lg p-4 space-y-3 relative">
+                    <button
+                      type="button"
+                      onClick={() => removeTeamMember(i)}
+                      className="absolute top-2 right-2 text-red-400 hover:text-red-600"
+                      title="Remove member"
+                    >
+                      <X size={16} />
+                    </button>
+                    <div className="grid grid-cols-2 gap-3">
+                      <Field label="Hostname">
+                        <input
+                          value={member.hostname}
+                          onChange={(e) => updateTeamMember(i, 'hostname', e.target.value)}
+                          className="input"
+                          placeholder="agent-hostname"
+                        />
+                      </Field>
+                      <Field label="Role">
+                        <select
+                          value={member.role}
+                          onChange={(e) => updateTeamMember(i, 'role', e.target.value)}
+                          className="input"
+                        >
+                          {ROLES.map(r => <option key={r} value={r}>{r}</option>)}
+                        </select>
+                      </Field>
+                    </div>
+                    <Field label="Responsibilities" hint="What this member is responsible for">
+                      <input
+                        value={member.responsibilities}
+                        onChange={(e) => updateTeamMember(i, 'responsibilities', e.target.value)}
+                        className="input"
+                        placeholder="e.g. Backend API development"
+                      />
+                    </Field>
+                    <Field label="A2A URI" hint="a2a://host:port or leave empty for mailbox-only">
+                      <input
+                        value={member.uri}
+                        onChange={(e) => updateTeamMember(i, 'uri', e.target.value)}
+                        className="input"
+                        placeholder="a2a://localhost:4001"
+                      />
+                    </Field>
+                  </div>
+                ))}
+              </div>
+            )}
+
+            {step === 7 && (
               <div className="space-y-4">
                 <h2 className="text-lg font-semibold mb-4">Quota Management</h2>
                 <Toggle label="Enable Quota" {...register('quota.enabled')} />

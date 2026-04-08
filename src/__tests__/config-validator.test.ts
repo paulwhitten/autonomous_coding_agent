@@ -210,3 +210,58 @@ describe('formatValidationErrors', () => {
     expect(formatted).toContain('Unknown property');
   });
 });
+
+describe('semantic validation', () => {
+  it('should detect duplicate team members', async () => {
+    const result = await validateConfig({
+      agent: { role: 'manager' },
+      mailbox: { repoPath: '../mailbox' },
+      teamMembers: [
+        { hostname: 'dev-1', role: 'developer', responsibilities: 'impl' },
+        { hostname: 'dev-1', role: 'developer', responsibilities: 'other' },
+      ],
+    });
+    expect(result.valid).toBe(false);
+    expect(result.errors.some(e => e.message.includes('Duplicate team member'))).toBe(true);
+  });
+
+  it('should accept unique team members', async () => {
+    const result = await validateConfig({
+      agent: { role: 'manager' },
+      mailbox: { repoPath: '../mailbox' },
+      teamMembers: [
+        { hostname: 'dev-1', role: 'developer', responsibilities: 'impl' },
+        { hostname: 'qa-1', role: 'qa', responsibilities: 'testing' },
+      ],
+    });
+    expect(result.valid).toBe(true);
+  });
+
+  it('should reject invalid A2A port range', async () => {
+    const result = await validateConfig({
+      agent: { role: 'developer' },
+      mailbox: { repoPath: '../mailbox' },
+      communication: { a2a: { serverPort: 80 } },
+    });
+    expect(result.valid).toBe(false);
+    expect(result.errors.some(e => e.path === 'communication.a2a.serverPort')).toBe(true);
+  });
+
+  it('should accept port 0 (OS-assigned)', async () => {
+    const result = await validateConfig({
+      agent: { role: 'developer' },
+      mailbox: { repoPath: '../mailbox' },
+      communication: { a2a: { serverPort: 0 } },
+    });
+    expect(result.valid).toBe(true);
+  });
+
+  it('should warn when wipLimit is set for non-manager role', async () => {
+    const result = await validateConfig({
+      agent: { role: 'developer', wipLimit: 5 },
+      mailbox: { repoPath: '../mailbox' },
+    });
+    expect(result.valid).toBe(false);
+    expect(result.errors.some(e => e.message.includes('wipLimit'))).toBe(true);
+  });
+});

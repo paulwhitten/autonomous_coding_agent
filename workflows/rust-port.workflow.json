@@ -1,0 +1,203 @@
+{
+  "$schema": "../../a_c_a/workflows/workflow.schema.json",
+  "id": "rust-port",
+  "name": "Rust SDK Port Pipeline",
+  "description": "Multi-phase workflow for porting the LogixEdge C++ SDK to Rust. Developer implements on feature branches, QA validates with cargo build/test/fmt/clippy, merges to main on success.",
+  "version": "1.0.0",
+  "initialState": "ASSIGN",
+  "terminalStates": ["DONE", "ESCALATED"],
+  "globalContext": {
+    "projectPath": "/Users/pcwhitt1/devel/esw/sdk",
+    "buildCommand": "cd logix-edge-rs && cargo build --workspace",
+    "testCommand": "cd logix-edge-rs && cargo test --workspace",
+    "lintCommand": "cd logix-edge-rs && cargo clippy --workspace -- -D warnings",
+    "fmtCommand": "cd logix-edge-rs && cargo fmt --check",
+    "cmakeBuildCommand": "cmake --preset=debug/host && cmake --build build/debug/host",
+    "referenceDoc": "rust_integration.md",
+    "rustInstructions": ".github/instructions/rust-integration.instructions.md"
+  },
+  "states": {
+    "ASSIGN": {
+      "name": "Task Assignment",
+      "role": "manager",
+      "description": "Manager routes the Rust port phase specification to the developer. The workflow engine handles routing mechanically.",
+      "prompt": "",
+      "allowedTools": [],
+      "transitions": {
+        "onSuccess": "IMPLEMENTING",
+        "onFailure": "ESCALATED"
+      }
+    },
+
+    "IMPLEMENTING": {
+      "name": "Implementation",
+      "role": "developer",
+      "description": "Developer implements the current Rust port phase on a feature branch from latest main.",
+      "prompt": "You are implementing a phase of the LogixEdge SDK Rust port.\n\nYou are ALREADY on branch dev/{{taskId}} -- the entry commands created it from main. Do NOT create branches or run git checkout.\n\n**Context files to read first:**\n- {{referenceDoc}} (integration strategies and codebase assessment)\n- {{rustInstructions}} (Rust coding conventions for this project)\n- core/cpp/include/logix/edge/ (C++ public API surface you are wrapping)\n\n**Procedure:**\n1. cd {{projectPath}}\n2. Read the reference documents listed above\n3. Execute each work item sequentially\n4. After completing all items:\n   - Run: {{fmtCommand}}\n   - Run: {{buildCommand}}\n   - Run: {{testCommand}}\n   - Run: {{lintCommand}}\n5. Fix ALL errors -- do not proceed with failures\n\n**Rust conventions:**\n- Every unsafe FFI call must have a // SAFETY: comment\n- Implement Drop for every handle wrapper\n- Include Rockwell Automation copyright header in every .rs file\n- Use the non-templated raw-data callback overloads on IpcClient for the C shim\n\nDo NOT call send_completion_report() or send_message() -- the workflow engine handles state transitions automatically.\n\nIMPORTANT: Do NOT create a new branch. Do NOT run git checkout. The exit commands will commit and push automatically.",
+      "tasks": [
+        "unit tests including round-trip tests for every public struct, with 80%+ line coverage",
+        "cargo fmt formatting",
+        "cargo clippy with -D warnings",
+        "validation that all unit tests pass",
+        "validation that cargo build --workspace succeeds"
+      ],
+      "decompositionPrompt": "Place test-writing work items AFTER implementation items but BEFORE any final verification step. Each test work item should reference the specific module and public items to test. Read the reference documents before decomposing.",
+      "allowedTools": ["terminal", "file_ops", "reporting", "mailbox:read"],
+      "transitions": {
+        "onSuccess": "VALIDATING",
+        "onFailure": "IMPLEMENTING"
+      },
+      "maxRetries": 2,
+      "timeoutMs": 900000,
+      "onEntryCommands": [
+        { "command": "rm -f .git/index.lock .git/HEAD.lock 2>/dev/null; git merge --abort 2>/dev/null; git rebase --abort 2>/dev/null; git cherry-pick --abort 2>/dev/null; true", "reason": "Remove stale lock files and abort any stuck operations.", "failOnError": false },
+        { "command": "git fetch origin", "reason": "Fetch latest remote tracking references.", "failOnError": false },
+        { "command": "git reset --hard HEAD", "reason": "Discard any uncommitted changes.", "failOnError": false },
+        { "command": "git clean -fd", "reason": "Remove untracked files.", "failOnError": false },
+        { "command": "git checkout main", "reason": "Switch to main branch.", "failOnError": true },
+        { "command": "git pull origin main", "reason": "Sync local main to latest origin/main.", "failOnError": false },
+        { "command": "git checkout -b dev/{{taskId}} || git checkout dev/{{taskId}}", "reason": "Create the feature branch from main or switch to it if existing.", "failOnError": true }
+      ],
+      "onExitCommands": [
+        { "command": "rm -f .git/index.lock .git/HEAD.lock 2>/dev/null; git merge --abort 2>/dev/null; git rebase --abort 2>/dev/null; git cherry-pick --abort 2>/dev/null; true", "reason": "Clean up stale locks.", "failOnError": false },
+        { "command": "git stash pop 2>/dev/null; true", "reason": "Recover stashed changes.", "failOnError": false },
+        { "command": "cd logix-edge-rs && cargo fmt 2>/dev/null; true", "reason": "Auto-format before commit.", "failOnError": false },
+        { "command": "git add -A", "reason": "Stage all changes.", "failOnError": false },
+        { "command": "git diff --cached --quiet || git commit -m '{{role}}: {{state}} for {{taskId}}'", "reason": "Commit if changes exist.", "failOnError": false },
+        { "command": "git push origin HEAD:dev/{{taskId}}", "reason": "Push to origin.", "failOnError": false },
+        { "command": "git rev-parse HEAD", "reason": "Capture commit SHA.", "captureAs": "commitSha" }
+      ],
+      "exitActions": [
+        { "type": "set_context", "params": { "key": "implementationComplete", "value": "true" } },
+        { "type": "set_context", "params": { "key": "branch", "value": "dev/{{taskId}}" } },
+        { "type": "log", "params": { "message": "Rust port phase pushed for task {{taskId}}", "level": "info" } }
+      ]
+    },
+
+    "VALIDATING": {
+      "name": "QA Validation",
+      "role": "qa",
+      "description": "QA checks out the feature branch and runs cargo build, test, clippy, and fmt. Read-only -- QA must not modify source files.",
+      "prompt": "",
+      "allowedTools": [],
+      "permissions": {
+        "write": "deny"
+      },
+      "transitions": {
+        "onSuccess": "MERGING",
+        "onFailure": "REWORK"
+      },
+      "maxRetries": 2,
+      "onEntryCommands": [
+        { "command": "rm -f .git/index.lock .git/HEAD.lock 2>/dev/null; git merge --abort 2>/dev/null; git rebase --abort 2>/dev/null; git cherry-pick --abort 2>/dev/null; true", "reason": "Clean up stale locks.", "failOnError": false },
+        { "command": "git fetch origin", "reason": "Fetch latest references.", "failOnError": false },
+        { "command": "git reset --hard HEAD", "reason": "Discard uncommitted changes.", "failOnError": false },
+        { "command": "git clean -fd", "reason": "Remove untracked files.", "failOnError": false },
+        { "command": "git checkout dev/{{taskId}} || git checkout -b dev/{{taskId}} origin/dev/{{taskId}}", "reason": "Switch to feature branch.", "failOnError": true },
+        { "command": "git reset --hard origin/dev/{{taskId}}", "reason": "Force-sync to what developer pushed.", "failOnError": true },
+        { "command": "git rev-parse HEAD", "reason": "Record validated commit SHA.", "captureAs": "validatedSha" },
+        { "command": "cd logix-edge-rs && cargo fmt --check", "reason": "Fast-fail: unformatted code.", "failOnError": true },
+        { "command": "cd logix-edge-rs && cargo build --workspace", "reason": "Fast-fail: build failure.", "failOnError": true },
+        { "command": "cd logix-edge-rs && cargo test --workspace", "reason": "Fast-fail: test failure.", "failOnError": true },
+        { "command": "cd logix-edge-rs && cargo clippy --workspace -- -D warnings", "reason": "Fast-fail: clippy warnings.", "failOnError": true }
+      ],
+      "onExitCommands": [
+        { "command": "git rev-parse HEAD", "reason": "Capture validated commit SHA.", "captureAs": "commitSha" }
+      ],
+      "exitActions": [
+        { "type": "set_context", "params": { "key": "validationComplete", "value": "true" } },
+        { "type": "log", "params": { "message": "QA validation completed for Rust port task {{taskId}}", "level": "info" } }
+      ]
+    },
+
+    "REWORK": {
+      "name": "Rework",
+      "role": "developer",
+      "description": "Developer fixes QA-reported issues on the same feature branch.",
+      "prompt": "Fix the issues found by QA. You are ALREADY on branch dev/{{taskId}}.\n\n**QA Rejection Reason:**\n{{rejectionReason}}\n\n**Procedure:**\n1. cd {{projectPath}}\n2. Address each issue from the QA findings\n3. Run: cd logix-edge-rs && cargo fmt\n4. Run: {{buildCommand}}\n5. Run: {{testCommand}}\n6. Run: {{lintCommand}}\n7. Fix ALL errors\n\nDo NOT create a new branch. Do NOT run git checkout.",
+      "allowedTools": ["terminal", "file_ops", "reporting", "mailbox:read"],
+      "requiredOutputs": ["commitSha"],
+      "transitions": {
+        "onSuccess": "VALIDATING",
+        "onFailure": "ESCALATED"
+      },
+      "maxRetries": 2,
+      "onEntryCommands": [
+        { "command": "rm -f .git/index.lock .git/HEAD.lock 2>/dev/null; git merge --abort 2>/dev/null; git rebase --abort 2>/dev/null; git cherry-pick --abort 2>/dev/null; true", "reason": "Clean up.", "failOnError": false },
+        { "command": "git fetch origin", "reason": "Fetch latest.", "failOnError": false },
+        { "command": "git reset --hard HEAD", "reason": "Discard uncommitted changes.", "failOnError": false },
+        { "command": "git clean -fd", "reason": "Remove untracked files.", "failOnError": false },
+        { "command": "git checkout dev/{{taskId}}", "reason": "Switch to feature branch.", "failOnError": true },
+        { "command": "git reset --hard origin/dev/{{taskId}}", "reason": "Force-sync to origin.", "failOnError": true }
+      ],
+      "onExitCommands": [
+        { "command": "rm -f .git/index.lock .git/HEAD.lock 2>/dev/null; git merge --abort 2>/dev/null; git rebase --abort 2>/dev/null; git cherry-pick --abort 2>/dev/null; true", "reason": "Clean up.", "failOnError": false },
+        { "command": "git stash pop 2>/dev/null; true", "reason": "Recover stashed changes.", "failOnError": false },
+        { "command": "cd logix-edge-rs && cargo fmt 2>/dev/null; true", "reason": "Auto-format.", "failOnError": false },
+        { "command": "git add -A", "reason": "Stage changes.", "failOnError": false },
+        { "command": "git diff --cached --quiet || git commit -m '{{role}}: rework fix for {{taskId}}'", "reason": "Commit fixes.", "failOnError": false },
+        { "command": "git push origin HEAD:dev/{{taskId}}", "reason": "Push rework.", "failOnError": false },
+        { "command": "git rev-parse HEAD", "reason": "Capture SHA.", "captureAs": "commitSha" }
+      ]
+    },
+
+    "MERGING": {
+      "name": "Merge to Main",
+      "role": "qa",
+      "description": "Mechanical merge: rebase feature onto main, merge, push, delete branch.",
+      "prompt": "",
+      "allowedTools": [],
+      "transitions": {
+        "onSuccess": "DONE",
+        "onFailure": "ESCALATED"
+      },
+      "maxRetries": 2,
+      "onEntryCommands": [
+        { "command": "rm -f .git/index.lock .git/HEAD.lock 2>/dev/null; git merge --abort 2>/dev/null; git rebase --abort 2>/dev/null; git cherry-pick --abort 2>/dev/null; true", "reason": "Clean up.", "failOnError": false },
+        { "command": "git fetch origin", "reason": "Fetch latest.", "failOnError": true },
+        { "command": "git reset --hard HEAD", "reason": "Discard uncommitted.", "failOnError": false },
+        { "command": "git clean -fd", "reason": "Remove untracked.", "failOnError": false },
+        { "command": "git checkout dev/{{taskId}} || git checkout -b dev/{{taskId}} origin/dev/{{taskId}}", "reason": "Checkout feature branch.", "failOnError": true },
+        { "command": "git reset --hard origin/dev/{{taskId}}", "reason": "Force-sync.", "failOnError": true },
+        { "command": "git rebase origin/main", "reason": "Rebase onto latest main.", "failOnError": true },
+        { "command": "git checkout main", "reason": "Switch to main.", "failOnError": true },
+        { "command": "git reset --hard origin/main", "reason": "Force-sync main.", "failOnError": true },
+        { "command": "git merge dev/{{taskId}} --no-ff -m 'Merge dev/{{taskId}}: Rust port - {{taskId}}'", "reason": "Merge feature branch.", "failOnError": true },
+        { "command": "git push origin main", "reason": "Push merge.", "failOnError": true },
+        { "command": "git rev-parse HEAD", "reason": "Capture merge SHA.", "captureAs": "mergeSha" }
+      ],
+      "onExitCommands": [
+        { "command": "git branch -d dev/{{taskId}}", "reason": "Delete local feature branch.", "failOnError": false },
+        { "command": "git push origin --delete dev/{{taskId}}", "reason": "Delete remote feature branch.", "failOnError": false }
+      ],
+      "exitActions": [
+        { "type": "set_context", "params": { "key": "mergeComplete", "value": "true" } },
+        { "type": "log", "params": { "message": "Rust port phase merged to main for task {{taskId}}", "level": "info" } }
+      ]
+    },
+
+    "DONE": {
+      "name": "Complete",
+      "role": "manager",
+      "description": "Rust port phase complete. Code merged to main, feature branch deleted.",
+      "prompt": "",
+      "allowedTools": [],
+      "transitions": {
+        "onSuccess": null,
+        "onFailure": null
+      }
+    },
+
+    "ESCALATED": {
+      "name": "Escalated",
+      "role": "manager",
+      "description": "Phase failed after retries. Requires human intervention.",
+      "prompt": "",
+      "allowedTools": ["mailbox:send", "reporting"],
+      "transitions": {
+        "onSuccess": null,
+        "onFailure": null
+      }
+    }
+  }
+}

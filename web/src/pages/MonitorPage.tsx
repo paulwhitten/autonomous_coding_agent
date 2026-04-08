@@ -127,7 +127,10 @@ export default function MonitorPage() {
   return (
     <div>
       <div className="flex items-center justify-between mb-4">
-        <h1 className="text-2xl font-bold text-gray-900 dark:text-white">Monitor</h1>
+        <div>
+          <h1 className="text-2xl font-bold text-gray-900 dark:text-white">Monitor</h1>
+          <p className="text-xs text-gray-400 mt-0.5">Local UI server · reads logs from this host</p>
+        </div>
         <div className="flex gap-2 items-center">
           <label className="flex items-center gap-1 text-sm text-gray-600 dark:text-gray-300">
             <input

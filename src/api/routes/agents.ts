@@ -2,6 +2,8 @@
 
 import { Router, Request, Response } from '../express-compat.js';
 import { readFile, readdir, stat } from 'fs/promises';
+import { discoverAgents } from '../../agent-registry.js';
+import { getHealthHistory } from '../agent-browser.js';
 import path from 'path';
 
 export function createAgentsRouter(projectRoot: string): Router {
@@ -114,6 +116,80 @@ export function createAgentsRouter(projectRoot: string): Router {
     }
   });
 
+  // GET /api/agents/discovered — discover agents on the local network via mDNS
+  // Enriches results with A2A agent cards when agents expose an a2aUrl
+  router.get('/discovered', async (req: Request, res: Response) => {
+    try {
+      const timeout = Math.min(parseInt(req.query.timeout as string) || 3000, 10000);
+      const agents = await discoverAgents(timeout);
+
+      // Enrich agents that have an A2A URL with their agent card
+      const enriched = await Promise.all(
+        agents.map(async (agent) => {
+          if (!agent.a2aUrl) return agent;
+          const enrichedAgent: Record<string, unknown> = { ...agent };
+          // Fetch agent card
+          const cardUrl = agent.a2aUrl.endsWith('/')
+            ? `${agent.a2aUrl}.well-known/agent-card.json`
+            : `${agent.a2aUrl}/.well-known/agent-card.json`;
+          const controller = new AbortController();
+          const cardTimeout = setTimeout(() => controller.abort(), 3000);
+          try {
+            const resp = await fetch(cardUrl, { signal: controller.signal });
+            clearTimeout(cardTimeout);
+            if (resp.ok) {
+              const card = await resp.json() as Record<string, unknown>;
+              enrichedAgent.card = card;
+              enrichedAgent.skills = card.skills || [];
+              enrichedAgent.version = card.version;
+              if (card.description) enrichedAgent.description = card.description;
+              enrichedAgent.reachable = true;
+            }
+          } catch {
+            clearTimeout(cardTimeout);
+            enrichedAgent.reachable = false;
+          }
+          // Fetch rich status from /a2a/status
+          const statusUrl = agent.a2aUrl.endsWith('/')
+            ? `${agent.a2aUrl}a2a/status`
+            : `${agent.a2aUrl}/a2a/status`;
+          const controller2 = new AbortController();
+          const statusTimeout = setTimeout(() => controller2.abort(), 3000);
+          try {
+            const resp = await fetch(statusUrl, { signal: controller2.signal });
+            clearTimeout(statusTimeout);
+            if (resp.ok) {
+              const status = await resp.json() as Record<string, unknown>;
+              enrichedAgent.a2aStatus = status;
+              enrichedAgent.reachable = true;
+            }
+          } catch {
+            clearTimeout(statusTimeout);
+          }
+          return enrichedAgent;
+        })
+      );
+
+      res.json({
+        agents: enriched,
+        total: enriched.length,
+        timestamp: new Date().toISOString(),
+      });
+    } catch (err) {
+      res.status(500).json({ error: 'Failed to discover agents via mDNS' });
+    }
+  });
+
+  // GET /api/agents/health-history — get health check history for all agents
+  router.get('/health-history', (_req: Request, res: Response) => {
+    const history = getHealthHistory();
+    const result: Record<string, Array<{ time: string; health: string }>> = {};
+    for (const [id, points] of history) {
+      result[id] = points;
+    }
+    res.json({ history: result, timestamp: new Date().toISOString() });
+  });
+
   return router;
 }
 
@@ -121,14 +197,43 @@ async function discoverAgentStatus(workspacePath: string, projectRoot: string): 
   const agents: unknown[] = [];
   // Try to read session context files
   try {
-    const contextPath = path.join(workspacePath, 'session-context.json');
+    const contextPath = path.join(workspacePath, 'session_context.json');
     const raw = await readFile(contextPath, 'utf-8');
     const ctx = JSON.parse(raw);
+
+    // Determine if the agent is actually running by cross-referencing
+    // with mDNS-discovered agents and checking staleness
+    let active = false;
+    let reachable = false;
+
+    // Check 1: Is this agent in the discovered agents list?
+    try {
+      const discovered = await discoverAgents(2000); // 2s timeout
+      const match = discovered.find(a => a.agentId === ctx.agentId);
+      if (match) {
+        active = true;
+        reachable = true;
+      }
+    } catch { /* discovery not available */ }
+
+    // Check 2: Staleness heuristic — if lastMailboxCheck is older than
+    // 5 minutes, the agent is likely not running (agents poll every ~30s)
+    if (!active && ctx.lastMailboxCheck) {
+      const lastCheck = new Date(ctx.lastMailboxCheck).getTime();
+      const fiveMinutesAgo = Date.now() - 5 * 60 * 1000;
+      if (lastCheck > fiveMinutesAgo) {
+        active = true; // Recent activity, likely still running
+      }
+    }
+
     agents.push({
       agentId: ctx.agentId,
-      status: ctx.status || 'unknown',
+      status: active ? (ctx.status || 'unknown') : 'stopped',
+      active,
+      reachable,
       lastMailboxCheck: ctx.lastMailboxCheck,
       messagesProcessed: ctx.messagesProcessed || 0,
+      stale: !active,
     });
   } catch {
     // No active session context found
@@ -147,7 +252,17 @@ async function collectWorkItems(tasksDir: string): Promise<Record<string, string
     const dir = path.join(tasksDir, folder);
     try {
       const files = await readdir(dir);
-      result[folder] = files.filter(f => f.endsWith('.md') || f.endsWith('.txt'));
+      result[folder] = files
+        .filter(f => f.endsWith('.md') || f.endsWith('.txt'))
+        .map(f => {
+          // Extract human-readable title from work item filename
+          // Formats: 001_001_task_title.md or 001_task_title.md
+          const hier = f.match(/^\d{3,}_\d{3,}_(.+)\.(md|txt)$/);
+          if (hier) return hier[1].replace(/_/g, ' ');
+          const simple = f.match(/^\d{3,}_(.+)\.(md|txt)$/);
+          if (simple) return simple[1].replace(/_/g, ' ');
+          return f;
+        });
     } catch { /* folder doesn't exist */ }
   }
   return result;

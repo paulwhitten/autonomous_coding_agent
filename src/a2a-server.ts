@@ -4,6 +4,8 @@
 //   - Agent Card at /.well-known/agent-card.json
 //   - A2A JSON-RPC endpoint at /a2a/jsonrpc
 //   - A2A REST endpoint at /a2a/rest
+//   - Enriched status at /a2a/status (team, mailbox, work items)
+//   - Mailbox query at /a2a/mailbox
 //
 // Requires @a2a-js/sdk and express as peer dependencies.
 // This module is loaded when communication.a2a is present in config.
@@ -11,6 +13,20 @@
 import type pino from 'pino';
 import type { A2AAgentExecutorInterface } from './a2a-executor.js';
 import type { A2AConfig } from './types.js';
+
+/** Live data provider for the enriched /a2a/status and /a2a/mailbox endpoints. */
+export interface A2AStatusProvider {
+  /** Team members configured for this agent. */
+  getTeam(): Array<{ hostname: string; role: string; responsibilities?: string }>;
+  /** Summary of pending mailbox messages. */
+  getMailboxSummary(): Promise<{ unread: number; recent: Array<{ from: string; subject: string; priority: string; date: string }> }>;
+  /** Full list of mailbox messages with content. */
+  getMailboxMessages(): Promise<Array<{ from: string; subject: string; priority: string; date: string; body: string }>>;
+  /** Archived (processed) messages. */
+  getArchivedMessages(): Promise<Array<{ from: string; subject: string; priority: string; date: string; body: string }>>;
+  /** Work item summary by state. */
+  getWorkItems(): Promise<Record<string, string[]>>;
+}
 
 /**
  * Minimal interface for the A2A server.
@@ -39,6 +55,7 @@ export async function createA2AServer(
   executor: A2AAgentExecutorInterface,
   config: A2AConfig,
   logger: pino.Logger,
+  statusProvider?: A2AStatusProvider,
 ): Promise<A2AServer> {
   // Dynamic imports -- only loaded when A2A is active.
   // Use 'any' casts because the @a2a-js/sdk API shape depends on the
@@ -49,7 +66,7 @@ export async function createA2AServer(
   const expressMod: any = await import('@a2a-js/sdk/server/express');
   const coreMod: any = await import('@a2a-js/sdk');
 
-  const requestedPort = config.serverPort ?? 4000;
+  const requestedPort = config.serverPort ?? 0;
   const taskStore = new serverMod.InMemoryTaskStore();
 
   const requestHandler = new serverMod.DefaultRequestHandler(
@@ -80,6 +97,72 @@ export async function createA2AServer(
   // Health check
   app.get('/health', (_req: any, res: any) => {
     res.json({ status: 'ok', protocol: 'a2a', version: agentCard.protocolVersion });
+  });
+
+  // Rich status endpoint — returns agent identity, team, mailbox, work items
+  // This is queried by the UI dashboard to populate agent cards without filesystem access
+  app.get('/a2a/status', async (_req: any, res: any) => {
+    const status: Record<string, unknown> = {
+      agent: {
+        name: agentCard.name,
+        description: agentCard.description,
+        version: agentCard.version,
+        protocolVersion: agentCard.protocolVersion,
+        skills: agentCard.skills || [],
+        capabilities: agentCard.capabilities || {},
+        provider: agentCard.provider || {},
+      },
+      server: {
+        port: actualPort || requestedPort,
+        uptime: process.uptime(),
+        startedAt: new Date(Date.now() - process.uptime() * 1000).toISOString(),
+      },
+      timestamp: new Date().toISOString(),
+    };
+
+    if (statusProvider) {
+      try {
+        status.team = statusProvider.getTeam();
+      } catch { /* ignore */ }
+      try {
+        status.mailbox = await statusProvider.getMailboxSummary();
+      } catch { /* ignore */ }
+      try {
+        status.workItems = await statusProvider.getWorkItems();
+      } catch { /* ignore */ }
+    }
+
+    res.json(status);
+  });
+
+  // Mailbox query — returns full message list for the UI mailbox page
+  app.get('/a2a/mailbox', async (_req: any, res: any) => {
+    if (!statusProvider) {
+      res.json({ messages: [] });
+      return;
+    }
+    try {
+      const messages = await statusProvider.getMailboxMessages();
+      res.json({ messages });
+    } catch (err) {
+      logger.error({ error: String(err) }, 'Failed to serve mailbox');
+      res.status(500).json({ error: 'Failed to read mailbox' });
+    }
+  });
+
+  // Archive query — returns processed/completed messages for message history
+  app.get('/a2a/archive', async (_req: any, res: any) => {
+    if (!statusProvider) {
+      res.json({ messages: [] });
+      return;
+    }
+    try {
+      const messages = await statusProvider.getArchivedMessages();
+      res.json({ messages });
+    } catch (err) {
+      logger.error({ error: String(err) }, 'Failed to serve archive');
+      res.status(500).json({ error: 'Failed to read archive' });
+    }
   });
 
   let httpServer: any = null;

@@ -6,11 +6,8 @@
 import { createApiServer } from '../api/server.js';
 import { Server } from 'http';
 import path from 'path';
-import { fileURLToPath } from 'url';
 
-const __filename = fileURLToPath(import.meta.url);
-const __dirname = path.dirname(__filename);
-const PROJECT_ROOT = path.resolve(__dirname, '..', '..', '..');
+const PROJECT_ROOT = path.resolve(__dirname, '..', '..');
 
 let httpServer: Server;
 let port: number;
@@ -212,6 +209,117 @@ describe('API Server E2E', () => {
       expect(json).toHaveProperty('gitWorkflow');
       expect(json).toHaveProperty('codingStandards');
       expect(json).toHaveProperty('buildSystem');
+    });
+  });
+
+  describe('A2A endpoints', () => {
+    test('GET /api/a2a/status returns configuration summary', async () => {
+      const { status, json } = await apiRequest('/api/a2a/status');
+      expect(status).toBe(200);
+      expect(json).toHaveProperty('configured');
+    });
+
+    test('GET /api/a2a/agent-card returns agent card or 404', async () => {
+      const { status } = await apiRequest('/api/a2a/agent-card');
+      expect([200, 404]).toContain(status);
+    });
+
+    test('GET /api/a2a/discovered-agents returns agent data', async () => {
+      const { status, json } = await apiRequest('/api/a2a/discovered-agents');
+      expect(status).toBe(200);
+      // When config exists, returns knownUrls + teamAgents; otherwise returns agents: []
+      expect(json).toBeDefined();
+    });
+
+    test('GET /api/a2a/audit returns entries array', async () => {
+      const { status, json } = await apiRequest('/api/a2a/audit');
+      expect(status).toBe(200);
+      expect(json).toHaveProperty('entries');
+      expect(Array.isArray(json.entries)).toBe(true);
+    });
+
+    test('GET /api/a2a/config returns a2a config block', async () => {
+      const { status, json } = await apiRequest('/api/a2a/config');
+      expect(status).toBe(200);
+      expect(json).toHaveProperty('a2aConfig');
+    });
+
+    test('POST /api/a2a/probe rejects missing url', async () => {
+      const { status } = await apiRequest('/api/a2a/probe', {
+        method: 'POST',
+        body: {},
+      });
+      expect(status).toBe(400);
+    });
+
+    test('POST /api/a2a/probe rejects non-http URL', async () => {
+      const { status, json } = await apiRequest('/api/a2a/probe', {
+        method: 'POST',
+        body: { url: 'ftp://example.com' },
+      });
+      expect(status).toBe(400);
+      expect(json).toHaveProperty('error');
+    });
+
+    test('POST /api/a2a/probe-all rejects missing urls array', async () => {
+      const { status, json } = await apiRequest('/api/a2a/probe-all', {
+        method: 'POST',
+        body: {},
+      });
+      expect(status).toBe(400);
+      expect(json).toHaveProperty('error');
+    });
+
+    test('POST /api/a2a/probe-all handles batch of unreachable URLs', async () => {
+      const { status, json } = await apiRequest('/api/a2a/probe-all', {
+        method: 'POST',
+        body: { urls: ['http://localhost:19999', 'http://localhost:19998'] },
+      });
+      expect(status).toBe(200);
+      expect(json).toHaveProperty('results');
+      expect(Array.isArray(json.results)).toBe(true);
+      expect(json.results.length).toBe(2);
+      expect(json).toHaveProperty('total', 2);
+      expect(json).toHaveProperty('found', 0);
+      for (const r of json.results) {
+        expect(r.found).toBe(false);
+      }
+    });
+
+    test('GET /api/a2a/audit supports pagination params', async () => {
+      const { status, json } = await apiRequest('/api/a2a/audit?limit=10&offset=0');
+      expect(status).toBe(200);
+      expect(json).toHaveProperty('entries');
+      expect(json).toHaveProperty('total');
+      expect(json).toHaveProperty('offset');
+      expect(json).toHaveProperty('limit');
+      expect(typeof json.total).toBe('number');
+    });
+
+    test('GET /api/a2a/audit supports direction filter', async () => {
+      const { status, json } = await apiRequest('/api/a2a/audit?direction=inbound');
+      expect(status).toBe(200);
+      expect(json).toHaveProperty('entries');
+      expect(Array.isArray(json.entries)).toBe(true);
+    });
+
+    test('GET /api/a2a/server-status returns running state', async () => {
+      const { status, json } = await apiRequest('/api/a2a/server-status');
+      expect(status).toBe(200);
+      expect(json).toHaveProperty('running');
+      expect(typeof json.running).toBe('boolean');
+    });
+
+    test('GET /api/a2a/agent-card/preview returns merged card', async () => {
+      const { status } = await apiRequest('/api/a2a/agent-card/preview');
+      // 200 when config exists, 404 otherwise
+      expect([200, 404]).toContain(status);
+    });
+
+    test('GET /api/a2a/audit/export returns JSON array', async () => {
+      const { status, json } = await apiRequest('/api/a2a/audit/export?format=json');
+      expect(status).toBe(200);
+      expect(Array.isArray(json)).toBe(true);
     });
   });
 });

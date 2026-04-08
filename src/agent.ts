@@ -23,6 +23,7 @@ import { CommunicationBackend, AgentAddress, AgentMessage } from './communicatio
 import { createBackend } from './backend-factory.js';
 import { CompositeBackend } from './backends/composite-backend.js';
 import { resolveTargetAddress } from './agent-uri.js';
+import { AgentRegistry } from './agent-registry.js';
 import pino from 'pino';
 import path from 'path';
 import fs from 'fs/promises';
@@ -73,6 +74,7 @@ export class AutonomousAgent {
   private context: SessionContext;
   private contextFile: string;
   private retryAttempts: Map<string, number> = new Map(); // Track retry attempts per work item
+  private agentRegistry: AgentRegistry | null = null;
   
   constructor(config: AgentConfig, configPath?: string) {
     this.config = config;
@@ -253,6 +255,15 @@ export class AutonomousAgent {
     
     // Initialize workspace manager
     await this.workspace.initialize();
+
+    // Register work item provider on A2A backend so /a2a/status serves live data
+    if (this.backend instanceof CompositeBackend) {
+      const a2aBackend = this.backend.getA2ABackend();
+      if (a2aBackend) {
+        const ws = this.workspace;
+        a2aBackend.setWorkItemProvider(() => ws.getWorkItemsByState());
+      }
+    }
     
     // Initialize quota manager
     await this.quotaManager.initialize();
@@ -335,6 +346,35 @@ export class AutonomousAgent {
         );
         // Don't crash the agent; fall back to the legacy prompt-based flow
       }
+    }
+
+    // Publish agent via mDNS for zero-config discovery
+    try {
+      this.agentRegistry = new AgentRegistry();
+      // A2A is always on — resolve the actual listening port from the backend
+      const a2aPort = (this.backend instanceof CompositeBackend)
+        ? this.backend.getA2ABackend()?.serverPort ?? 4000
+        : 4000;
+      this.agentRegistry.publish({
+        agentId: this.context.agentId,
+        hostname: this.hostname,
+        role: this.config.agent.role,
+        pid: process.pid,
+        startedAt: new Date().toISOString(),
+        configPath: path.resolve(this.configPath),
+        mailboxRepoPath: path.resolve(this.config.mailbox.repoPath),
+        workspacePath: path.resolve(this.config.workspace.path),
+        teamMembers: this.config.teamMembers?.map(m => ({
+          hostname: m.hostname,
+          role: m.role,
+          responsibilities: m.responsibilities ? [m.responsibilities] : undefined,
+        })),
+        a2aUrl: `http://localhost:${a2aPort}`,
+        description: `${this.config.agent.role} agent (${this.hostname})`,
+      }, a2aPort);
+      this.logger.info({ agentId: this.context.agentId }, 'Published agent via mDNS');
+    } catch (error) {
+      this.logger.warn({ error: String(error) }, 'mDNS publish failed — agent will not be discoverable via mDNS');
     }
 
     this.logger.info('Agent initialized successfully');
@@ -505,6 +545,15 @@ export class AutonomousAgent {
    */
   async stop(): Promise<void> {
     this.running = false;
+
+    // Unpublish mDNS service
+    if (this.agentRegistry) {
+      try {
+        this.agentRegistry.unpublish();
+        this.logger.info('mDNS service unpublished');
+      } catch { /* best-effort */ }
+      this.agentRegistry = null;
+    }
     
     // Stop config watcher
     if (this.configWatcher) {

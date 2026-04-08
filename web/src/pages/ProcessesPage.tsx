@@ -160,7 +160,10 @@ export default function ProcessesPage() {
   return (
     <div>
       <div className="flex items-center justify-between mb-6">
-        <h1 className="text-2xl font-bold text-gray-900 dark:text-white">Agent Processes</h1>
+        <div>
+          <h1 className="text-2xl font-bold text-gray-900 dark:text-white">Agent Processes</h1>
+          <p className="text-xs text-gray-400 mt-0.5">Local UI server · manages processes on this host</p>
+        </div>
         <div className="flex gap-2">
           <button onClick={refresh} className="flex items-center gap-1 px-3 py-2 bg-gray-200 text-gray-700 rounded-lg hover:bg-gray-300 dark:bg-gray-700 dark:text-gray-200 dark:hover:bg-gray-600 text-sm">
             <RefreshCw size={14} /> Refresh

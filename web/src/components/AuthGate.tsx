@@ -24,8 +24,10 @@ export default function AuthGate({ children }: AuthGateProps) {
         setState('needs-key');
       }
     } catch {
-      // If auth check itself fails with 401, we need a key
-      setState('needs-key');
+      // Network error (API server not running) — let the user through
+      // so the UI is usable in dev mode without the API server.
+      // A real 401 is handled above via the response body.
+      setState('authenticated');
     }
   };
 

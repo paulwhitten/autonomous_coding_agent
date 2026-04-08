@@ -112,6 +112,87 @@ export function createProcessesRouter(projectRoot: string): Router {
     res.json({ id, pid: proc.pid, configFile: sanitized });
   });
 
+  // POST /api/processes/batch — start multiple agents at once
+  router.post('/batch', (req: Request, res: Response) => {
+    const { configFiles: files } = req.body;
+    if (!Array.isArray(files) || files.length === 0) {
+      res.status(400).json({ error: 'configFiles array is required' });
+      return;
+    }
+    if (files.length > 20) {
+      res.status(400).json({ error: 'Maximum 20 agents per batch' });
+      return;
+    }
+
+    const results: Array<{ configFile: string; id?: string; pid?: number; error?: string }> = [];
+
+    for (const configFile of files) {
+      if (typeof configFile !== 'string') {
+        results.push({ configFile: String(configFile), error: 'Invalid config filename' });
+        continue;
+      }
+      const sanitized = path.basename(configFile);
+      if (sanitized !== configFile || configFile.includes('..')) {
+        results.push({ configFile, error: 'Invalid config filename' });
+        continue;
+      }
+
+      const id = `agent-${nextId++}`;
+      const configPath = path.join(projectRoot, sanitized);
+
+      const proc = spawn('npx', ['tsx', path.join(projectRoot, 'src', 'index.ts'), configPath], {
+        cwd: projectRoot,
+        env: { ...process.env },
+        stdio: ['ignore', 'pipe', 'pipe'],
+      });
+
+      const info: AgentProcess = {
+        id,
+        configFile: sanitized,
+        pid: proc.pid || 0,
+        startedAt: new Date().toISOString(),
+        status: 'running',
+        exitCode: null,
+        recentOutput: [],
+      };
+
+      const appendOutput = (line: string) => {
+        info.recentOutput.push(line);
+        if (info.recentOutput.length > MAX_OUTPUT_LINES) {
+          info.recentOutput = info.recentOutput.slice(-MAX_OUTPUT_LINES);
+        }
+        broadcast('process:output', { id, line });
+      };
+
+      proc.stdout?.on('data', (data: Buffer) => {
+        const lines = data.toString().split('\n').filter(Boolean);
+        lines.forEach(appendOutput);
+      });
+
+      proc.stderr?.on('data', (data: Buffer) => {
+        const lines = data.toString().split('\n').filter(Boolean);
+        lines.forEach(l => appendOutput(`[stderr] ${l}`));
+      });
+
+      proc.on('exit', (code) => {
+        info.status = code === 0 ? 'stopped' : 'error';
+        info.exitCode = code;
+        broadcast('process:exit', { id, code, status: info.status });
+      });
+
+      proc.on('error', (err) => {
+        info.status = 'error';
+        appendOutput(`[error] ${err.message}`);
+        broadcast('process:error', { id, error: err.message });
+      });
+
+      processes.set(id, { proc, info });
+      results.push({ configFile: sanitized, id, pid: proc.pid });
+    }
+
+    res.json({ launched: results.filter(r => r.id).length, results });
+  });
+
   // GET /api/processes/:id — get details of a process
   router.get('/:id', (req: Request, res: Response) => {
     const entry = processes.get(req.params.id as string);

@@ -3,9 +3,11 @@ import { BrowserRouter, Routes, Route } from 'react-router-dom';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import Layout from './components/Layout';
 import AuthGate from './components/AuthGate';
+import ErrorBoundary from './components/ErrorBoundary';
 
 // Lazy-loaded pages for code splitting
 const DashboardPage = lazy(() => import('./pages/DashboardPage'));
+const ProjectsPage = lazy(() => import('./pages/ProjectsPage'));
 const ConfigPage = lazy(() => import('./pages/ConfigPage'));
 const WorkflowPage = lazy(() => import('./pages/WorkflowPage'));
 const TeamPage = lazy(() => import('./pages/TeamPage'));
@@ -13,6 +15,7 @@ const MailboxPage = lazy(() => import('./pages/MailboxPage'));
 const MonitorPage = lazy(() => import('./pages/MonitorPage'));
 const ProcessesPage = lazy(() => import('./pages/ProcessesPage'));
 const InstructionsPage = lazy(() => import('./pages/InstructionsPage'));
+const A2APage = lazy(() => import('./pages/A2APage'));
 
 const queryClient = new QueryClient({
   defaultOptions: {
@@ -33,25 +36,29 @@ function PageLoader() {
 
 export default function App() {
   return (
-    <QueryClientProvider client={queryClient}>
-      <AuthGate>
-        <BrowserRouter>
-          <Suspense fallback={<PageLoader />}>
-            <Routes>
-              <Route element={<Layout />}>
-                <Route path="/" element={<DashboardPage />} />
-                <Route path="/config" element={<ConfigPage />} />
-                <Route path="/instructions" element={<InstructionsPage />} />
-                <Route path="/workflows" element={<WorkflowPage />} />
-                <Route path="/team" element={<TeamPage />} />
-                <Route path="/mailbox" element={<MailboxPage />} />
-                <Route path="/processes" element={<ProcessesPage />} />
-                <Route path="/monitor" element={<MonitorPage />} />
-              </Route>
-            </Routes>
-          </Suspense>
-        </BrowserRouter>
-      </AuthGate>
-    </QueryClientProvider>
+    <ErrorBoundary>
+      <QueryClientProvider client={queryClient}>
+        <AuthGate>
+          <BrowserRouter>
+            <Suspense fallback={<PageLoader />}>
+              <Routes>
+                <Route element={<Layout />}>
+                  <Route path="/" element={<DashboardPage />} />
+                  <Route path="/projects" element={<ProjectsPage />} />
+                  <Route path="/workflows" element={<WorkflowPage />} />
+                  <Route path="/team" element={<TeamPage />} />
+                  <Route path="/mailbox" element={<MailboxPage />} />
+                  <Route path="/processes" element={<ProcessesPage />} />
+                  <Route path="/a2a" element={<A2APage />} />
+                  <Route path="/monitor" element={<MonitorPage />} />
+                  <Route path="/settings" element={<ConfigPage />} />
+                  <Route path="/instructions" element={<InstructionsPage />} />
+                </Route>
+              </Routes>
+            </Suspense>
+          </BrowserRouter>
+        </AuthGate>
+      </QueryClientProvider>
+    </ErrorBoundary>
   );
 }

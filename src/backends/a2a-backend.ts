@@ -19,7 +19,7 @@ import {
 import { EnrichedAgentCard, enrichTeamAgent, fromA2AAgentCard, toA2AAgentCard, mergeCapabilitiesAndSkills } from '../agent-card.js';
 import { agentMessageToA2A } from '../a2a-message-mapper.js';
 import { A2AAgentExecutor, OnA2AMessageReceived } from '../a2a-executor.js';
-import { createA2AServer, A2AServer } from '../a2a-server.js';
+import { createA2AServer, A2AServer, A2AStatusProvider } from '../a2a-server.js';
 import { A2AConfig, TeamAgent } from '../types.js';
 import type { A2AAuditLogger } from '../a2a-audit-logger.js';
 import type pino from 'pino';
@@ -187,6 +187,9 @@ export class A2ABackend implements CommunicationBackend {
   /** Archive directory for processed assignments. */
   private archiveDir: string;
 
+  /** Optional callback registered by the agent runtime to supply work items. */
+  private workItemProvider: (() => Promise<Record<string, string[]>>) | null = null;
+
   constructor(config: A2ABackendConfig, logger: pino.Logger) {
     this.config = config;
     this.agentId = `${config.hostname}_${config.role}`;
@@ -227,6 +230,14 @@ export class A2ABackend implements CommunicationBackend {
         skills: [],
       } as any);
     }
+  }
+
+  /**
+   * Register a callback that supplies work item data for the /a2a/status endpoint.
+   * Called by the agent runtime after workspace initialization.
+   */
+  setWorkItemProvider(provider: () => Promise<Record<string, string[]>>): void {
+    this.workItemProvider = provider;
   }
 
   // -- Lifecycle ----------------------------------------------------------
@@ -286,12 +297,94 @@ export class A2ABackend implements CommunicationBackend {
 
     const executor = new A2AAgentExecutor(this.localAgent, onMessage, this.logger);
 
+    // Build status provider so the A2A server can serve enriched /a2a/status
+    const backend = this;
+    const statusProvider: A2AStatusProvider = {
+      getTeam() {
+        return Array.from(backend.knownAgents.values()).map(a => ({
+          hostname: a.hostname ?? a.id.split('_')[0],
+          role: a.role ?? a.id.split('_')[1] ?? 'agent',
+          responsibilities: a.description,
+        }));
+      },
+      async getMailboxSummary() {
+        // Pending messages in the queue are "unread"
+        const pending = [...backend.incomingQueue];
+        // Also read any persisted inbox files not yet in queue
+        let inbox: Record<string, unknown>[] = [];
+        try {
+          inbox = await readA2AAssignments(backend.inboxDir);
+        } catch { /* empty */ }
+        const unread = Math.max(pending.length, inbox.length);
+        const recent = pending.slice(-5).map(m => ({
+          from: `${m.from.hostname}_${m.from.role}`,
+          subject: m.subject,
+          priority: m.priority || 'NORMAL',
+          date: m.timestamp ? new Date(m.timestamp).toISOString() : new Date().toISOString(),
+        }));
+        return { unread, recent };
+      },
+      async getMailboxMessages() {
+        // Combine in-memory queue with persisted inbox
+        const pending = [...backend.incomingQueue];
+        const messages = pending.map(m => ({
+          from: `${m.from.hostname}_${m.from.role}`,
+          subject: m.subject,
+          priority: m.priority || 'NORMAL',
+          date: m.timestamp ? new Date(m.timestamp).toISOString() : new Date().toISOString(),
+          body: m.content || '',
+        }));
+        // Also read persisted inbox files for messages not yet in queue
+        try {
+          const inbox = await readA2AAssignments(backend.inboxDir);
+          const queueIds = new Set(pending.map(m => m.id));
+          for (const item of inbox) {
+            if (item.id && !queueIds.has(String(item.id))) {
+              const from = item.from as Record<string, string> | undefined;
+              messages.push({
+                from: from ? `${from.hostname}_${from.role}` : 'unknown',
+                subject: String(item.subject ?? ''),
+                priority: (['HIGH', 'NORMAL', 'LOW'].includes(String(item.priority)) ? String(item.priority) : 'NORMAL') as 'HIGH' | 'NORMAL' | 'LOW',
+                date: item.timestamp ? new Date(item.timestamp as string).toISOString() : new Date().toISOString(),
+                body: String(item.content ?? item.body ?? ''),
+              });
+            }
+          }
+        } catch { /* empty */ }
+        return messages;
+      },
+      async getArchivedMessages() {
+        const messages: Array<{ from: string; subject: string; priority: string; date: string; body: string }> = [];
+        try {
+          const archived = await readA2AAssignments(backend.archiveDir);
+          for (const item of archived) {
+            const from = item.from as Record<string, string> | undefined;
+            messages.push({
+              from: from ? `${from.hostname}_${from.role}` : 'unknown',
+              subject: String(item.subject ?? ''),
+              priority: (['HIGH', 'NORMAL', 'LOW'].includes(String(item.priority)) ? String(item.priority) : 'NORMAL') as 'HIGH' | 'NORMAL' | 'LOW',
+              date: item.timestamp ? new Date(item.timestamp as string).toISOString() : new Date().toISOString(),
+              body: String(item.content ?? item.body ?? ''),
+            });
+          }
+        } catch { /* empty */ }
+        return messages;
+      },
+      async getWorkItems() {
+        if (backend.workItemProvider) {
+          return backend.workItemProvider();
+        }
+        return { pending: [], inProgress: [], completed: [], failed: [] };
+      },
+    };
+
     // Start the A2A server
     this.server = await createA2AServer(
       selfCard,
       executor,
       this.config.a2a,
       this.logger,
+      statusProvider,
     );
     await this.server.start();
 
@@ -419,15 +512,77 @@ export class A2ABackend implements CommunicationBackend {
   }
 
   async receiveMessages(): Promise<AgentMessage[]> {
-    // Drain the incoming queue
-    const messages = [...this.incomingQueue];
+    // Read persisted inbox files (source of truth) so that messages
+    // survive across multiple receiveMessages() calls.  Messages are
+    // only removed from the inbox when acknowledgeMessage() archives them.
+    const inboxItems = await this.readInboxWithPaths();
+
+    // Also drain any in-memory items that failed persistence (edge case).
+    const memoryItems = [...this.incomingQueue];
     this.incomingQueue = [];
-    return messages;
+
+    // Merge and deduplicate by message ID (inbox takes precedence).
+    const seen = new Set<string>();
+    const result: AgentMessage[] = [];
+
+    for (const { msg, filePath } of inboxItems) {
+      const id = msg.id ?? '';
+      if (id && !seen.has(id)) {
+        seen.add(id);
+        this.inboxFilePaths.set(id, filePath);
+        result.push(msg);
+      }
+    }
+
+    for (const msg of memoryItems) {
+      const id = msg.id ?? '';
+      if (id && !seen.has(id)) {
+        seen.add(id);
+        result.push(msg);
+      }
+    }
+
+    return result;
   }
 
   async peekMessages(subjectFilter?: RegExp): Promise<AgentMessage[]> {
-    if (!subjectFilter) return [...this.incomingQueue];
-    return this.incomingQueue.filter(m => subjectFilter.test(m.subject));
+    // Read from inbox directory for consistency with receiveMessages().
+    const inboxItems = await this.readInboxWithPaths();
+    const queueIds = new Set(inboxItems.map(i => i.msg.id));
+    // Include queue items not yet persisted.
+    const extra = this.incomingQueue.filter(m => !queueIds.has(m.id));
+    const all = [...inboxItems.map(i => i.msg), ...extra];
+    if (!subjectFilter) return all;
+    return all.filter(m => subjectFilter.test(m.subject));
+  }
+
+  /**
+   * Read all inbox JSON files and return parsed messages with file paths.
+   * Used by receiveMessages() and peekMessages() so the inbox directory
+   * is the durable source of truth (non-destructive reads).
+   */
+  private async readInboxWithPaths(): Promise<Array<{ msg: AgentMessage; filePath: string }>> {
+    let entries: string[];
+    try {
+      entries = await fs.readdir(this.inboxDir);
+    } catch {
+      return [];
+    }
+
+    const jsonFiles = entries.filter(f => f.endsWith('.json')).sort();
+    const results: Array<{ msg: AgentMessage; filePath: string }> = [];
+
+    for (const file of jsonFiles) {
+      try {
+        const filePath = path.join(this.inboxDir, file);
+        const content = await fs.readFile(filePath, 'utf-8');
+        results.push({ msg: JSON.parse(content) as AgentMessage, filePath });
+      } catch {
+        // Skip unparseable files
+      }
+    }
+
+    return results;
   }
 
   async acknowledgeMessage(messageId: string): Promise<void> {
