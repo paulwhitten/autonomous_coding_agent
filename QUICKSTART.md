@@ -22,6 +22,15 @@ Run `npm start` and the agent processes the task immediately.
 
 For CI or Docker, use `npm run init -- --non-interactive`.
 
+To start fresh (remove workspace, mailbox, logs, and session state):
+
+```bash
+npm run reset
+```
+
+Reset prompts for confirmation. Use `--yes` to skip the prompt, or
+`--full` to also remove `config.json` for a complete re-scaffold.
+
 ## 3. Manual Configuration (Alternative)
 
 If you prefer to create `config.json` by hand, you need only two fields.
@@ -228,6 +237,12 @@ npm run start my-config.json
 
 # Development mode (auto-reload)
 npm run dev
+
+# Reset runtime state (workspace, mailbox, logs)
+npm run reset
+
+# Full reset including config.json
+npm run reset -- --full
 
 # Check mailbox manually
 npm run check-mailbox
