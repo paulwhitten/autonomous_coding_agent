@@ -4,6 +4,10 @@
   "description": "Autonomous coding agent with external mailbox integration using GitHub Copilot SDK",
   "main": "src/index.ts",
   "scripts": {
+    "init": "tsx scripts/init.ts",
+    "send-message": "tsx scripts/send-message.ts",
+    "list-tasks": "tsx scripts/list-tasks.ts",
+    "agent-status": "tsx scripts/agent-status.ts",
     "start": "npm run build && node dist/index.js",
     "start:dev": "tsx src/index.ts",
     "start:compiled": "node dist/index.js",

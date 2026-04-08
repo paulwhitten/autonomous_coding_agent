@@ -1,34 +1,71 @@
-# Quick Start Guide - Autonomous Copilot Agent
+---
+title: Quick Start Guide - Autonomous Copilot Agent
+description: Step-by-step setup for getting an autonomous agent running with minimal configuration
+ms.date: 2026-04-07
+---
 
-## 1. Initial Setup (5 minutes)
+## 1. Initial Setup
 
 ```bash
 cd autonomous_copilot_agent
 npm install
-cp config.example.json config.json
 ```
 
-## 2. Configure Your Agent
+## 2. Scaffold Your Project (Fastest Path)
 
-Edit `config.json`:
+```bash
+npm run init
+```
+
+This creates `config.json`, a mailbox folder, and seeds a hello-world task.
+Run `npm start` and the agent processes the task immediately.
+
+For CI or Docker, use `npm run init -- --non-interactive`.
+
+## 3. Manual Configuration (Alternative)
+
+If you prefer to create `config.json` by hand, you need only two fields.
+Everything else has sensible defaults (see `src/config-defaults.ts`).
+
+**Minimal config:**
+
+```json
+{
+  "agent": { "role": "developer" },
+  "mailbox": { "repoPath": "./mailbox" }
+}
+```
+
+The mailbox is a plain folder. No git repository is required.
+The agent auto-detects your hostname, polls the mailbox every
+60 seconds, uses `gpt-4.1`, and configures all workspace
+folders with sensible defaults. The full effective configuration (defaults
+merged with your overrides) is logged on every startup and hot-reload.
+
+**Override only what you need:**
 
 ```json
 {
   "agent": {
-    "hostname": "auto-detect",     // Will auto-detect, or set manually
-    "role": "developer",           // Your role: developer, qa, manager
-    "checkIntervalMs": 1800000     // Check every 30 minutes
+    "role": "developer",
+    "checkIntervalMs": 1800000
   },
   "mailbox": {
-    "repoPath": "../2025-12-external-mailbox",  // Path to mailbox git repo
-    "gitSync": true                 // Enable git operations
+    "repoPath": "./mailbox"
+  },
+  "copilot": {
+    "model": "gpt-5"
   }
 }
 ```
 
-> **WARNING:** Do not set `checkIntervalMs` below `20000` (20 seconds). Lower values may trigger SDK rate-limit errors (HTTP 429). Use `60000` (1 min) for active development.
+See `config.example.json` for every available option with comments.
 
-## 3. Test Mailbox Connection
+> **WARNING:** Do not set `checkIntervalMs` below `20000` (20 seconds).
+> Lower values may trigger SDK rate-limit errors (HTTP 429).
+> Use `60000` (1 min) for active development.
+
+## 4. Test Mailbox Connection
 
 ```bash
 npm run check-mailbox
@@ -36,7 +73,7 @@ npm run check-mailbox
 
 Should show: `No new messages` (or list any existing messages)
 
-## 4. Start the Agent
+## 5. Start the Agent
 
 ```bash
 npm run start
@@ -47,29 +84,28 @@ You'll see:
 Autonomous Copilot Agent
 ================================
 Agent ID: your-hostname_developer
-Mailbox: ../2025-12-external-mailbox
-Git Sync: enabled
+Mailbox: ./mailbox
+Git Sync: disabled
 ================================
 
 [INFO] Initializing autonomous agent
-[INFO] Performing initial git sync...
-[INFO] Git sync successful
 [INFO] Agent initialized successfully
 [INFO] Starting autonomous agent loop
 [INFO] Checking mailbox for new messages
-[INFO] Syncing from git remote...
 [INFO] No new messages in mailbox
-[INFO] Sleeping for 1800s until next mailbox check
+[INFO] Sleeping for 60s until next mailbox check
 ```
 
-## 5. Send a Test Task
+If you used `npm run init`, the seeded hello-world task will be picked up
+on the first check.
 
-While agent is running, create a test message in another terminal:
+## 6. Send a Test Task
+
+Create a message file in the agent's inbox:
 
 ```bash
-cd 2025-12-external-mailbox/mailbox
-# Filename: Use UTC timestamp (recommended) or sequence number
-nano to_your-hostname_developer/2026-01-30-2100_test_task.md
+cd mailbox/mailbox/to_your-hostname_developer/
+nano 2026-01-30-2100_test_task.md
 ```
 
 Content:
@@ -87,20 +123,19 @@ Your assignment:
 
 **Naming Convention:** Message files can use UTC timestamps (`YYYY-MM-DD-HHMM_subject.md`) for automatic chronological ordering, or sequential prefixes (`001_subject.md`, `002_subject.md`) for simplicity.
 
-Save and commit:
+Save the file. If `gitSync` is enabled, also commit and push:
 ```bash
 git add . && git commit -m "Test task" && git push
 ```
 
 The agent will:
-1. Pull the message on next check (or wait up to 30 min)
+1. Pick up the message on next check
 2. Process the task
 3. Execute the work
 4. Send completion report
 5. Archive the message
-6. Push changes to git
 
-## 6. Monitor Agent Activity
+## 7. Monitor Agent Activity
 
 **Watch logs in real-time:**
 ```bash
@@ -112,7 +147,7 @@ tail -f logs/agent.log
 cat workspace/session_context.json
 ```
 
-## 7. Stop the Agent
+## 8. Stop the Agent
 
 Press `Ctrl+C` in the terminal running the agent.
 
@@ -124,48 +159,44 @@ Received SIGINT, shutting down gracefully...
 
 ## Configuration Examples
 
-### Fast Polling (1 minute checks)
+All examples below show only the overrides -- defaults fill in the rest.
+
+### Slow Polling (30 minute checks)
+
 ```json
 {
-  "agent": {
-    "checkIntervalMs": 60000
-  }
+  "agent": { "role": "developer", "checkIntervalMs": 1800000 },
+  "mailbox": { "repoPath": "../mailbox" }
 }
 ```
 
-### Different Mailbox Repo
+### Use a Different Model
+
 ```json
 {
-  "mailbox": {
-    "repoPath": "/path/to/your/mailbox-repo"
-  }
+  "agent": { "role": "developer" },
+  "mailbox": { "repoPath": "../mailbox" },
+  "copilot": { "model": "gpt-5" }
 }
 ```
 
-### Use Different Model
-```json
-{
-  "copilot": {
-    "model": "gpt-5"
-  }
-}
-```
+### Enable Git Sync (multi-agent collaboration)
 
-### Disable Git Sync (local testing)
 ```json
 {
-  "mailbox": {
-    "gitSync": false,
-    "autoCommit": false
-  }
+  "agent": { "role": "developer" },
+  "mailbox": { "repoPath": "../shared-mailbox", "gitSync": true }
 }
 ```
 
 ## Troubleshooting
 
 ### "Failed to load config"
-- Make sure `config.json` exists in the project root
-- Validate JSON syntax: `node -e "JSON.parse(require('fs').readFileSync('config.json'))"`
+
+* Make sure `config.json` exists in the project root
+* Only `agent.role` and `mailbox.repoPath` are required; everything else defaults
+* Validate JSON syntax: `node -e "JSON.parse(require('fs').readFileSync('config.json'))"`
+* Check startup logs for the effective configuration dump
 
 ### "Git sync failed"
 - Check that mailbox repo path is correct

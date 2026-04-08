@@ -1,65 +1,21 @@
 {
-  "$schema": "http://json-schema.org/draft-07/schema#",
   "agent": {
     "hostname": "smoke-test-agent",
     "role": "developer",
     "checkIntervalMs": 30000,
-    "stuckTimeoutMs": 2700000,
-    "sdkTimeoutMs": 300000,
-    "taskRetryCount": 2,
-    "timeoutStrategy": {
-      "enabled": true,
-      "tier1_multiplier": 1.5,
-      "tier2_backgroundThreshold": 2,
-      "tier3_decomposeThreshold": 3,
-      "tier4_adaptiveWindow": 3600000,
-      "tier4_adaptiveThreshold": 3
-    },
-    "validation": {
-      "mode": "spot_check",
-      "reviewEveryNthItem": 5,
-      "milestones": []
-    }
+    "taskRetryCount": 2
   },
   "mailbox": {
     "repoPath": "../runtime_mailbox",
-    "gitSync": false,
     "autoCommit": false,
-    "commitMessage": "Smoke test: {hostname}_{role} at {timestamp}",
     "supportBroadcast": false,
     "supportAttachments": false
   },
-  "copilot": {
-    "model": "gpt-4.1",
-    "allowedTools": ["all"]
-  },
-  "workspace": {
-    "path": "./workspace",
-    "tasksFolder": "tasks",
-    "workingFolder": "project",
-    "taskSubfolders": {
-      "pending": "pending",
-      "completed": "completed",
-      "review": "review",
-      "failed": "failed"
-    },
-    "persistContext": true
-  },
-  "logging": {
-    "level": "info",
-    "path": "./logs/agent.log",
-    "maxSizeMB": 100
-  },
   "manager": {
     "hostname": "localhost",
-    "role": "manager",
     "escalationPriority": "LOW"
   },
   "quota": {
-    "enabled": false,
-    "preset": "development",
-    "presetsFile": "./quota-presets.json",
-    "overrides": {},
-    "sharedQuotaUrl": ""
+    "enabled": false
   }
 }

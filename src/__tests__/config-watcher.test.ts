@@ -14,12 +14,28 @@ function createTestConfig(overrides?: Partial<AgentConfig>): AgentConfig {
     agent: {
       hostname: 'test-host',
       role: 'developer',
+      roleDefinitionsFile: './roles.json',
       checkIntervalMs: 120000,
       stuckTimeoutMs: 300000,
       sdkTimeoutMs: 120000,
       taskRetryCount: 3,
-      timeoutStrategy: { enabled: true },
-      validation: { mode: 'spot_check', reviewEveryNthItem: 5 },
+      minWorkItems: 5,
+      maxWorkItems: 20,
+      timeoutStrategy: {
+        enabled: true,
+        tier1_multiplier: 1.5,
+        tier2_backgroundThreshold: 2,
+        tier3_decomposeThreshold: 3,
+        tier4_adaptiveWindow: 3600000,
+        tier4_adaptiveThreshold: 5,
+      },
+      validation: { mode: 'spot_check', reviewEveryNthItem: 5, milestones: [] },
+      backpressure: {
+        enabled: true,
+        maxPendingWorkItems: 50,
+        maxRecipientMailbox: 10,
+        deferralLogIntervalMs: 300000,
+      },
     },
     mailbox: {
       repoPath: '/tmp/mailbox',
@@ -33,9 +49,24 @@ function createTestConfig(overrides?: Partial<AgentConfig>): AgentConfig {
     copilot: {
       model: 'gpt-5-mini',
       allowedTools: ['all'],
+      permissions: {
+        shell: 'allowlist',
+        write: 'allow',
+        read: 'allow',
+        url: 'deny',
+        mcp: 'deny',
+      },
     },
     workspace: {
       path: '/tmp/workspace',
+      tasksFolder: 'tasks',
+      workingFolder: 'project',
+      taskSubfolders: {
+        pending: 'pending',
+        completed: 'completed',
+        review: 'review',
+        failed: 'failed',
+      },
       persistContext: true,
     },
     logging: {
@@ -47,6 +78,11 @@ function createTestConfig(overrides?: Partial<AgentConfig>): AgentConfig {
       hostname: 'test-host',
       role: 'manager',
       escalationPriority: 'HIGH',
+    },
+    quota: {
+      enabled: true,
+      preset: 'adaptive',
+      presetsFile: './quota-presets.json',
     },
     teamMembers: [
       { hostname: 'test-host', role: 'developer', responsibilities: 'all dev work' },
@@ -385,7 +421,8 @@ describe('ConfigWatcher roles.json watching', () => {
   });
 
   it('should not watch roles file when roleDefinitionsFile is not set', async () => {
-    const config = createTestConfig(); // no roleDefinitionsFile
+    const config = createTestConfig();
+    delete (config.agent as any).roleDefinitionsFile; // explicitly remove
     await fs.writeFile(configPath, JSON.stringify(config, null, 2));
 
     const callback = jest.fn<(updated: HotReloadableFields, full: AgentConfig) => void>();

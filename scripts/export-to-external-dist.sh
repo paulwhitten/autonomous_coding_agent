@@ -234,7 +234,7 @@ for f in README.md QUICKSTART.md ROLES.md QUOTA.md \
 done
 
 # Config examples and runtime config
-for f in config.example.json custom_instructions.example.json .env.example \
+for f in config.example.json config.schema.json custom_instructions.example.json .env.example \
          roles.json quota-presets.json; do
   if [ -f "${PROJECT_ROOT}/${f}" ]; then
     copy_file "${PROJECT_ROOT}/${f}" "${DIST_DIR}/${f}"

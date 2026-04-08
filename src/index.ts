@@ -4,32 +4,64 @@ import { AutonomousAgent } from './agent.js';
 import { AgentConfig } from './types.js';
 import { validateWorkspaceStructure, validateGitCloneSeparation } from './workspace-validator.js';
 import { isRateLimitError, parseRateLimitDelay } from './session-manager.js';
+import { applyDefaults, sanitizeConfigForLogging, computeConfigOverrides, DeepPartial } from './config-defaults.js';
+import { validateConfig } from './config-validator.js';
+import { printError, formatConfigErrors } from './cli-output.js';
 import { readFile } from 'fs/promises';
+import { existsSync } from 'fs';
 import path from 'path';
-import * as os from 'os';
 import { initializeLogger, logger } from './logger.js';
 
-// Load configuration
+// Load configuration with convention-over-configuration defaults
 async function loadConfig(): Promise<AgentConfig> {
   const configPath = path.resolve(process.argv[2] || 'config.json');
   
   // Use console for initial loading (before logger is configured)
   process.stdout.write(`Loading config from: ${configPath}\n\n`);
+
+  if (!existsSync(configPath)) {
+    printError('Configuration Not Found', [
+      `  File:    ${configPath}`,
+      '',
+      '  Run "npm run init" to create a config.json with sensible defaults,',
+      '  or create one manually with just two fields:',
+      '',
+      '    { "agent": { "role": "developer" },',
+      '      "mailbox": { "repoPath": "./mailbox" } }',
+    ].join('\n'));
+    process.exit(1);
+  }
   
   try {
     const configData = await readFile(configPath, 'utf-8');
-    const config: AgentConfig = JSON.parse(configData);
+    const userConfig: DeepPartial<AgentConfig> = JSON.parse(configData);
     
-    // Auto-detect hostname if needed
-    if (config.agent.hostname === 'auto-detect') {
-      config.agent.hostname = os.hostname();
+    // Validate against JSON Schema before applying defaults
+    const validation = await validateConfig(userConfig as Record<string, unknown>);
+    if (!validation.valid) {
+      printError(
+        'Configuration Error',
+        formatConfigErrors(validation.errors),
+      );
+      process.exit(1);
     }
+    
+    // Apply convention-over-configuration defaults
+    const config = applyDefaults(userConfig);
     
     return config;
   } catch (error) {
-    process.stderr.write(`Failed to load config from ${configPath}: ${error}\n`);
-    process.stdout.write('\nUsage: npm start [config-file.json]\n');
-    process.stdout.write('Example: npm start config.json\n\n');
+    if (error instanceof SyntaxError) {
+      printError('Invalid JSON in config.json', [
+        `  ${error.message}`,
+        '',
+        '  Validate syntax: node -e "JSON.parse(require(\'fs\').readFileSync(\'config.json\'))"',
+      ].join('\n'));
+    } else if (error instanceof Error && error.message.startsWith('Config error:')) {
+      printError('Configuration Error', `  ${error.message}`);
+    } else {
+      printError('Failed to Load Config', `  ${error}`);
+    }
     process.exit(1);
   }
 }
@@ -41,6 +73,16 @@ async function loadConfig(): Promise<AgentConfig> {
     
     // Initialize logger with config
     initializeLogger(config.logging.path);
+    
+    // Log effective configuration (convention-over-configuration: show what is in effect)
+    logger.info(
+      { overrides: computeConfigOverrides(config) },
+      'Configuration loaded (user overrides from defaults)',
+    );
+    logger.debug(
+      { effectiveConfig: sanitizeConfigForLogging(config) },
+      'Full effective configuration (defaults merged with user overrides)',
+    );
     
     // Validate and initialize workspace structure
     logger.info('Validating workspace structure...');

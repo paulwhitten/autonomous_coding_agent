@@ -27,9 +27,7 @@ export async function createBackend(
   config: AgentConfig,
   baseLogger: pino.Logger,
 ): Promise<CommunicationBackend> {
-  const hostname = config.agent.hostname === 'auto-detect'
-    ? (await import('os')).hostname()
-    : config.agent.hostname;
+  const hostname = config.agent.hostname;
 
   // Mailbox backend -- always created.
   const mailbox = new GitMailboxBackend(

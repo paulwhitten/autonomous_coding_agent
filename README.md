@@ -32,9 +32,9 @@ While work items exist on disk, the agent will work trough them and move to comp
 ## Features
 
 - **Autonomous task processing** - Runs continuously, checks mailbox periodically
-- **Git-based mailbox sync** - Automatic pull before check, push after changes
-- **External mailbox protocol** - Git external mailbox protocol for multi-agent coordination
-- **A2A protocol support** - HTTP-based Agent2Agent (A2A) protocol runs alongside the git mailbox for cross-network agent communication; add a `communication.a2a` block to enable both concurrently with FIFO timestamp ordering
+- **Folder-based mailbox** - Plain directories by default; enable `gitSync` for multi-agent remote collaboration
+- **External mailbox protocol** - File-based mailbox protocol for multi-agent coordination
+- **A2A protocol support** - HTTP-based Agent2Agent (A2A) protocol runs alongside the mailbox for cross-network agent communication; add a `communication.a2a` block to enable both concurrently with FIFO timestamp ordering
 - **Broadcast messages** - Support for `to_all/` team-wide messages
 - **Attachments support** - Share files via `attachments/` folder
 - **JSON configuration** - Flexible config file for all settings
@@ -113,44 +113,36 @@ See `QUOTA.md` for detailed quota management strategies.
 npm install
 ```
 
-### Configuration
+### Quick Scaffold
 
-Copy and customize the configuration file:
+The fastest way to get started is the init command:
 
 ```bash
-cp config.example.json config.json
-nano config.json
+npm run init
 ```
 
-**Key configuration options:**
+This creates a minimal `config.json`, a mailbox folder with inbox and archive
+directories, and seeds a hello-world task so the first `npm start` has work
+to do. For CI or Docker, use `npm run init -- --non-interactive`.
+
+### Manual Configuration
+
+Alternatively, create `config.json` by hand with only the two required fields:
 
 ```json
 {
-  "agent": {
-    "hostname": "auto-detect",        // Or specify: for example, "pcw-dpm16"
-    "role": "developer",              // developer, qa, or manager
-    "checkIntervalMs": 300000,        // 5 minutes
-    "stuckTimeoutMs": 1800000         // Escalate after 30 min stuck, this also serves as worflow state timeout
-  },
-
-  // WARNING: Setting checkIntervalMs below 20000 (20s) could result in Copilot SDK rate-limit errors.
-  // Recommended: 30000 to 60000 (30 sec to 1 min) for active development, 300000 (5 min) for production.
-  "mailbox": {
-    "repoPath": "../2025-12-external-mailbox",  // Path to mailbox git repo
-    "gitSync": true,                   // Enable git pull/push
-    "autoCommit": true,                // Auto-commit changes
-    "supportBroadcast": true,          // Support to_all/ messages
-    "supportAttachments": true         // Support attachments/ folder
-  },
-  "copilot": {
-    "model": "gpt-4.1",               // AI model to use
-    "streaming": true
-  },
-  "manager": {
-    "hostname": "i9",                 // Manager for escalations
-    "role": "manager"
-  }
+  "agent": { "role": "developer" },
+  "mailbox": { "repoPath": "./mailbox" }
 }
+```
+
+Everything else has sensible defaults (see `src/config-defaults.ts`).
+The full effective configuration is logged on every startup.
+
+> [!NOTE]
+> The mailbox is a plain folder by default. No git repository is required.
+> Set `"gitSync": true` when agents share a remote mailbox for multi-agent
+> collaboration.
 ```
 
 See `config.example.json` for full configuration options with documentation.
@@ -362,10 +354,8 @@ defaults and adjust based on observed success rates in your logs.
    ```
    
    Set at minimum:
-   - `mailbox.repoPath` - Path to your mailbox git repository
    - `agent.role` - Your agent's role (developer, qa, manager, researcher)
-   - `agent.hostname` - Set to `"auto-detect"` or your machine name
-   - `manager.hostname` and `manager.role` - For escalations
+   - `mailbox.repoPath` - Path to the mailbox directory
 
 3. **Run the agent:**
    ```bash
@@ -420,7 +410,7 @@ The agent monitors messages in the mailbox. To assign a task:
    mailbox/to_mbp16_developer/2026-01-30-2145_implement_user_auth.md
    ```
 
-4. **Commit and push** (if using git sync):
+4. **Commit and push** (only when `gitSync` is enabled):
    ```bash
    cd path/to/mailbox
    git add .
@@ -476,16 +466,23 @@ npm run dev
 
 ## Multi-Agent Team Setup
 
-To run a team of agents (e.g., manager + developer + QA), each agent runs on its own machine (or terminal) with its own `config.json`, sharing a single git-based mailbox repo.
+To run a team of agents (e.g., manager + developer + QA), each agent runs on its own machine (or terminal) with its own `config.json`, sharing a single mailbox directory. For remote collaboration across machines, enable `gitSync: true` and back the mailbox with a shared git repository.
 
-### 1. Create a Shared Mailbox Repo
+### 1. Create a Shared Mailbox
+
+For a local team (same machine or shared filesystem):
 
 ```bash
-mkdir mailbox && cd mailbox && git init
+mkdir -p shared-mailbox/mailbox/to_all
+```
+
+For a remote team (different machines), initialize a git repo:
+
+```bash
+mkdir shared-mailbox && cd shared-mailbox && git init
 mkdir -p mailbox/to_all
-# Push to a shared remote (Gitea, GitHub, etc.)
 git remote add origin <your-git-url>
-git push -u origin main
+git add . && git commit -m "Init mailbox" && git push -u origin main
 ```
 
 ### 2. Clone the Agent on Each Machine
@@ -493,8 +490,12 @@ git push -u origin main
 ```bash
 git clone <agent-repo-url> autonomous_copilot_agent
 cd autonomous_copilot_agent && npm install
+```
+
+For remote teams, also clone the shared mailbox:
+
+```bash
 git clone <mailbox-repo-url> ../shared-mailbox
-cp config.example.json config.json
 ```
 
 ### 3. Configure Each Agent
@@ -594,7 +595,7 @@ autonomous_copilot_agent/
 ## How It Works
 
 1. **Agent starts** and loads configuration from `config.json`
-2. **Git sync** pulls latest messages from remote repository
+2. **Git sync** (if enabled) pulls latest messages from the remote repository
 3. **Every N minutes**, agent checks mailbox for new messages (including `to_all/`)
 4. **If new task found**:
    - Parse task requirements
@@ -643,13 +644,15 @@ cat workspace/session_context.json
 
 ## Integration with Multi-Agent Workflows
 
-This agent follows the git external mailbox protocol:
+The agent uses a file-based mailbox protocol:
 
 - Reads from: `mailbox/to_{hostname}_{role}/`
 - Archives to: `mailbox/to_{hostname}_{role}/archive/`
 - Message format: `YYYY-MM-DD-HHMM_subject.md`
 
-Compatible with multi-agent workflows using the git external mailbox protocol.
+For single-agent use, the mailbox is a plain directory. For multi-agent
+collaboration across machines, enable `gitSync: true` and back the mailbox
+with a shared git repository.
 
 ### Workflow Construction Guide
 
