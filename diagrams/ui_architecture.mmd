@@ -1,0 +1,39 @@
+---
+title: Web UI Architecture
+---
+
+graph TB
+
+    subgraph Browser["Browser — React 19 SPA"]
+        PAGES["Pages<br/>────────────────────<br/>Dashboard · Projects · Workflows<br/>Team · Mailbox · Processes<br/>A2A · Monitor · Settings"]
+        APICLI["API Client<br/>────────────────────<br/>TanStack React Query<br/>Typed fetch wrappers"]
+        SOCKCLI["Socket.IO Client<br/>────────────────────<br/>Real-time events"]
+    end
+
+    subgraph API["Express v5 API Server — port 3001"]
+        AUTH["Auth Middleware<br/>────────────────────<br/>API_KEY / X-API-Key"]
+        ROUTES["REST Routes<br/>────────────────────<br/>projects · config · workflows<br/>agents · mailbox · processes<br/>a2a · team · templates"]
+        WS["Socket.IO Server<br/>────────────────────<br/>file-change<br/>agent-discovery<br/>agent-health"]
+        MDNS["mDNS Browser<br/>────────────────────<br/>bonjour-service<br/>30s health checks"]
+        WATCH["File Watcher<br/>────────────────────<br/>chokidar v5"]
+    end
+
+    subgraph Storage["Filesystem"]
+        FS["projects/ · config*.json<br/>workflows/ · workspace/<br/>mailbox/ · custom_instructions.json"]
+    end
+
+    subgraph Network["Local Network"]
+        AGENTS["Agent Processes<br/>────────────────────<br/>mDNS advertisement<br/>A2A HTTP endpoints"]
+    end
+
+    PAGES --> APICLI
+    PAGES --> SOCKCLI
+    APICLI -->|"HTTP REST"| AUTH
+    SOCKCLI -->|"WebSocket"| WS
+    AUTH --> ROUTES
+    ROUTES --> FS
+    ROUTES -->|"A2A relay"| AGENTS
+    MDNS -->|"Zeroconf discovery"| AGENTS
+    MDNS --> WS
+    WATCH --> FS
+    WATCH --> WS
