@@ -1,33 +1,33 @@
 // Main autonomous agent implementation
 
 import { CopilotClient } from '@github/copilot-sdk';
-import { MailboxManager } from './mailbox.js';
-import { createMailboxTools, OnMessageSentCallback } from './tools/mailbox-tools.js';
-import { AgentConfig, SessionContext } from './types.js';
-import { sleep, loadJSON, saveJSON } from './utils.js';
-import { QuotaManager } from './quota-manager.js';
-import { WorkspaceManager, WorkItem } from './workspace-manager.js';
-import { TimeoutManager } from './timeout-manager.js';
-import { SessionManager, isRateLimitError, parseRateLimitDelay } from './session-manager.js';
-import { WorkItemExecutor } from './work-item-executor.js';
-import { CompletionTracker } from './completion-tracker.js';
-import { createPermissionHandler, DEFAULT_PERMISSIONS, PermissionsConfig, PermissionOverrides } from './permission-handler.js';
-import { ToolHealthMonitor } from './tool-health-monitor.js';
-import { createLogger, createComponentLogger } from './logger.js';
-import { ConfigWatcher, HotReloadableFields } from './config-watcher.js';
-import { WorkflowEngine } from './workflow-engine.js';
-import { WorkflowAssignment, OutOfBandMessage, StateExecutionResult, StateCommand, ExitEvaluation } from './workflow-types.js';
-import { detectFailureIndicators } from './fail-pattern-detector.js';
-import { composeEvaluationPrompt, parseEvaluationResponse } from './exit-evaluation.js';
-import { CommunicationBackend, AgentAddress, AgentMessage } from './communication-backend.js';
+import { execSync } from 'child_process';
+import fs from 'fs/promises';
+import path from 'path';
+import pino from 'pino';
+import { AgentRegistry } from './agent-registry.js';
+import { resolveTargetAddress } from './agent-uri.js';
 import { createBackend } from './backend-factory.js';
 import { CompositeBackend } from './backends/composite-backend.js';
-import { resolveTargetAddress } from './agent-uri.js';
-import { AgentRegistry } from './agent-registry.js';
-import pino from 'pino';
-import path from 'path';
-import fs from 'fs/promises';
-import { execSync } from 'child_process';
+import { AgentAddress, CommunicationBackend } from './communication-backend.js';
+import { CompletionTracker } from './completion-tracker.js';
+import { ConfigWatcher, HotReloadableFields } from './config-watcher.js';
+import { composeEvaluationPrompt, parseEvaluationResponse } from './exit-evaluation.js';
+import { detectFailureIndicators } from './fail-pattern-detector.js';
+import { createComponentLogger, createLogger } from './logger.js';
+import { MailboxManager } from './mailbox.js';
+import { createPermissionHandler, DEFAULT_PERMISSIONS, PermissionOverrides, PermissionsConfig } from './permission-handler.js';
+import { QuotaManager } from './quota-manager.js';
+import { SessionManager } from './session-manager.js';
+import { TimeoutManager } from './timeout-manager.js';
+import { ToolHealthMonitor } from './tool-health-monitor.js';
+import { createMailboxTools, OnMessageSentCallback } from './tools/mailbox-tools.js';
+import { AgentConfig, SessionContext } from './types.js';
+import { loadJSON, saveJSON, sleep } from './utils.js';
+import { WorkItemExecutor } from './work-item-executor.js';
+import { WorkflowEngine } from './workflow-engine.js';
+import { ExitEvaluation, OutOfBandMessage, StateCommand, StateExecutionResult, WorkflowAssignment } from './workflow-types.js';
+import { WorkItem, WorkspaceManager } from './workspace-manager.js';
 
 /** Format an AgentAddress as a flat "hostname_role" string. */
 function formatAgentId(addr: AgentAddress): string {
@@ -75,24 +75,24 @@ export class AutonomousAgent {
   private contextFile: string;
   private retryAttempts: Map<string, number> = new Map(); // Track retry attempts per work item
   private agentRegistry: AgentRegistry | null = null;
-  
+
   constructor(config: AgentConfig, configPath?: string) {
     this.config = config;
     this.configPath = configPath || path.resolve(process.argv[2] || 'config.json');
     const baseLogger = createLogger(path.resolve(config.logging.path));
     this.baseLogger = baseLogger;
     this.logger = createComponentLogger(baseLogger, 'AutonomousAgent');
-    
+
     // Support external Copilot CLI via environment variable
     const cliUrl = process.env.COPILOT_CLI_URL;
     this.client = new CopilotClient(cliUrl ? { cliUrl } : undefined);
-    
+
     // Create SessionManager
     this.sessionManager = new SessionManager(
       this.client,
       createComponentLogger(baseLogger, 'SessionManager')
     );
-    
+
     this.quotaManager = new QuotaManager(config, this.logger);
 
     // Hostname is resolved by applyDefaults() before the agent is constructed
@@ -102,7 +102,7 @@ export class AutonomousAgent {
     this.workflowEngine = new WorkflowEngine(
       createComponentLogger(baseLogger, 'WorkflowEngine')
     );
-    
+
     // Workspace manager needs callbacks for message sequence tracking
     this.workspace = new WorkspaceManager(
       config.workspace.path,
@@ -113,13 +113,13 @@ export class AutonomousAgent {
       config.workspace.taskSubfolders,
       config.workspace.workingFolder || 'project'
     );
-    
+
     this.timeoutManager = new TimeoutManager(
       path.resolve(config.workspace.path),
       config.agent.sdkTimeoutMs,
       config.agent.timeoutStrategy
     );
-    
+
     // Create permission handler for SDK tool operations
     // Merges user config overrides with safe defaults
     const permissionsConfig: PermissionsConfig = {
@@ -133,7 +133,7 @@ export class AutonomousAgent {
       this.permissionOverrides
     );
     this.logger.info({ permissions: permissionsConfig }, 'Permission handler configured');
-    
+
     // Create ToolHealthMonitor to detect PTY/infrastructure failures
     // See: github/copilot-cli#1239, microsoft/node-pty#882
     this.toolHealthMonitor = new ToolHealthMonitor(
@@ -150,7 +150,7 @@ export class AutonomousAgent {
         },
       }
     );
-    
+
     // Create WorkItemExecutor
     this.workItemExecutor = new WorkItemExecutor(
       this.sessionManager,
@@ -168,11 +168,12 @@ export class AutonomousAgent {
       createComponentLogger(baseLogger, 'WorkItemExecutor'),
       this.toolHealthMonitor
     );
-    
+
     // CompletionTracker is created in initialize() after the backend is ready
-    
-    this.contextFile = path.resolve(config.workspace.path, 'session_context.json');
-    
+
+    // Scope context file by role so agents sharing a workspace don't collide
+    this.contextFile = path.resolve(config.workspace.path, `session_context_${config.agent.role}.json`);
+
     // Initialize context (will be loaded from file if exists)
     this.context = {
       agentId: `${this.hostname}_${config.agent.role}`,
@@ -184,7 +185,7 @@ export class AutonomousAgent {
       messageTracking: {}
     };
   }
-  
+
   /**
    * Initialize the agent
    */
@@ -192,7 +193,29 @@ export class AutonomousAgent {
     // Create workspace and log directories first (before any logger calls)
     await fs.mkdir(path.dirname(this.config.logging.path), { recursive: true });
     await fs.mkdir(this.context.workingDirectory, { recursive: true });
-    
+
+    // Auto-clone project repo into the working folder if configured and not already present
+    if (this.config.workspace.projectRepo) {
+      const gitDir = path.join(this.context.workingDirectory, '.git');
+      try {
+        await fs.access(gitDir);
+        this.logger.info(
+          { projectRepo: this.config.workspace.projectRepo },
+          'Working folder already contains a git repo — skipping clone',
+        );
+      } catch {
+        this.logger.info(
+          { projectRepo: this.config.workspace.projectRepo, target: this.context.workingDirectory },
+          'Cloning project repo into working folder',
+        );
+        execSync(
+          `git clone ${JSON.stringify(this.config.workspace.projectRepo)} .`,
+          { cwd: this.context.workingDirectory, stdio: 'pipe', timeout: 600_000 },
+        );
+        this.logger.info('Project repo cloned successfully');
+      }
+    }
+
     // Create and initialize the communication backend.
     // The CompositeBackend always includes both the git mailbox and
     // the A2A HTTP server (sensible defaults when unconfigured).
@@ -241,7 +264,7 @@ export class AutonomousAgent {
       backend: this.backend.name,
       gitSync: this.config.mailbox.gitSync
     }, 'Initializing autonomous agent');
-    
+
     // Generate .github/copilot-instructions.md from role definition
     // Write to the SDK workingDirectory so the SDK picks it up automatically
     this.logger.info('Generating role-specific copilot instructions...');
@@ -252,7 +275,7 @@ export class AutonomousAgent {
     } catch (error) {
       this.logger.warn({ error: String(error) }, 'Failed to generate copilot instructions');
     }
-    
+
     // Initialize workspace manager
     await this.workspace.initialize();
 
@@ -264,13 +287,13 @@ export class AutonomousAgent {
         a2aBackend.setWorkItemProvider(() => ws.getWorkItemsByState());
       }
     }
-    
+
     // Initialize quota manager
     await this.quotaManager.initialize();
-    
+
     // Initialize timeout manager
     await this.timeoutManager.initialize();
-    
+
     // Initial git sync (via backend abstraction)
     if (this.config.mailbox.gitSync) {
       this.logger.info('Performing initial git sync...');
@@ -281,15 +304,19 @@ export class AutonomousAgent {
         this.logger.warn({ error: syncResult.message }, 'Git sync failed');
       }
     }
-    
+
     // Load previous context if exists (atomic read with corruption recovery)
     if (this.config.workspace.persistContext) {
       const loadedContext = await loadJSON<SessionContext>(this.contextFile, this.context);
       if (loadedContext) {
-        // Merge loaded persistent state with initial context
+        // Merge loaded persistent state with initial context.
+        // Preserve the freshly-computed agentId so a stale file
+        // from another agent (or a renamed agent) cannot override it.
+        const freshAgentId = this.context.agentId;
         this.context = {
           ...this.context,
           ...loadedContext,
+          agentId: freshAgentId,
           lastMailboxCheck: new Date(loadedContext.lastMailboxCheck),
           nextMessageSequence: loadedContext.nextMessageSequence || 1,
           messageTracking: loadedContext.messageTracking || {},
@@ -302,7 +329,7 @@ export class AutonomousAgent {
         }, 'Restored session context');
       }
     }
-    
+
     // Start config file watcher for hot-reload
     this.configWatcher = new ConfigWatcher(
       this.configPath,
@@ -424,17 +451,17 @@ export class AutonomousAgent {
       'Config hot-reloaded successfully'
     );
   }
-  
+
   /**
    * Start the autonomous agent loop
    */
   async start(): Promise<void> {
     this.running = true;
     this.logger.info('Starting autonomous agent loop');
-    
+
     // Create or resume persistent session
     await this.initializeSession();
-    
+
     // Main autonomous loop
     while (this.running) {
       try {
@@ -459,7 +486,7 @@ export class AutonomousAgent {
         // PRIORITY 1: Check priority mailbox FIRST for urgent messages
         // This allows manager responses and urgent corrections to interrupt current work
         const priorityHandled = await this.checkPriorityMailbox();
-        
+
         if (priorityHandled) {
           // Priority messages processed - sleep briefly then restart loop
           // This ensures we drain all priority items before resuming normal work
@@ -500,17 +527,17 @@ export class AutonomousAgent {
 
         // PRIORITY 3: Process pending work items from previous messages
         const hasWork = await this.workspace.hasWorkItems();
-        
+
         if (hasWork) {
           await this.processNextWorkItem();
         } else {
           // PRIORITY 4: Check normal and background mailbox for new messages
           await this.checkAndProcessMailbox();
         }
-        
+
         // Save context after each iteration
         await saveJSON(this.contextFile, this.context);
-        
+
         // Wait for next check interval with jitter to prevent agent synchronization.
         // +/-25% random offset keeps multiple agents from polling in lockstep,
         // even after variable-length tasks cause them to temporarily align.
@@ -519,27 +546,27 @@ export class AutonomousAgent {
         this.logger.info(
           `Sleeping for ${(jitteredMs / 1000).toFixed(1)}s until next check (base: ${this.config.agent.checkIntervalMs / 1000}s)`
         );
-        
+
         // Sleep in smaller chunks to allow faster shutdown response
         const sleepChunkMs = 1000; // Check every second
         const chunks = Math.ceil(jitteredMs / sleepChunkMs);
         for (let i = 0; i < chunks && this.running; i++) {
           await sleep(sleepChunkMs);
         }
-        
+
       } catch (error) {
         this.logger.error({ error: String(error) }, 'Error in agent loop');
-        
+
         // Wait before retrying on error (also check running flag)
         for (let i = 0; i < 60 && this.running; i++) {
           await sleep(1000);
         }
       }
     }
-    
+
     this.logger.info('Agent main loop exited');
   }
-  
+
   /**
    * Stop the agent gracefully
    */
@@ -554,22 +581,22 @@ export class AutonomousAgent {
       } catch { /* best-effort */ }
       this.agentRegistry = null;
     }
-    
+
     // Stop config watcher
     if (this.configWatcher) {
       this.configWatcher.stop();
       this.configWatcher = null;
     }
-    
+
     await saveJSON(this.contextFile, this.context);
-    
+
     if (this.config.mailbox.gitSync && this.config.mailbox.autoCommit) {
       await this.backend.syncToRemote('Agent shutdown');
     }
 
     // Shut down the communication backend (stops servers, flushes buffers)
     await this.backend.shutdown();
-    
+
     // Delete the current session so it does not accumulate in the VS
     // Code session list.  This is a lightweight SDK call (HTTP DELETE)
     // that is safe during shutdown -- unlike send/abort which have
@@ -583,7 +610,7 @@ export class AutonomousAgent {
     // Clear the persisted session ID so the next run creates fresh
     this.context.sessionId = undefined;
   }
-  
+
   /**
    * Get session ID for context persistence
    */
@@ -591,7 +618,7 @@ export class AutonomousAgent {
     const state = this.sessionManager.getState();
     return state.sessionId;
   }
-  
+
   /**
    * Get next message sequence number (persistent across restarts)
    * Protected to allow testing of sequence persistence
@@ -601,21 +628,21 @@ export class AutonomousAgent {
     this.context.nextMessageSequence = current + 1;
     return current;
   }
-  
+
   /**
    * Track message decomposition in persistent context
    * Protected to allow testing of message tracking
    */
   protected trackMessage(messageSeq: number, mailboxFile: string, workItems: string[]): void {
     const messageSeqStr = String(messageSeq).padStart(3, '0');
-    
+
     if (!this.context.messageTracking) {
       this.context.messageTracking = {};
     }
-    
+
     // Extract timestamp from filename if present (e.g., "2025-12-20-1000_task.md")
     const timestampMatch = mailboxFile.match(/^(\d{4}-\d{2}-\d{2}-\d{4})/);
-    
+
     this.context.messageTracking[messageSeqStr] = {
       mailboxFile,
       mailboxTimestamp: timestampMatch ? timestampMatch[1] : undefined,
@@ -625,25 +652,25 @@ export class AutonomousAgent {
       pendingWorkItems: [...workItems]
     };
   }
-  
+
   // ========================================================================
   // Public methods for testing and state introspection
   // ========================================================================
-  
+
   /**
    * Get current session context (for testing)
    */
   public getContext(): Readonly<SessionContext> {
     return { ...this.context };
   }
-  
+
   /**
    * Get next message sequence without incrementing (for testing)
    */
   public peekNextSequence(): number {
     return this.context.nextMessageSequence || 1;
   }
-  
+
   /**
    * Get message tracking info (for testing)
    */
@@ -651,43 +678,43 @@ export class AutonomousAgent {
     const key = String(messageSeq).padStart(3, '0');
     return this.context.messageTracking?.[key];
   }
-  
+
   /**
    * Manually save context (for testing state persistence)
    */
   public async saveContext(): Promise<void> {
     await saveJSON(this.contextFile, this.context);
   }
-  
+
   /**
    * Get context file path (for testing corruption scenarios)
    */
   public getContextFilePath(): string {
     return this.contextFile;
   }
-  
+
   // ========================================================================
   // End of test introspection methods
   // ========================================================================
-  
+
   /**
    * Initialize or resume Copilot session
    */
   private async initializeSession(forceNew: boolean = false): Promise<void> {
     // Get quota and model selection
     const quotaCheck = await this.quotaManager.checkQuotaAndSelectModel('NORMAL');
-    
+
     // Create WIP tracking callback and store for later use in processWorkflowAssignment()
     this.onMessageSentCallback = this.createOnMessageSentCallback();
-    
+
     // Create tools array with WIP tracking callback for manager role
     const tools = createMailboxTools(this.mailbox, this.onMessageSentCallback);
-    
-    this.logger.info({ 
+
+    this.logger.info({
       toolCount: tools.length,
       toolNames: tools.map(t => t.name)
     }, 'Registering mailbox tools with session');
-    
+
     // Initialize session through SessionManager
     // NOTE: Do NOT set availableTools — it acts as a whitelist and would
     // disable Copilot's built-in tools (file I/O, terminal, etc.).
@@ -703,7 +730,7 @@ export class AutonomousAgent {
       },
       forceNew
     );
-    
+
     // Update context with session ID
     this.context.sessionId = sessionId;
   }
@@ -733,7 +760,7 @@ export class AutonomousAgent {
   private async resetSessionWithContext(contextPreamble?: string): Promise<void> {
     try {
       const quotaCheck = await this.quotaManager.checkQuotaAndSelectModel('NORMAL');
-      
+
       // Create WIP tracking callback and store for later use in processWorkflowAssignment()
       this.onMessageSentCallback = this.createOnMessageSentCallback();
       const tools = createMailboxTools(this.mailbox, this.onMessageSentCallback);
@@ -835,9 +862,9 @@ export class AutonomousAgent {
     if (!this.config.mailbox.supportPriority) {
       return false; // Priority not enabled
     }
-    
+
     this.logger.debug('Checking priority mailbox');
-    
+
     // Git sync before checking mailbox
     if (this.config.mailbox.gitSync) {
       this.logger.debug('Syncing from git remote...');
@@ -846,25 +873,25 @@ export class AutonomousAgent {
         this.logger.warn({ error: syncResult.message }, 'Git sync failed');
       }
     }
-    
+
     // Get all messages (priority will be first in the list)
     const messages = await this.backend.receiveMessages();
-    
+
     // Filter for only HIGH priority messages
     let priorityMessages = messages.filter(msg => msg.priority === 'HIGH');
-    
+
     if (priorityMessages.length === 0) {
       return false;
     }
-    
+
     this.logger.info(`Found ${priorityMessages.length} HIGH priority message(s)`);
-    
+
     // Receiver-side backpressure: limit how many priority messages we accept
     // when the pending work queue is already large
     const backpressure = this.config.agent.backpressure;
     const bpEnabled = backpressure?.enabled !== false; // default: true
     const maxPending = backpressure?.maxPendingWorkItems ?? 50;
-    
+
     if (bpEnabled) {
       const pendingCount = await this.workspace.getWorkItemCount();
       const bp = applyBackpressure(priorityMessages, pendingCount, {
@@ -880,14 +907,14 @@ export class AutonomousAgent {
       }
       priorityMessages = bp.messages;
     }
-    
+
     // Process priority messages (may be limited by backpressure above)
     for (const message of priorityMessages) {
       this.logger.info({
         from: message.from,
         priority: message.priority
       }, `Breaking down HIGH priority message: ${message.subject}`);
-      
+
       try {
         this.context.status = 'breaking_down_task';
         this.context.currentTask = {
@@ -897,7 +924,7 @@ export class AutonomousAgent {
           acceptanceCriteria: [],
           priority: message.priority || 'HIGH'
         };
-        
+
         // Check if this is a QA rejection (rework request)
         if (this.isQARejection(message)) {
           await this.handleQARejection(message);
@@ -905,19 +932,19 @@ export class AutonomousAgent {
           // Classify and process (workflow-aware or legacy)
           await this.classifyAndProcessMessage(message);
         }
-        
+
         // Archive the message after breaking it down
         await this.backend.acknowledgeMessage(message.id);
         this.logger.info(`Archived HIGH priority message: ${message.id}`);
-        
+
         this.context.messagesProcessed++;
         this.context.status = 'idle';
-        
+
       } catch (error) {
         this.logger.error({
           error: String(error)
         }, `Failed to break down HIGH priority message: ${message.subject}`);
-        
+
         // Guard: do NOT escalate if this message is itself an escalation.
         // The manager is the escalation target, so re-escalating creates an
         // infinite loop (the new escalation lands back in priority/ and fails
@@ -935,25 +962,25 @@ export class AutonomousAgent {
             `Error: ${String(error)}\n\nOriginal message:\n${message.content}`
           );
         }
-        
+
         this.context.status = 'escalated';
       }
     }
-    
+
     // Git sync after processing priority messages
     if (this.config.mailbox.gitSync) {
       await this.backend.syncToRemote();
     }
-    
+
     return true; // Indicate priority messages were processed
   }
-  
+
   /**
    * Check mailbox for normal and background priority messages
    */
   private async checkAndProcessMailbox(): Promise<void> {
     this.logger.debug('Checking mailbox for new messages');
-    
+
     // Git sync before checking mailbox
     if (this.config.mailbox.gitSync) {
       this.logger.debug('Syncing from git remote...');
@@ -962,32 +989,32 @@ export class AutonomousAgent {
         this.logger.warn({ error: syncResult.message }, 'Git sync failed');
       }
     }
-    
+
     this.context.lastMailboxCheck = new Date();
-    
+
     const messages = await this.backend.receiveMessages();
-    
+
     // Filter out HIGH priority messages (already handled by checkPriorityMailbox)
-    const normalMessages = this.config.mailbox.supportPriority 
+    const normalMessages = this.config.mailbox.supportPriority
       ? messages.filter(msg => msg.priority !== 'HIGH')
       : messages;
-    
+
     if (normalMessages.length === 0) {
       this.logger.info('No new messages in mailbox');
       this.context.status = 'idle';
       return;
     }
-    
+
     this.logger.info(`Found ${normalMessages.length} new message(s)`);
-    
+
     // Process first message by breaking it down into work items
     const message = normalMessages[0];
-    
+
     this.logger.info({
       from: message.from,
       priority: message.priority
     }, `Breaking down message into work items: ${message.subject}`);
-    
+
     try {
       this.context.status = 'breaking_down_task';
       this.context.currentTask = {
@@ -997,27 +1024,27 @@ export class AutonomousAgent {
         acceptanceCriteria: [],
         priority: message.priority || 'NORMAL'
       };
-      
+
       // Break down the message into work items (workflow-aware)
       await this.classifyAndProcessMessage(message);
-      
+
       // Archive the message after breaking it down
       await this.backend.acknowledgeMessage(message.id);
       this.logger.info(`Archived message: ${message.id}`);
-      
+
       // Git sync after archiving
       if (this.config.mailbox.gitSync && this.config.mailbox.autoCommit) {
         await this.backend.syncToRemote(`Break down task: ${message.subject}`);
       }
-      
+
       this.context.messagesProcessed++;
       this.context.status = 'idle';
-      
+
     } catch (error) {
       this.logger.error({
         error: String(error)
       }, `Failed to break down message: ${message.subject}`);
-      
+
       // Guard: do NOT escalate if this message is itself an escalation
       // to prevent infinite self-escalation loops on the manager.
       const isEscalation = (message.subject || '').startsWith('Escalation:');
@@ -1033,11 +1060,11 @@ export class AutonomousAgent {
           `Error: ${String(error)}\n\nOriginal message:\n${message.content}`
         );
       }
-      
+
       this.context.status = 'escalated';
     }
   }
-  
+
   /**
    * Check if a message is a QA rejection (rework request)
    * QA rejections have subjects starting with "QA Rejection:" and come from QA agents
@@ -1046,10 +1073,10 @@ export class AutonomousAgent {
     const subject = (message.subject || '').trim();
     return subject.startsWith('QA Rejection:');
   }
-  
+
   /**
    * Handle QA rejection by creating a rework work item directly
-   * 
+   *
    * Unlike normal messages that get broken down via LLM, QA rejections
    * already contain structured feedback (failures, what to fix, files to check).
    * We create a single rework work item that includes the full rejection context.
@@ -1059,32 +1086,32 @@ export class AutonomousAgent {
     const originalTask = (message.subject || '')
       .replace(/^QA Rejection:\s*/, '')
       .trim();
-    
+
     // Track rework cycles to prevent infinite loops
     const reworkKey = `rework:${originalTask}`;
     const reworkCycle = (this.context.reworkTracking?.[reworkKey] ?? 0) + 1;
     const maxReworkCycles = 2;
-    
+
     // Initialize rework tracking in context if needed
     if (!this.context.reworkTracking) {
       this.context.reworkTracking = {};
     }
     this.context.reworkTracking[reworkKey] = reworkCycle;
-    
+
     this.logger.info({
       originalTask,
       reworkCycle,
       maxReworkCycles,
       from: message.from
     }, 'Handling QA rejection as rework');
-    
+
     if (reworkCycle > maxReworkCycles) {
       // Too many rework cycles — escalate to manager
       this.logger.warn({
         originalTask,
         reworkCycle
       }, `Rework cycle limit exceeded (${reworkCycle}/${maxReworkCycles}), escalating to manager`);
-      
+
       await this.backend.escalate(
         `QA rejection cycle limit reached: ${originalTask}`,
         `This task has been rejected by QA ${reworkCycle} times and I cannot resolve the issues.\n\n` +
@@ -1092,12 +1119,12 @@ export class AutonomousAgent {
         `**Action needed:** Please review the task requirements and QA feedback, ` +
         `then either adjust the requirements or provide additional guidance.`
       );
-      
+
       // Clear the rework counter so it can be retried if manager provides guidance
       delete this.context.reworkTracking[reworkKey];
       return;
     }
-    
+
     // Create a single rework work item with the rejection context embedded
     const reworkContent = `## REWORK REQUEST (Cycle ${reworkCycle}/${maxReworkCycles})
 
@@ -1128,7 +1155,7 @@ ${message.content}
       }],
       message.id
     );
-    
+
     this.logger.info({
       originalTask,
       reworkCycle
@@ -1297,7 +1324,7 @@ ${message.content}
               payload: assignment as unknown as Record<string, unknown>,
             },
           );
-          
+
           // Notify WIP tracking callback (needed because we're calling backend.sendMessage
           // directly, not via the send_message tool which normally triggers this)
           if (this.onMessageSentCallback) {
@@ -1308,7 +1335,7 @@ ${message.content}
               filepath: sendResult.ref,
             });
           }
-          
+
           this.logger.info({
             taskId: assignment.taskId,
             targetState: assignment.targetState,
@@ -2317,12 +2344,12 @@ ${message.content}
    */
   private async breakDownIntoWorkItems(message: any): Promise<void> {
     const priority = message.priority || 'NORMAL';
-    
+
     this.logger.info({ priority }, 'Breaking down task into work items');
-    
+
     // Check quota and select model
     const quotaCheck = await this.quotaManager.checkQuotaAndSelectModel(priority);
-    
+
     if (!quotaCheck.canProcess) {
       this.logger.warn(`Cannot process task: ${quotaCheck.reason}`);
       await this.backend.escalate(
@@ -2331,7 +2358,7 @@ ${message.content}
       );
       return;
     }
-    
+
     // Initialize a fresh session for task breakdown.
     // IMPORTANT: Pass an empty tools array -- do NOT register mailbox tools
     // (send_message, etc.) here.  This session is strictly for JSON output --
@@ -2351,7 +2378,7 @@ ${message.content}
       },
       true  // Force new session
     );
-    
+
     // Construct the breakdown prompt (role-aware)
     const breakdownPrompt = buildBreakdownPrompt({
       from: typeof message.from === 'string' ? message.from : formatAgentId(message.from),
@@ -2369,35 +2396,35 @@ ${message.content}
 
     try {
       const responseText = await this.promptLLM(breakdownPrompt);
-      
+
       // Parse the JSON response
       this.logger.info('Parsing task breakdown');
-      
+
       const workItems = parseBreakdownResponse(responseText);
-      
+
       this.logger.info(`Created ${workItems.length} work items`);
-      
+
       // Create work item files with mailbox file tracking
       await this.workspace.createWorkItems(workItems, message.id);
-      
+
       // Record quota usage
       await this.quotaManager.recordTaskCompletion(quotaCheck.model, priority);
-      
+
     } catch (error) {
       this.logger.error({ error: String(error) }, 'Error breaking down task');
       throw error;
     }
   }
-  
+
   /**
    * Process next work item from work folder
    */
   private async processNextWorkItem(): Promise<void> {
     const workItem = await this.workspace.getNextWorkItem();
-    
+
     if (!workItem) {
       this.logger.info('No work items found');
-      
+
       // Check if we just completed a project - send completion report.
       // Skip when a workflow task is active -- the workflow engine
       // already handles routing to the next state/role via peer-routed
@@ -2407,18 +2434,18 @@ ${message.content}
       if (stats.completedItems > 0 && !this.activeWorkflowTaskId) {
         await this.completionTracker.sendProjectCompletionReport();
       }
-      
+
       return;
     }
-    
+
     this.logger.info({
       sequence: workItem.sequence,
       filename: workItem.filename
     }, `Processing work item: ${workItem.title}`);
-    
+
     this.context.status = 'working';
     this.context.taskStartTime = new Date();
-    
+
     try {
       // Only create/resume a session when necessary.  Calling resumeSession
       // on an already-active session causes the Copilot CLI to set up an
@@ -2431,7 +2458,7 @@ ${message.content}
       if (isRetry || !this.sessionManager.isActive()) {
         await this.initializeSession(isRetry);
       }
-      
+
       // Execute work item using WorkItemExecutor
       const result = await this.workItemExecutor.execute(workItem);
 
@@ -2439,19 +2466,19 @@ ${message.content}
       if (result.responseText && this.activeWorkflowTaskId) {
         this.workflowPhaseResponseText += result.responseText;
       }
-      
+
       if (result.success) {
         // Work item completed successfully
         this.logger.info(`Work item completed: ${workItem.title}`);
-        
+
         // Decide: Review or Complete?
         const needsReview = await this.shouldReviewWorkItem(workItem);
-        
+
         if (needsReview) {
           // Move to review folder for internal tracking/logging
           await this.workspace.moveToReviewFolder(workItem);
           this.logger.info(`Logged to review folder: ${workItem.title}`);
-          
+
           // Auto-complete after brief review period (internal quality control only)
           await this.workspace.moveFromReviewToCompleted(workItem);
           this.logger.info(`Auto-approved: ${workItem.title}`);
@@ -2459,7 +2486,7 @@ ${message.content}
           // Direct to completed
           await this.workspace.completeWorkItem(workItem);
         }
-        
+
         // Check if this completes a message assignment.
         // Skip the CompletionTracker when a workflow task is active --
         // the workflow engine's handleWorkflowTransition() handles
@@ -2468,7 +2495,7 @@ ${message.content}
         if (!this.activeWorkflowTaskId) {
           await this.completionTracker.checkMessageCompletion(workItem);
         }
-        
+
         // If a workflow task is active, check whether the entire phase
         // (all work items for this message) is now complete.  If so,
         // transition the workflow state machine and route to the next role.
@@ -2487,13 +2514,13 @@ ${message.content}
             );
           }
         }
-        
+
         // Record quota usage
         await this.quotaManager.recordTaskCompletion(this.config.copilot.model, 'NORMAL');
-        
+
         // Clear retry tracking on success
         this.retryAttempts.delete(workItem.filename);
-        
+
         // Clear rework tracking if this was a successful rework
         if (workItem.title.startsWith('Rework: ')) {
           const originalTask = workItem.title.replace(/^Rework:\s*/, '');
@@ -2503,29 +2530,29 @@ ${message.content}
             delete this.context.reworkTracking[reworkKey];
           }
         }
-        
+
         this.context.status = 'idle';
         this.context.taskStartTime = undefined;
-        
+
         return; // SUCCESS!
       } else {
         // Execution failed, throw error to trigger retry logic
         throw new Error(result.error || 'Work item execution failed');
       }
-      
+
     } catch (error) {
       // Check if we should retry
       const maxRetries = this.config.agent.taskRetryCount ?? 3;
       const currentAttempts = this.retryAttempts.get(workItem.filename) ?? 0;
       const totalAttempts = currentAttempts + 1; // +1 for the attempt that just failed
       const retriesRemaining = maxRetries - currentAttempts;
-      
+
       this.logger.error({
         error: String(error),
         attempt: totalAttempts,
         retriesRemaining: retriesRemaining
       }, `Failed to process work item: ${workItem.title}`);
-      
+
       if (retriesRemaining > 0) {
         // Retry: increment attempt count and leave in pending
         this.retryAttempts.set(workItem.filename, totalAttempts);
@@ -2538,13 +2565,13 @@ ${message.content}
           this.logger.warn('Session expired -- forcing session renewal before retry');
           await this.initializeSession(true);
         }
-        
+
         // Calculate timeout progression for visibility
         const baseTimeout = this.config.agent.sdkTimeoutMs;
         const multiplier = this.config.agent.timeoutStrategy?.tier1_multiplier ?? 1.5;
         const currentTimeout = currentAttempts === 0 ? baseTimeout : baseTimeout * Math.pow(multiplier, currentAttempts);
         const nextTimeout = baseTimeout * Math.pow(multiplier, totalAttempts);
-        
+
         this.logger.warn({
           attempt: totalAttempts,
           totalRetries: maxRetries,
@@ -2553,52 +2580,52 @@ ${message.content}
           nextTimeout: `${nextTimeout / 1000}s`,
           multiplier: multiplier
         }, `Retry ${totalAttempts}/${maxRetries + 1} scheduled for: ${workItem.title}`);
-        
+
         // Leave in pending folder for next iteration
         this.context.status = 'idle';
         return;
       }
-      
+
       // No retries left - move to failed folder
       this.logger.error({
         totalAttempts: totalAttempts
       }, `All ${maxRetries} retries exhausted for: ${workItem.title}`);
-      
+
       await this.workspace.moveToFailedFolder(workItem);
-      
+
       // Clear retry tracking
       this.retryAttempts.delete(workItem.filename);
-      
+
       // Don't escalate individual work item failures - the agent may recover
       // Escalation happens at assignment level in checkMessageCompletion
-      
+
       this.context.status = 'idle';
     }
   }
-  
+
   /**
    * Determine if work item needs internal review (for tracking/logging)
    */
   private async shouldReviewWorkItem(workItem: WorkItem): Promise<boolean> {
     const validation = this.config.agent.validation;
-    
+
     if (!validation || validation.mode === 'none') {
       return false; // Trust mode - no review
     }
-    
+
     if (validation.mode === 'always') {
       return true; // Review everything
     }
-    
+
     if (validation.mode === 'spot_check') {
       const stats = await this.workspace.getStats();
       return stats.completedItems % validation.reviewEveryNthItem === 0;
     }
-    
+
     if (validation.mode === 'milestone') {
       return validation.milestones?.includes(workItem.sequence) || false;
     }
-    
+
     return false;
   }
 

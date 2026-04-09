@@ -281,6 +281,39 @@ export default function WorkflowPage() {
     URL.revokeObjectURL(url);
   };
 
+  const importWorkflow = () => {
+    const input = document.createElement('input');
+    input.type = 'file';
+    input.accept = '.json,.workflow.json';
+    input.onchange = async (e) => {
+      const file = (e.target as HTMLInputElement).files?.[0];
+      if (!file) return;
+      try {
+        const text = await file.text();
+        const wf = JSON.parse(text);
+        if (!wf.id || !wf.states) {
+          setSaveStatus('Error: Invalid workflow (missing id or states)');
+          return;
+        }
+        // Save to server (goes to projects/workflows/)
+        const filename = file.name.endsWith('.workflow.json') ? file.name : `${wf.id}.workflow.json`;
+        await workflowApi.save(filename, wf);
+        // Load it into the editor
+        setWorkflow(wf);
+        setNodes(workflowToNodes(wf));
+        setEdges(workflowToEdges(wf));
+        setSelectedState(null);
+        // Refresh the workflow list
+        workflowApi.list().then(d => setWorkflowList(d.workflows)).catch(() => { });
+        setSaveStatus(`Uploaded: ${filename}`);
+        setTimeout(() => setSaveStatus(null), 3000);
+      } catch (err) {
+        setSaveStatus(`Error: ${(err as Error).message}`);
+      }
+    };
+    input.click();
+  };
+
   const stateKeys = Object.keys(workflow.states);
   const selectedStateData = selectedState ? workflow.states[selectedState] : null;
 
@@ -307,6 +340,9 @@ export default function WorkflowPage() {
           </select>
           <button onClick={exportWorkflow} className="flex items-center gap-1 px-3 py-2 bg-gray-200 text-gray-700 rounded-lg hover:bg-gray-300 dark:bg-gray-700 dark:text-gray-200 dark:hover:bg-gray-600 text-sm">
             <Download size={14} /> Export
+          </button>
+          <button onClick={importWorkflow} className="flex items-center gap-1 px-3 py-2 bg-gray-200 text-gray-700 rounded-lg hover:bg-gray-300 dark:bg-gray-700 dark:text-gray-200 dark:hover:bg-gray-600 text-sm">
+            <Upload size={14} /> Upload
           </button>
           <button onClick={saveWorkflow} className="flex items-center gap-1 px-3 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 text-sm">
             <Save size={14} /> Save

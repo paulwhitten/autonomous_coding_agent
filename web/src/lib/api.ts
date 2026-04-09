@@ -77,7 +77,7 @@ export const configApi = {
 
 // Workflow API
 export const workflowApi = {
-  list: () => request<{ workflows: Array<{ file: string; id: string; name: string; description: string; version: string }> }>('/workflows'),
+  list: () => request<{ workflows: Array<{ file: string; id: string; name: string; description: string; version: string; source?: string }> }>('/workflows'),
   get: (filename: string) => request<Record<string, unknown>>(`/workflows/${filename}`),
   save: (filename: string, data: unknown) =>
     request<{ success: boolean }>(`/workflows/${filename}`, {

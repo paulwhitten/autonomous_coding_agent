@@ -191,7 +191,7 @@ export function createProjectsRouter(projectRoot: string): Router {
 
       const results: string[] = [];
 
-      // 1. Write custom_instructions.json from project data
+      // 1. Build custom_instructions from project data (written per-role below)
       const customInstructions: Record<string, unknown> = {
         projectContext: project.projectContext,
         buildSystem: project.buildSystem,
@@ -202,7 +202,11 @@ export function createProjectsRouter(projectRoot: string): Router {
       if (project.additionalSections && project.additionalSections.length > 0) {
         customInstructions.additionalSections = project.additionalSections;
       }
-      const ciPath = path.join(projectRoot, 'custom_instructions.json');
+
+      // Write custom_instructions.json into the project-specific directory
+      const projectDir = path.join(projectRoot, 'projects', project.id);
+      await mkdir(projectDir, { recursive: true });
+      const ciPath = path.join(projectDir, 'custom_instructions.json');
       await writeFile(ciPath, JSON.stringify(customInstructions, null, 2), 'utf-8');
       results.push('custom_instructions.json');
 
@@ -210,8 +214,15 @@ export function createProjectsRouter(projectRoot: string): Router {
       let teamConfigs: Array<{ role: string; configFile: string }> = [];
       if (project.workflow) {
         try {
-          const wfPath = path.join(projectRoot, 'workflows', project.workflow);
-          const wfRaw = await readFile(wfPath, 'utf-8');
+          // Try user-uploaded workflows first, then fall back to built-in
+          let wfRaw: string;
+          const userWfPath = path.join(projectRoot, 'projects', 'workflows', project.workflow);
+          const builtinWfPath = path.join(projectRoot, 'workflows', project.workflow);
+          try {
+            wfRaw = await readFile(userWfPath, 'utf-8');
+          } catch {
+            wfRaw = await readFile(builtinWfPath, 'utf-8');
+          }
           const workflow = JSON.parse(wfRaw);
 
           // Extract unique roles from workflow states
@@ -222,19 +233,32 @@ export function createProjectsRouter(projectRoot: string): Router {
             }
           }
 
-          // Generate a config for each role
+          // Generate a config for each role with isolated workspaces
+          const sharedMailbox = path.join(projectDir, 'mailbox');
+          await mkdir(sharedMailbox, { recursive: true });
+
           for (const role of roles) {
+            const roleWorkspace = path.join(projectDir, role);
+            await mkdir(roleWorkspace, { recursive: true });
+
             const config: Record<string, unknown> = {
               agent: { role },
-              mailbox: { repoPath: './mailbox' },
+              mailbox: { repoPath: sharedMailbox },
+              workspace: {
+                path: roleWorkspace,
+                ...(project.repoUrl ? { projectRepo: project.repoUrl } : {}),
+              },
             };
-            if (project.repoUrl) {
-              config.workspace = { projectRepo: project.repoUrl };
-            }
             const configFile = `config-${role}.json`;
-            const configPath = path.join(projectRoot, configFile);
+            const configPath = path.join(projectDir, configFile);
             await writeFile(configPath, JSON.stringify(config, null, 2), 'utf-8');
-            teamConfigs.push({ role, configFile });
+
+            // Copy custom_instructions.json into each role's workspace
+            // so the agent picks it up regardless of CWD
+            const roleCiDest = path.join(roleWorkspace, 'custom_instructions.json');
+            await writeFile(roleCiDest, JSON.stringify(customInstructions, null, 2), 'utf-8');
+
+            teamConfigs.push({ role, configFile: path.join('projects', project.id, configFile) });
             results.push(configFile);
           }
         } catch (err) {

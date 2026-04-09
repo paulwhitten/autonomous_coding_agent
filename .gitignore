@@ -18,6 +18,8 @@ tmp/
 temp/
 autonomous_copilot_agent
 mailbox/
+config-*.json
+custom_instructions.json
 
 # Smoke test runtime artifacts
 smoke_tests/**/temp/

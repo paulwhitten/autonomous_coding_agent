@@ -1,8 +1,9 @@
 import { useState, useEffect } from 'react';
 import {
   FolderOpen, Plus, ArrowRight, ArrowLeft, Check, GitBranch, Code, Wrench,
-  FileText, Rocket, Trash2, ChevronDown, ChevronUp, Play, AlertCircle,
+  FileText, Rocket, Trash2, ChevronDown, ChevronUp, Play, AlertCircle, Square, ExternalLink,
 } from 'lucide-react';
+import { Link } from 'react-router-dom';
 import { projectsApi, workflowApi, processesApi, type ProjectDefinition } from '../lib/api';
 
 type WizardStep = 'project' | 'workflow' | 'team' | 'launch';
@@ -73,6 +74,8 @@ export default function ProjectsPage() {
   const [teamConfigs, setTeamConfigs] = useState<TeamConfig[]>([]);
   const [applyStatus, setApplyStatus] = useState<string | null>(null);
   const [launchStatus, setLaunchStatus] = useState<string | null>(null);
+  const [runningProcesses, setRunningProcesses] = useState<Array<{ id: string; configFile: string; status: string }>>([]);
+  const [stopping, setStopping] = useState(false);
 
   // Status messages
   const [status, setStatus] = useState<string | null>(null);
@@ -86,7 +89,7 @@ export default function ProjectsPage() {
 
   useEffect(() => {
     loadProjects();
-    workflowApi.list().then(d => setWorkflows(d.workflows as unknown as WorkflowSummary[])).catch(() => {});
+    workflowApi.list().then(d => setWorkflows(d.workflows as unknown as WorkflowSummary[])).catch(() => { });
   }, []);
 
   const loadProjects = async () => {
@@ -161,6 +164,22 @@ export default function ProjectsPage() {
     }
   };
 
+  // Poll running processes when on launch step
+  const refreshProcesses = async () => {
+    try {
+      const data = await processesApi.list();
+      setRunningProcesses(data.processes.map(p => ({ id: p.id, configFile: p.configFile, status: p.status })));
+    } catch { /* ignore */ }
+  };
+
+  useEffect(() => {
+    if (currentStep === 'launch') {
+      refreshProcesses();
+      const interval = setInterval(refreshProcesses, 3000);
+      return () => clearInterval(interval);
+    }
+  }, [currentStep]);
+
   // Launch team
   const launchTeam = async () => {
     if (teamConfigs.length === 0) {
@@ -174,8 +193,27 @@ export default function ProjectsPage() {
       const data = await processesApi.batch(files);
       setLaunchStatus(`Launched ${data.launched} agents`);
       setTimeout(() => setLaunchStatus(null), 5000);
+      await refreshProcesses();
     } catch (err) {
       setLaunchStatus(`Error: ${(err as Error).message}`);
+    }
+  };
+
+  // Stop all running agents
+  const stopAllAgents = async () => {
+    const running = runningProcesses.filter(p => p.status === 'running');
+    if (running.length === 0) return;
+    setStopping(true);
+    setLaunchStatus('Stopping agents...');
+    try {
+      await Promise.all(running.map(p => processesApi.stop(p.id)));
+      setLaunchStatus(`Stopped ${running.length} agent${running.length !== 1 ? 's' : ''}`);
+      setTimeout(() => setLaunchStatus(null), 5000);
+      await refreshProcesses();
+    } catch (err) {
+      setLaunchStatus(`Error stopping: ${(err as Error).message}`);
+    } finally {
+      setStopping(false);
     }
   };
 
@@ -189,6 +227,15 @@ export default function ProjectsPage() {
 
   const goNext = async () => {
     if (currentStep === 'project') {
+      // Flush any pending context or tech stack input before saving
+      if (newContextItem.trim()) {
+        draft.projectContext = [...(draft.projectContext || []), newContextItem.trim()];
+        setNewContextItem('');
+      }
+      if (newTechItem.trim()) {
+        draft.techStack = [...(draft.techStack || []), newTechItem.trim()];
+        setNewTechItem('');
+      }
       // Save project when leaving step 1
       const saved = await saveProject();
       if (!saved) return;
@@ -291,13 +338,12 @@ export default function ProjectsPage() {
                 onClick={() => {
                   if (i < stepIndex) setCurrentStep(step);
                 }}
-                className={`flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-medium transition-colors ${
-                  step === currentStep
+                className={`flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-medium transition-colors ${step === currentStep
                     ? 'bg-blue-600 text-white'
                     : i < stepIndex
-                    ? 'bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-400 cursor-pointer hover:bg-green-200'
-                    : 'bg-gray-100 text-gray-400 dark:bg-gray-800'
-                }`}
+                      ? 'bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-400 cursor-pointer hover:bg-green-200'
+                      : 'bg-gray-100 text-gray-400 dark:bg-gray-800'
+                  }`}
               >
                 {i < stepIndex ? <Check size={12} /> : <span>{i + 1}</span>}
                 {STEP_LABELS[step]}
@@ -456,11 +502,10 @@ export default function ProjectsPage() {
                     <button
                       key={wf.file}
                       onClick={() => selectWorkflow(wf.file)}
-                      className={`text-left p-3 rounded-lg border transition-colors ${
-                        draft.workflow === wf.file
+                      className={`text-left p-3 rounded-lg border transition-colors ${draft.workflow === wf.file
                           ? 'border-blue-500 bg-blue-50 dark:bg-blue-900/20'
                           : 'dark:border-gray-600 hover:border-gray-400'
-                      }`}
+                        }`}
                     >
                       <div className="flex items-center justify-between">
                         <span className="font-medium text-sm">{wf.name}</span>
@@ -634,17 +679,42 @@ export default function ProjectsPage() {
                 </div>
               )}
 
-              <button
-                onClick={launchTeam}
-                disabled={teamConfigs.length === 0}
-                className="w-full py-3 bg-green-600 text-white rounded-lg font-medium hover:bg-green-700 disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2"
-              >
-                <Play size={16} /> Launch All Agents
-              </button>
+              {(() => {
+                const running = runningProcesses.filter(p => p.status === 'running');
+                return running.length > 0 ? (
+                  <div className="space-y-2">
+                    <button
+                      onClick={stopAllAgents}
+                      disabled={stopping}
+                      className="w-full py-3 bg-red-600 text-white rounded-lg font-medium hover:bg-red-700 disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2"
+                    >
+                      <Square size={16} /> Stop All Agents ({running.length} running)
+                    </button>
+                    <button
+                      onClick={launchTeam}
+                      disabled={teamConfigs.length === 0}
+                      className="w-full py-3 bg-green-600 text-white rounded-lg font-medium hover:bg-green-700 disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2"
+                    >
+                      <Play size={16} /> Relaunch All Agents
+                    </button>
+                  </div>
+                ) : (
+                  <button
+                    onClick={launchTeam}
+                    disabled={teamConfigs.length === 0}
+                    className="w-full py-3 bg-green-600 text-white rounded-lg font-medium hover:bg-green-700 disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2"
+                  >
+                    <Play size={16} /> Launch All Agents
+                  </button>
+                );
+              })()}
 
-              <p className="text-xs text-gray-400 text-center">
-                This will start {teamConfigs.length} agent processes using the generated configs
-              </p>
+              <div className="flex items-center justify-center gap-4 text-xs text-gray-400">
+                <p>This will start {teamConfigs.length} agent processes using the generated configs</p>
+                <Link to="/processes" className="flex items-center gap-1 text-blue-500 hover:text-blue-600 whitespace-nowrap">
+                  <ExternalLink size={12} /> Processes
+                </Link>
+              </div>
             </div>
           )}
         </div>

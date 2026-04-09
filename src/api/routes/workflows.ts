@@ -7,26 +7,52 @@ import { validateWorkflow } from '../validation.js';
 
 export function createWorkflowRouter(projectRoot: string): Router {
   const router = Router();
-  const workflowDir = path.join(projectRoot, 'workflows');
+  const builtinDir = path.join(projectRoot, 'workflows');
+  const userDir = path.join(projectRoot, 'projects', 'workflows');
 
-  // GET /api/workflows — list all workflow files
+  /** Resolve a workflow filename to its absolute path, checking user dir first. */
+  async function resolveWorkflowPath(filename: string): Promise<string> {
+    const userPath = path.join(userDir, filename);
+    try {
+      await readFile(userPath, 'utf-8');
+      return userPath;
+    } catch { /* not in user dir */ }
+    return path.join(builtinDir, filename);
+  }
+
+  /** Read summaries from a single directory (returns empty array if missing). */
+  async function readSummaries(dir: string, source: string) {
+    try {
+      const files = await readdir(dir);
+      return Promise.all(
+        files
+          .filter(f => f.endsWith('.workflow.json'))
+          .map(async (f) => {
+            try {
+              const raw = await readFile(path.join(dir, f), 'utf-8');
+              const wf = JSON.parse(raw);
+              return { file: f, id: wf.id, name: wf.name, description: wf.description, version: wf.version, source };
+            } catch {
+              return { file: f, id: null, name: f, description: 'Parse error', version: '?', source };
+            }
+          })
+      );
+    } catch { return []; }
+  }
+
+  // GET /api/workflows — list all workflow files from both directories
   router.get('/', async (_req: Request, res: Response) => {
     try {
-      const files = await readdir(workflowDir);
-      const workflows = files.filter(f => f.endsWith('.workflow.json'));
-      const summaries = await Promise.all(
-        workflows.map(async (f) => {
-          try {
-            const raw = await readFile(path.join(workflowDir, f), 'utf-8');
-            const wf = JSON.parse(raw);
-            return { file: f, id: wf.id, name: wf.name, description: wf.description, version: wf.version };
-          } catch {
-            return { file: f, id: null, name: f, description: 'Parse error', version: '?' };
-          }
-        })
-      );
-      res.json({ workflows: summaries });
-    } catch (err) {
+      const [builtin, user] = await Promise.all([
+        readSummaries(builtinDir, 'builtin'),
+        readSummaries(userDir, 'user'),
+      ]);
+      // User workflows override builtin with same filename
+      const byFile = new Map<string, typeof builtin[0]>();
+      for (const w of builtin) byFile.set(w.file, w);
+      for (const w of user) byFile.set(w.file, w);
+      res.json({ workflows: Array.from(byFile.values()) });
+    } catch {
       res.status(500).json({ error: 'Failed to list workflows' });
     }
   });
@@ -39,7 +65,7 @@ export function createWorkflowRouter(projectRoot: string): Router {
         res.status(400).json({ error: 'File must be .workflow.json' });
         return;
       }
-      const filePath = path.join(workflowDir, filename);
+      const filePath = await resolveWorkflowPath(filename);
       const raw = await readFile(filePath, 'utf-8');
       const workflow = JSON.parse(raw);
       res.json(workflow);
@@ -48,7 +74,7 @@ export function createWorkflowRouter(projectRoot: string): Router {
     }
   });
 
-  // PUT /api/workflows/:filename — write/update a workflow
+  // PUT /api/workflows/:filename — write/update a workflow (saves to projects/workflows/)
   router.put('/:filename', async (req: Request, res: Response) => {
     try {
       const filename = path.basename(req.params.filename as string);
@@ -61,7 +87,8 @@ export function createWorkflowRouter(projectRoot: string): Router {
         res.status(400).json({ error: 'Schema validation failed', details: validation.errors });
         return;
       }
-      const filePath = path.join(workflowDir, filename);
+      await mkdir(userDir, { recursive: true });
+      const filePath = path.join(userDir, filename);
       await writeFile(filePath, JSON.stringify(req.body, null, 2), 'utf-8');
       res.json({ success: true, file: filename });
     } catch (err) {
@@ -79,7 +106,7 @@ export function createWorkflowRouter(projectRoot: string): Router {
   router.get('/:filename/states', async (req: Request, res: Response) => {
     try {
       const filename = path.basename(req.params.filename as string);
-      const filePath = path.join(workflowDir, filename);
+      const filePath = await resolveWorkflowPath(filename);
       const raw = await readFile(filePath, 'utf-8');
       const workflow = JSON.parse(raw);
 
@@ -116,7 +143,7 @@ export function createWorkflowRouter(projectRoot: string): Router {
   router.post('/:filename/team-configs', async (req: Request, res: Response) => {
     try {
       const filename = path.basename(req.params.filename as string);
-      const filePath = path.join(workflowDir, filename);
+      const filePath = await resolveWorkflowPath(filename);
       const raw = await readFile(filePath, 'utf-8');
       const workflow = JSON.parse(raw);
 
@@ -221,7 +248,7 @@ export function createWorkflowRouter(projectRoot: string): Router {
   router.post('/:filename/start-task', async (req: Request, res: Response) => {
     try {
       const filename = path.basename(req.params.filename as string);
-      const filePath = path.join(workflowDir, filename);
+      const filePath = await resolveWorkflowPath(filename);
       const raw = await readFile(filePath, 'utf-8');
       const workflow = JSON.parse(raw);
 
@@ -306,16 +333,16 @@ export function createWorkflowRouter(projectRoot: string): Router {
     }
   });
 
-  // DELETE /api/workflows/:filename — delete a workflow
+  // DELETE /api/workflows/:filename — delete a workflow (only from projects/workflows/)
   router.delete('/:filename', async (req: Request, res: Response) => {
     try {
       const filename = path.basename(req.params.filename as string);
-      const filePath = path.join(workflowDir, filename);
+      const filePath = path.join(userDir, filename);
       const { unlink } = await import('fs/promises');
       await unlink(filePath);
       res.json({ success: true, deleted: filename });
     } catch (err) {
-      res.status(404).json({ error: 'Workflow file not found' });
+      res.status(404).json({ error: 'Workflow file not found (only user-uploaded workflows can be deleted)' });
     }
   });
 

@@ -331,6 +331,10 @@
           "type": "boolean",
           "default": true,
           "description": "Save session context across restarts."
+        },
+        "projectRepo": {
+          "type": "string",
+          "description": "Git repository URL to clone into the working folder on first startup. Supports https://, git@, and file:// URLs. The clone is skipped if the working folder already contains a .git directory."
         }
       }
     },

@@ -87,6 +87,8 @@ export interface AgentConfig {
       failed?: string;
     };
     persistContext: boolean;
+    /** Git repository URL to clone into the working folder on first startup. */
+    projectRepo?: string;
   };
   logging: {
     level: 'debug' | 'info' | 'warn' | 'error';
@@ -308,7 +310,7 @@ export interface SessionContext {
   messagesProcessed: number;
   status: 'idle' | 'working' | 'stuck' | 'escalated' | 'breaking_down_task';
   workingDirectory: string;
-  
+
   // Message sequence tracking (Option B: persistent state)
   nextMessageSequence?: number;
   messageTracking?: {
@@ -322,7 +324,7 @@ export interface SessionContext {
       pendingWorkItems?: string[];   // Currently pending work items
     };
   };
-  
+
   // QA rework cycle tracking (prevents infinite rejection loops)
   // Key format: "rework:<original task name>", value: cycle count
   reworkTracking?: {

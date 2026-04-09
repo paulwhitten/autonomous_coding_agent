@@ -22,7 +22,7 @@
     "hostname": "auto-detect",             // Default: os.hostname()
     "role": "researcher",                  // REQUIRED: "developer" | "qa" | "manager" | "researcher"
     "roleDefinitionsFile": "./roles.json", // Default: "./roles.json"
-    
+
     // Timing configuration (all have sensible defaults)
     // "checkIntervalMs": 60000,           // Default: 60000 (1 min) -- mailbox polling interval
     // "stuckTimeoutMs": 2700000,          // Default: 2700000 (45 min) -- stuck/WIP watchdog
@@ -37,7 +37,7 @@
 
     // Free-form decomposition guidance
     // "decompositionPrompt": "Always include a dedicated work item for writing unit tests.",
-    
+
     // Adaptive timeout strategy (defaults shown)
     // "timeoutStrategy": {
     //   "enabled": true,
@@ -47,7 +47,7 @@
     //   "tier4_adaptiveWindow": 3600000,
     //   "tier4_adaptiveThreshold": 5
     // },
-    
+
     // Validation and review configuration (defaults shown)
     // "validation": {
     //   "mode": "spot_check",             // "none" | "spot_check" | "always" | "milestone"
@@ -97,7 +97,8 @@
   //     "review": "review",
   //     "failed": "failed"
   //   },
-  //   "persistContext": true              // Default: true
+  //   "persistContext": true,             // Default: true
+  //   "projectRepo": "file:///path/to/repo"  // Optional: git clone URL; cloned into workingFolder on first start
   // },
 
   // All logging fields have defaults -- omit the entire block to use them
@@ -120,7 +121,7 @@
   //   "preset": "adaptive",              // Default: "adaptive"
   //   "presetsFile": "./quota-presets.json"
   // },
-  
+
   // Communication -- both git mailbox and A2A HTTP are always active.
   // Add a "communication.a2a" block only to override defaults:
   // "communication": {
