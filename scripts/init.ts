@@ -29,7 +29,7 @@ async function promptUser(): Promise<InitOptions> {
   const hostname = os.hostname();
   const defaults: InitOptions = {
     role: 'developer',
-    mailboxPath: './mailbox',
+    mailboxPath: './shared-mailbox',
     hostname,
   };
 
@@ -65,12 +65,14 @@ function createMailboxFolder(mailboxPath: string, hostname: string, role: string
   const resolved = path.resolve(projectRoot, mailboxPath);
   const agentFolder = `to_${hostname}_${role}`;
   const inboxPath = path.join(resolved, 'mailbox', agentFolder);
-  const archivePath = path.join(inboxPath, 'archive');
 
   if (fs.existsSync(inboxPath)) {
     console.log(`  Mailbox folder exists: ${inboxPath}`);
   } else {
-    fs.mkdirSync(archivePath, { recursive: true });
+    // Create priority queue subfolders matching MailboxManager.initialize()
+    for (const sub of ['priority', 'normal', 'background', 'archive']) {
+      fs.mkdirSync(path.join(inboxPath, sub), { recursive: true });
+    }
     console.log(`  Created mailbox:       ${inboxPath}`);
   }
 
@@ -105,9 +107,13 @@ function copyRoles(): void {
 function seedHelloWorld(mailboxPath: string, hostname: string, role: string): void {
   const resolved = path.resolve(projectRoot, mailboxPath);
   const agentFolder = `to_${hostname}_${role}`;
-  const inboxPath = path.join(resolved, 'mailbox', agentFolder);
+  const normalPath = path.join(resolved, 'mailbox', agentFolder, 'normal');
 
-  const existingFiles = fs.readdirSync(inboxPath).filter(f => f.endsWith('.md'));
+  if (!fs.existsSync(normalPath)) {
+    fs.mkdirSync(normalPath, { recursive: true });
+  }
+
+  const existingFiles = fs.readdirSync(normalPath).filter(f => f.endsWith('.md'));
   if (existingFiles.length > 0) {
     console.log('  Hello-world task:      inbox already has messages, skipped');
     return;
@@ -134,7 +140,7 @@ This task was seeded by 'npm run init' to give you something to process
 on your first run. Delete this message or let the agent archive it.
 `;
 
-  fs.writeFileSync(path.join(inboxPath, filename), content);
+  fs.writeFileSync(path.join(normalPath, filename), content);
   console.log(`  Seeded hello-world:    ${filename}`);
 }
 

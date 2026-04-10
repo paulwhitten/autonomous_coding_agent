@@ -239,7 +239,7 @@ Each `setup.sh` script:
    - Builds TypeScript: `npm run build`
 
 5. **Sets up mailbox**
-   - `start_mailbox/*.md` → `agent/mailbox/mailbox/to_<role>/`
+   - `start_mailbox/*.md` → `agent/shared-mailbox/mailbox/to_<role>/`
 
 5. **Installs dependencies**
    - Runs `npm install` in agent directory

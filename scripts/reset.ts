@@ -37,7 +37,7 @@ Options:
 const projectRoot = process.cwd();
 
 // Try to load config for paths; fall back to defaults if missing
-let mailboxRepoPath = './mailbox';
+let mailboxRepoPath = './shared-mailbox';
 let workspacePath = './workspace';
 let logsPath = './logs';
 
@@ -99,7 +99,11 @@ function removeTarget(t: Target): void {
   if (t.kind === 'dir') {
     fs.rmSync(t.absPath, { recursive: true, force: true });
   } else {
-    fs.unlinkSync(t.absPath);
+    try {
+      fs.unlinkSync(t.absPath);
+    } catch (err: unknown) {
+      if ((err as NodeJS.ErrnoException).code !== 'ENOENT') throw err;
+    }
   }
 }
 

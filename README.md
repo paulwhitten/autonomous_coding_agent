@@ -139,7 +139,7 @@ Alternatively, create `config.json` by hand with only the two required fields:
 ```json
 {
   "agent": { "role": "developer" },
-  "mailbox": { "repoPath": "./mailbox" }
+  "mailbox": { "repoPath": "./shared-mailbox" }
 }
 ```
 

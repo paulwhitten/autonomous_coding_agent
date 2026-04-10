@@ -14,6 +14,7 @@ coverage/
 debug/
 tmp/
 temp/
+shared-mailbox/
 
 # Smoke test runtime artifacts
 smoke_tests/**/temp/
