@@ -226,9 +226,9 @@ export default function DashboardPage() {
     loadData();
     loadDiscoveredAgents();
     // Load available config files for agent launching
-    processesApi.configs().then(d => setLaunchConfigs(d.configs)).catch(() => {});
+    processesApi.configs().then(d => setLaunchConfigs(d.configs)).catch(() => { });
     // Load initial health history
-    agentsApi.healthHistory().then(d => setHealthHistoryMap(d.history)).catch(() => {});
+    agentsApi.healthHistory().then(d => setHealthHistoryMap(d.history)).catch(() => { });
     const unsub = onFileChange((data) => {
       setRecentEvents(prev => [
         { ...data, time: new Date().toLocaleTimeString() },
@@ -519,11 +519,10 @@ export default function DashboardPage() {
                   {agent.a2aStatus && (
                     <div className="flex flex-wrap gap-2 text-xs mt-1">
                       {(agent.a2aStatus as any).mailbox && (
-                        <span className={`inline-flex items-center gap-1 px-1.5 py-0.5 rounded ${
-                          ((agent.a2aStatus as any).mailbox.unread || 0) > 0
+                        <span className={`inline-flex items-center gap-1 px-1.5 py-0.5 rounded ${((agent.a2aStatus as any).mailbox.unread || 0) > 0
                             ? 'bg-amber-100 dark:bg-amber-900/30 text-amber-700 dark:text-amber-400'
                             : 'bg-gray-100 dark:bg-gray-700 text-gray-500 dark:text-gray-400'
-                        }`}>
+                          }`}>
                           📬 {(agent.a2aStatus as any).mailbox.unread || 0} unread
                         </span>
                       )}
@@ -595,49 +594,49 @@ export default function DashboardPage() {
 
         {/* Workspace Agent Status (filesystem-based, shown when attached) */}
         {(agents.length > 0 || workspacePath) && (
-        <div className="bg-white dark:bg-gray-800 rounded-xl border dark:border-gray-700 p-4">
-          <h2 className="font-semibold text-gray-700 dark:text-gray-200 mb-3 flex items-center gap-2">
-            <Activity size={16} /> Workspace Agent Status
-          </h2>
-          {agents.length === 0 ? (
-            <div className="text-center py-8 text-gray-400">
-              <p className="text-sm">No active agents detected</p>
-              <p className="text-xs mt-1">Start an agent to see status here</p>
-            </div>
-          ) : (
-            <div className="space-y-2">
-              {agents.map((agent: any, i) => (
-                <div key={i} className={`flex items-center justify-between p-3 rounded-lg ${agent.stale ? 'bg-gray-50 dark:bg-gray-700/50 opacity-60' : 'bg-gray-50 dark:bg-gray-700'}`}>
-                  <div>
-                    <div className="flex items-center gap-2">
-                      <div className="font-medium text-sm">{agent.agentId}</div>
-                      {agent.stale && (
-                        <span className="text-xs bg-red-50 dark:bg-red-900/20 text-red-400 px-1.5 py-0.5 rounded-full flex items-center gap-1">
-                          <WifiOff size={10} /> Not running
-                        </span>
-                      )}
-                      {agent.active && agent.reachable && (
-                        <span className="text-xs bg-green-50 dark:bg-green-900/20 text-green-500 px-1.5 py-0.5 rounded-full flex items-center gap-1">
-                          <Wifi size={10} /> Connected
-                        </span>
-                      )}
-                      {agent.active && !agent.reachable && (
-                        <span className="text-xs bg-yellow-50 dark:bg-yellow-900/20 text-yellow-600 px-1.5 py-0.5 rounded-full">Active (no A2A)</span>
-                      )}
+          <div className="bg-white dark:bg-gray-800 rounded-xl border dark:border-gray-700 p-4">
+            <h2 className="font-semibold text-gray-700 dark:text-gray-200 mb-3 flex items-center gap-2">
+              <Activity size={16} /> Workspace Agent Status
+            </h2>
+            {agents.length === 0 ? (
+              <div className="text-center py-8 text-gray-400">
+                <p className="text-sm">No active agents detected</p>
+                <p className="text-xs mt-1">Start an agent to see status here</p>
+              </div>
+            ) : (
+              <div className="space-y-2">
+                {agents.map((agent: any, i) => (
+                  <div key={i} className={`flex items-center justify-between p-3 rounded-lg ${agent.stale ? 'bg-gray-50 dark:bg-gray-700/50 opacity-60' : 'bg-gray-50 dark:bg-gray-700'}`}>
+                    <div>
+                      <div className="flex items-center gap-2">
+                        <div className="font-medium text-sm">{agent.agentId}</div>
+                        {agent.stale && (
+                          <span className="text-xs bg-red-50 dark:bg-red-900/20 text-red-400 px-1.5 py-0.5 rounded-full flex items-center gap-1">
+                            <WifiOff size={10} /> Not running
+                          </span>
+                        )}
+                        {agent.active && agent.reachable && (
+                          <span className="text-xs bg-green-50 dark:bg-green-900/20 text-green-500 px-1.5 py-0.5 rounded-full flex items-center gap-1">
+                            <Wifi size={10} /> Connected
+                          </span>
+                        )}
+                        {agent.active && !agent.reachable && (
+                          <span className="text-xs bg-yellow-50 dark:bg-yellow-900/20 text-yellow-600 px-1.5 py-0.5 rounded-full">Active (no A2A)</span>
+                        )}
+                      </div>
+                      <div className="text-xs text-gray-500">
+                        Processed: {agent.messagesProcessed} messages
+                        {agent.lastMailboxCheck && (
+                          <span className="ml-2">· Last seen: {new Date(agent.lastMailboxCheck).toLocaleTimeString()}</span>
+                        )}
+                      </div>
                     </div>
-                    <div className="text-xs text-gray-500">
-                      Processed: {agent.messagesProcessed} messages
-                      {agent.lastMailboxCheck && (
-                        <span className="ml-2">· Last seen: {new Date(agent.lastMailboxCheck).toLocaleTimeString()}</span>
-                      )}
-                    </div>
+                    <StatusBadge status={agent.status} />
                   </div>
-                  <StatusBadge status={agent.status} />
-                </div>
-              ))}
-            </div>
-          )}
-        </div>
+                ))}
+              </div>
+            )}
+          </div>
         )}
 
         {/* Work Item Pipeline */}
@@ -658,15 +657,14 @@ export default function DashboardPage() {
                   </div>
                   <div className="w-full bg-gray-100 dark:bg-gray-700 rounded-full h-2">
                     <div
-                      className={`h-2 rounded-full ${
-                        folder === 'completed'
+                      className={`h-2 rounded-full ${folder === 'completed'
                           ? 'bg-green-500'
                           : folder === 'failed'
-                          ? 'bg-red-500'
-                          : folder === 'review'
-                          ? 'bg-yellow-500'
-                          : 'bg-blue-500'
-                      }`}
+                            ? 'bg-red-500'
+                            : folder === 'review'
+                              ? 'bg-yellow-500'
+                              : 'bg-blue-500'
+                        }`}
                       style={{
                         width: totalItems > 0
                           ? `${((workItems[folder]?.length || 0) / totalItems) * 100}%`
@@ -770,11 +768,10 @@ export default function DashboardPage() {
             <div className="flex items-center justify-between">
               <span className="text-sm text-gray-500 dark:text-gray-400">Server Status</span>
               {a2aServerStatus ? (
-                <span className={`flex items-center gap-1.5 text-xs font-medium ${
-                  a2aServerStatus.running
+                <span className={`flex items-center gap-1.5 text-xs font-medium ${a2aServerStatus.running
                     ? 'text-green-700 dark:text-green-400'
                     : 'text-gray-500 dark:text-gray-400'
-                }`}>
+                  }`}>
                   <span className={`inline-block w-2 h-2 rounded-full ${a2aServerStatus.running ? 'bg-green-500' : 'bg-gray-400'}`} />
                   {a2aServerStatus.running ? `Running on :${a2aServerStatus.port}` : 'Not running'}
                 </span>
@@ -796,11 +793,10 @@ export default function DashboardPage() {
                 <div className="space-y-1">
                   {a2aRecentEntries.map((entry, i) => (
                     <div key={i} className="flex items-center gap-2 text-xs">
-                      <span className={`px-1 py-0.5 rounded font-medium ${
-                        entry.direction === 'inbound'
+                      <span className={`px-1 py-0.5 rounded font-medium ${entry.direction === 'inbound'
                           ? 'bg-green-100 dark:bg-green-900/30 text-green-700 dark:text-green-400'
                           : 'bg-blue-100 dark:bg-blue-900/30 text-blue-700 dark:text-blue-400'
-                      }`}>
+                        }`}>
                         {entry.direction === 'inbound' ? '← In' : '→ Out'}
                       </span>
                       <span className="text-gray-600 dark:text-gray-300 font-mono truncate">{entry.method}</span>
@@ -827,15 +823,14 @@ export default function DashboardPage() {
               {recentEvents.map((event, i) => (
                 <div key={i} className="flex items-center gap-2 text-xs p-1.5 hover:bg-gray-50 dark:hover:bg-gray-700 rounded">
                   <span className="text-gray-400 w-20 flex-shrink-0">{event.time}</span>
-                  <span className={`px-1.5 py-0.5 rounded text-xs ${
-                    event.type === 'mailbox'
+                  <span className={`px-1.5 py-0.5 rounded text-xs ${event.type === 'mailbox'
                       ? 'bg-blue-100 text-blue-700'
                       : event.type === 'task'
-                      ? 'bg-green-100 text-green-700'
-                      : event.type === 'log'
-                      ? 'bg-gray-100 text-gray-700'
-                      : 'bg-yellow-100 text-yellow-700'
-                  }`}>
+                        ? 'bg-green-100 text-green-700'
+                        : event.type === 'log'
+                          ? 'bg-gray-100 text-gray-700'
+                          : 'bg-yellow-100 text-yellow-700'
+                    }`}>
                     {event.type}
                   </span>
                   <span className="text-gray-600 truncate">{event.path.split('/').slice(-2).join('/')}</span>
@@ -874,21 +869,19 @@ export default function DashboardPage() {
             <div className="flex border-b dark:border-gray-700">
               <button
                 onClick={() => setSlideoutTab('message')}
-                className={`flex-1 flex items-center justify-center gap-1.5 px-3 py-2 text-xs font-medium transition-colors ${
-                  slideoutTab === 'message'
+                className={`flex-1 flex items-center justify-center gap-1.5 px-3 py-2 text-xs font-medium transition-colors ${slideoutTab === 'message'
                     ? 'text-blue-600 dark:text-blue-400 border-b-2 border-blue-600 dark:border-blue-400'
                     : 'text-gray-500 dark:text-gray-400 hover:text-gray-700 dark:hover:text-gray-300'
-                }`}
+                  }`}
               >
                 <MessageSquare size={12} /> Message
               </button>
               <button
                 onClick={() => { setSlideoutTab('logs'); loadAgentLogs(messagingAgent); }}
-                className={`flex-1 flex items-center justify-center gap-1.5 px-3 py-2 text-xs font-medium transition-colors ${
-                  slideoutTab === 'logs'
+                className={`flex-1 flex items-center justify-center gap-1.5 px-3 py-2 text-xs font-medium transition-colors ${slideoutTab === 'logs'
                     ? 'text-blue-600 dark:text-blue-400 border-b-2 border-blue-600 dark:border-blue-400'
                     : 'text-gray-500 dark:text-gray-400 hover:text-gray-700 dark:hover:text-gray-300'
-                }`}
+                  }`}
               >
                 <FileText size={12} /> Logs
               </button>
@@ -948,158 +941,155 @@ export default function DashboardPage() {
             </div>
 
             {slideoutTab === 'message' && (
-            <>
-            {/* Message form + history */}
-            <div className="flex-1 p-4 space-y-3 overflow-auto">
-              {/* History for this agent */}
-              {messageHistory.filter(m => m.to === messagingAgent.agentId).length > 0 && (
-                <div className="space-y-1.5 mb-3 pb-3 border-b dark:border-gray-700">
-                  <p className="text-xs font-medium text-gray-500 dark:text-gray-400">Message History</p>
-                  {messageHistory.filter(m => m.to === messagingAgent.agentId).slice(-5).map((msg, i) => (
-                    <div key={i} className={`text-xs p-2 rounded ${
-                      msg.status === 'sent'
-                        ? 'bg-blue-50 dark:bg-blue-900/20 border border-blue-200 dark:border-blue-800'
-                        : 'bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800'
-                    }`}>
-                      <div className="flex items-center justify-between mb-0.5">
-                        <span className="font-medium text-gray-700 dark:text-gray-300">{msg.subject}</span>
-                        <span className="text-gray-400">{msg.time}</span>
-                      </div>
-                      <p className="text-gray-500 dark:text-gray-400 line-clamp-2">{msg.content}</p>
+              <>
+                {/* Message form + history */}
+                <div className="flex-1 p-4 space-y-3 overflow-auto">
+                  {/* History for this agent */}
+                  {messageHistory.filter(m => m.to === messagingAgent.agentId).length > 0 && (
+                    <div className="space-y-1.5 mb-3 pb-3 border-b dark:border-gray-700">
+                      <p className="text-xs font-medium text-gray-500 dark:text-gray-400">Message History</p>
+                      {messageHistory.filter(m => m.to === messagingAgent.agentId).slice(-5).map((msg, i) => (
+                        <div key={i} className={`text-xs p-2 rounded ${msg.status === 'sent'
+                            ? 'bg-blue-50 dark:bg-blue-900/20 border border-blue-200 dark:border-blue-800'
+                            : 'bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800'
+                          }`}>
+                          <div className="flex items-center justify-between mb-0.5">
+                            <span className="font-medium text-gray-700 dark:text-gray-300">{msg.subject}</span>
+                            <span className="text-gray-400">{msg.time}</span>
+                          </div>
+                          <p className="text-gray-500 dark:text-gray-400 line-clamp-2">{msg.content}</p>
+                        </div>
+                      ))}
                     </div>
-                  ))}
+                  )}
+
+                  <div>
+                    <label className="block text-xs font-medium text-gray-700 dark:text-gray-300 mb-1">Subject</label>
+                    <input
+                      value={messageSubject}
+                      onChange={(e) => setMessageSubject(e.target.value)}
+                      placeholder="e.g. Work assignment"
+                      className="input text-sm w-full"
+                    />
+                  </div>
+                  <div className="flex-1">
+                    <label className="block text-xs font-medium text-gray-700 dark:text-gray-300 mb-1">Message</label>
+                    <textarea
+                      value={messageContent}
+                      onChange={(e) => setMessageContent(e.target.value)}
+                      placeholder="Enter message content..."
+                      rows={6}
+                      className="input text-sm w-full resize-none"
+                    />
+                  </div>
+
+                  {messageSent && (
+                    <div className={`text-xs p-2 rounded ${messageSent === 'success'
+                        ? 'bg-green-100 dark:bg-green-900/30 text-green-700 dark:text-green-400'
+                        : 'bg-red-100 dark:bg-red-900/30 text-red-700 dark:text-red-400'
+                      }`}>
+                      {messageSent === 'success' ? 'Message sent successfully' : `Send failed: ${messageSent}`}
+                    </div>
+                  )}
                 </div>
-              )}
 
-              <div>
-                <label className="block text-xs font-medium text-gray-700 dark:text-gray-300 mb-1">Subject</label>
-                <input
-                  value={messageSubject}
-                  onChange={(e) => setMessageSubject(e.target.value)}
-                  placeholder="e.g. Work assignment"
-                  className="input text-sm w-full"
-                />
-              </div>
-              <div className="flex-1">
-                <label className="block text-xs font-medium text-gray-700 dark:text-gray-300 mb-1">Message</label>
-                <textarea
-                  value={messageContent}
-                  onChange={(e) => setMessageContent(e.target.value)}
-                  placeholder="Enter message content..."
-                  rows={6}
-                  className="input text-sm w-full resize-none"
-                />
-              </div>
-
-              {messageSent && (
-                <div className={`text-xs p-2 rounded ${
-                  messageSent === 'success'
-                    ? 'bg-green-100 dark:bg-green-900/30 text-green-700 dark:text-green-400'
-                    : 'bg-red-100 dark:bg-red-900/30 text-red-700 dark:text-red-400'
-                }`}>
-                  {messageSent === 'success' ? 'Message sent successfully' : `Send failed: ${messageSent}`}
+                {/* Send button */}
+                <div className="p-4 border-t dark:border-gray-700">
+                  <button
+                    onClick={async () => {
+                      if (!messagingAgent.a2aUrl || !messageContent.trim()) return;
+                      setMessageSending(true);
+                      setMessageSent(null);
+                      const subject = messageSubject || 'Dashboard Message';
+                      const content = messageContent;
+                      try {
+                        const result = await a2aApi.send(messagingAgent.a2aUrl, {
+                          subject,
+                          content,
+                        });
+                        const r = result as { success?: boolean };
+                        const status = r.success ? 'sent' as const : 'failed' as const;
+                        setMessageSent(r.success ? 'success' : 'Failed');
+                        setMessageHistory(prev => [...prev, {
+                          to: messagingAgent.agentId,
+                          subject,
+                          content,
+                          time: new Date().toLocaleTimeString(),
+                          status,
+                        }]);
+                        if (r.success) {
+                          setMessageContent('');
+                          setMessageSubject('');
+                        }
+                      } catch (err) {
+                        setMessageSent(String(err));
+                        setMessageHistory(prev => [...prev, {
+                          to: messagingAgent.agentId,
+                          subject,
+                          content,
+                          time: new Date().toLocaleTimeString(),
+                          status: 'failed',
+                        }]);
+                      } finally {
+                        setMessageSending(false);
+                      }
+                    }}
+                    disabled={!messagingAgent.a2aUrl || !messageContent.trim() || messageSending}
+                    className="w-full flex items-center justify-center gap-2 px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed text-sm font-medium"
+                  >
+                    <Send size={14} />
+                    {messageSending ? 'Sending...' : 'Send Message'}
+                  </button>
                 </div>
-              )}
-            </div>
-
-            {/* Send button */}
-            <div className="p-4 border-t dark:border-gray-700">
-              <button
-                onClick={async () => {
-                  if (!messagingAgent.a2aUrl || !messageContent.trim()) return;
-                  setMessageSending(true);
-                  setMessageSent(null);
-                  const subject = messageSubject || 'Dashboard Message';
-                  const content = messageContent;
-                  try {
-                    const result = await a2aApi.send(messagingAgent.a2aUrl, {
-                      subject,
-                      content,
-                    });
-                    const r = result as { success?: boolean };
-                    const status = r.success ? 'sent' as const : 'failed' as const;
-                    setMessageSent(r.success ? 'success' : 'Failed');
-                    setMessageHistory(prev => [...prev, {
-                      to: messagingAgent.agentId,
-                      subject,
-                      content,
-                      time: new Date().toLocaleTimeString(),
-                      status,
-                    }]);
-                    if (r.success) {
-                      setMessageContent('');
-                      setMessageSubject('');
-                    }
-                  } catch (err) {
-                    setMessageSent(String(err));
-                    setMessageHistory(prev => [...prev, {
-                      to: messagingAgent.agentId,
-                      subject,
-                      content,
-                      time: new Date().toLocaleTimeString(),
-                      status: 'failed',
-                    }]);
-                  } finally {
-                    setMessageSending(false);
-                  }
-                }}
-                disabled={!messagingAgent.a2aUrl || !messageContent.trim() || messageSending}
-                className="w-full flex items-center justify-center gap-2 px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed text-sm font-medium"
-              >
-                <Send size={14} />
-                {messageSending ? 'Sending...' : 'Send Message'}
-              </button>
-            </div>
-            </>
+              </>
             )}
 
             {slideoutTab === 'logs' && (
-            <div className="flex-1 flex flex-col overflow-hidden">
-              <div className="flex items-center justify-between px-4 py-2 border-b dark:border-gray-700 bg-gray-50 dark:bg-gray-900/30">
-                <span className="text-xs text-gray-500 dark:text-gray-400">
-                  {agentLogs.length > 0 ? `${agentLogs.length} lines` : 'No logs available'}
-                </span>
-                <button
-                  onClick={() => loadAgentLogs(messagingAgent)}
-                  disabled={agentLogsLoading}
-                  className="flex items-center gap-1 px-2 py-1 text-xs bg-gray-100 dark:bg-gray-700 text-gray-600 dark:text-gray-300 hover:bg-gray-200 dark:hover:bg-gray-600 rounded disabled:opacity-50"
-                >
-                  <RefreshCw size={10} className={agentLogsLoading ? 'animate-spin' : ''} />
-                  Refresh
-                </button>
+              <div className="flex-1 flex flex-col overflow-hidden">
+                <div className="flex items-center justify-between px-4 py-2 border-b dark:border-gray-700 bg-gray-50 dark:bg-gray-900/30">
+                  <span className="text-xs text-gray-500 dark:text-gray-400">
+                    {agentLogs.length > 0 ? `${agentLogs.length} lines` : 'No logs available'}
+                  </span>
+                  <button
+                    onClick={() => loadAgentLogs(messagingAgent)}
+                    disabled={agentLogsLoading}
+                    className="flex items-center gap-1 px-2 py-1 text-xs bg-gray-100 dark:bg-gray-700 text-gray-600 dark:text-gray-300 hover:bg-gray-200 dark:hover:bg-gray-600 rounded disabled:opacity-50"
+                  >
+                    <RefreshCw size={10} className={agentLogsLoading ? 'animate-spin' : ''} />
+                    Refresh
+                  </button>
+                </div>
+                <div className="flex-1 overflow-auto p-2 font-mono text-xs leading-relaxed bg-gray-950 text-gray-300">
+                  {agentLogsLoading ? (
+                    <div className="flex items-center justify-center py-8 text-gray-500">
+                      <div className="animate-spin rounded-full h-5 w-5 border-b-2 border-blue-500 mr-2" />
+                      Loading logs…
+                    </div>
+                  ) : agentLogs.length === 0 ? (
+                    <div className="text-center py-8 text-gray-500">
+                      <FileText size={24} className="mx-auto mb-2 opacity-50" />
+                      <p>No logs found for this agent.</p>
+                      <p className="text-gray-600 mt-1">Logs are available for locally-launched agents.</p>
+                    </div>
+                  ) : (
+                    agentLogs.map((line, i) => {
+                      const isError = line.includes('[stderr]') || line.includes('ERROR') || line.includes('"level":50');
+                      const isWarn = line.includes('WARN') || line.includes('"level":40');
+                      return (
+                        <div
+                          key={i}
+                          className={`whitespace-pre-wrap break-all py-0.5 px-1 rounded ${isError ? 'text-red-400 bg-red-950/30' :
+                              isWarn ? 'text-yellow-400 bg-yellow-950/20' :
+                                ''
+                            }`}
+                        >
+                          {line}
+                        </div>
+                      );
+                    })
+                  )}
+                </div>
               </div>
-              <div className="flex-1 overflow-auto p-2 font-mono text-xs leading-relaxed bg-gray-950 text-gray-300">
-                {agentLogsLoading ? (
-                  <div className="flex items-center justify-center py-8 text-gray-500">
-                    <div className="animate-spin rounded-full h-5 w-5 border-b-2 border-blue-500 mr-2" />
-                    Loading logs…
-                  </div>
-                ) : agentLogs.length === 0 ? (
-                  <div className="text-center py-8 text-gray-500">
-                    <FileText size={24} className="mx-auto mb-2 opacity-50" />
-                    <p>No logs found for this agent.</p>
-                    <p className="text-gray-600 mt-1">Logs are available for locally-launched agents.</p>
-                  </div>
-                ) : (
-                  agentLogs.map((line, i) => {
-                    const isError = line.includes('[stderr]') || line.includes('ERROR') || line.includes('"level":50');
-                    const isWarn = line.includes('WARN') || line.includes('"level":40');
-                    return (
-                      <div
-                        key={i}
-                        className={`whitespace-pre-wrap break-all py-0.5 px-1 rounded ${
-                          isError ? 'text-red-400 bg-red-950/30' :
-                          isWarn ? 'text-yellow-400 bg-yellow-950/20' :
-                          ''
-                        }`}
-                      >
-                        {line}
-                      </div>
-                    );
-                  })
-                )}
-              </div>
-            </div>
             )}
           </div>
         </div>
@@ -1166,6 +1156,7 @@ function TeamTopologyPanel({ agents, onSelectAgent }: { agents: DiscoveredAgent[
   const nodeMap = new Map<string, { id: string; hostname: string; role: string; health?: string; isDiscovered: boolean }>();
   const edges: Array<{ from: string; to: string }> = [];
 
+  // First pass: add all discovered agents to the nodeMap
   for (const agent of agents) {
     nodeMap.set(agent.agentId, {
       id: agent.agentId,
@@ -1174,10 +1165,21 @@ function TeamTopologyPanel({ agents, onSelectAgent }: { agents: DiscoveredAgent[
       health: agent.health,
       isDiscovered: true,
     });
+  }
+
+  // Second pass: resolve teamMember references against the populated nodeMap
+  for (const agent of agents) {
     if (agent.teamMembers) {
       for (const member of agent.teamMembers) {
-        // member.hostname is already the agentId (e.g. "pcw5860_developer")
-        const memberId = member.hostname;
+        // agentId convention is hostname_role. teamMember.hostname may be
+        // the bare hostname (e.g. "smoke-reg-dev") or already include the
+        // role suffix (e.g. "pcw5860_developer"). Try both forms to match
+        // against discovered agents already in the map.
+        const candidateA = member.hostname;
+        const candidateB = `${member.hostname}_${member.role}`;
+        const memberId = nodeMap.has(candidateA) ? candidateA
+          : nodeMap.has(candidateB) ? candidateB
+            : candidateB; // default to hostname_role for undiscovered peers
         if (!nodeMap.has(memberId)) {
           nodeMap.set(memberId, { id: memberId, hostname: member.hostname, role: member.role, isDiscovered: false });
         }
@@ -1228,6 +1230,26 @@ function TeamTopologyPanel({ agents, onSelectAgent }: { agents: DiscoveredAgent[
     return { from, to };
   });
 
+  // Build curved edge paths that bow outward from the graph center to avoid
+  // overlapping when edges cross through the middle of the circular layout.
+  function edgePath(fromPt: { x: number; y: number }, toPt: { x: number; y: number }) {
+    const mx = (fromPt.x + toPt.x) / 2;
+    const my = (fromPt.y + toPt.y) / 2;
+    const dx = toPt.x - fromPt.x;
+    const dy = toPt.y - fromPt.y;
+    const len = Math.sqrt(dx * dx + dy * dy);
+    if (len === 0) return `M ${fromPt.x} ${fromPt.y} L ${toPt.x} ${toPt.y}`;
+    const nx = -dy / len;
+    const ny = dx / len;
+    const midToCenter = { x: mx - cx, y: my - cy };
+    const dot = nx * midToCenter.x + ny * midToCenter.y;
+    const sign = dot >= 0 ? 1 : -1;
+    const bulge = sign * len * 0.18;
+    const qx = mx + nx * bulge;
+    const qy = my + ny * bulge;
+    return `M ${fromPt.x} ${fromPt.y} Q ${qx} ${qy} ${toPt.x} ${toPt.y}`;
+  }
+
   return (
     <div className="bg-white dark:bg-gray-800 rounded-xl border dark:border-gray-700 p-4 lg:col-span-2">
       <h2 className="font-semibold text-gray-700 dark:text-gray-200 mb-3 flex items-center gap-2">
@@ -1243,10 +1265,10 @@ function TeamTopologyPanel({ agents, onSelectAgent }: { agents: DiscoveredAgent[
           const isHighlighted = hoveredNode === edge.from || hoveredNode === edge.to
             || selectedNode === edge.from || selectedNode === edge.to;
           return (
-            <line
+            <path
               key={i}
-              x1={from.x} y1={from.y}
-              x2={to.x} y2={to.y}
+              d={edgePath(from, to)}
+              fill="none"
               stroke={isHighlighted ? '#3b82f6' : 'currentColor'}
               className={isHighlighted ? '' : 'text-gray-300 dark:text-gray-600'}
               strokeWidth={isHighlighted ? 2.5 : 1.5}
@@ -1282,16 +1304,16 @@ function TeamTopologyPanel({ agents, onSelectAgent }: { agents: DiscoveredAgent[
             >
               <circle cx={pos.x} cy={pos.y} r={22} fill={fill} opacity={isActive ? 0.25 : 0.15} />
               <circle cx={pos.x} cy={pos.y} r={18} fill={fill} opacity={0.9}
-                      stroke={isSelected ? '#fff' : 'none'} strokeWidth={isSelected ? 2 : 0} />
+                stroke={isSelected ? '#fff' : 'none'} strokeWidth={isSelected ? 2 : 0} />
               <text x={pos.x} y={pos.y + 1} textAnchor="middle" dominantBaseline="middle"
-                    fill="white" fontSize={9} fontWeight="bold" style={{ pointerEvents: 'none' }}>
+                fill="white" fontSize={9} fontWeight="bold" style={{ pointerEvents: 'none' }}>
                 {node.role.slice(0, 3).toUpperCase()}
               </text>
               {/* Health dot */}
               <circle cx={pos.x + 14} cy={pos.y - 14} r={5} fill={healthColor} stroke="white" strokeWidth={1.5} />
               {/* Label */}
               <text x={pos.x} y={pos.y + 34} textAnchor="middle" fontSize={10}
-                    className="fill-gray-600 dark:fill-gray-400" style={{ pointerEvents: 'none' }}>
+                className="fill-gray-600 dark:fill-gray-400" style={{ pointerEvents: 'none' }}>
                 {node.hostname}
               </text>
               {/* Tooltip on hover */}

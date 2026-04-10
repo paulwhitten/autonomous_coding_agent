@@ -12,7 +12,7 @@ import pino from 'pino';
 
 /**
  * Permission configuration for each request kind.
- * 
+ *
  * - "allow":      Approve all requests of this kind
  * - "deny":       Deny all requests of this kind
  * - "workingDir": Allow only within the configured working directory (file ops)
@@ -55,7 +55,7 @@ export interface PermissionRequestResult {
 /**
  * Common development commands that are safe for an autonomous coding agent.
  * These cover SCM, package managers, build tools, and language toolchains.
- * 
+ *
  * The allowlist matches the BASE EXECUTABLE name (first word of a command line,
  * with path stripped). For example "git", "npm", "/usr/bin/python3" all resolve
  * to their basename for matching.
@@ -251,12 +251,12 @@ export type PermissionOverrides = Partial<Pick<PermissionsConfig, 'write' | 'rea
 
 /**
  * Create a permission handler function compatible with the Copilot SDK.
- * 
+ *
  * The returned handler evaluates each PermissionRequest against the provided
  * config and returns approved/denied accordingly. ALL requests are logged at
  * info level as an audit trail for discovering new tools/commands that may need
  * to be added to the allowlist.
- * 
+ *
  * @param config - Permission policies per request kind
  * @param workingDirectory - Absolute path to the agent's working directory (for 'workingDir' policy)
  * @param logger - Logger instance for audit trail
@@ -441,7 +441,7 @@ function evaluateWorkingDir(
 
 /**
  * Extract a command string from a permission request.
- * 
+ *
  * The SDK sends shell command info in several possible shapes:
  * - { fullCommandText: "npm test" }                          — primary field
  * - { commands: [{ identifier: "npm test" }] }               — structured list
@@ -449,7 +449,7 @@ function evaluateWorkingDir(
  * - { shellCommand: "npm test" }                             — alt name
  * - { cmd: "npm test" }                                      — alt name
  * - { args: ["npm", "test"] }                                — array form
- * 
+ *
  * We check all of these, prioritizing the fields the SDK actually uses.
  */
 function extractCommand(request: PermissionRequest): string | undefined {
@@ -477,13 +477,13 @@ function extractCommand(request: PermissionRequest): string | undefined {
 
 /**
  * Extract the base executable name from a command string.
- * 
+ *
  * Handles:
  * - Simple commands: "git status" → "git"
  * - Absolute paths: "/usr/bin/python3 script.py" → "python3"
  * - Env prefix: "env FOO=bar npm test" → "npm"
  * - Chained commands: "cd /foo && npm test" → "cd" (first command)
- * 
+ *
  * @param command Full command string
  * @returns The base executable name (lowercase-preserved)
  */

@@ -71,8 +71,8 @@ function workflowToNodes(workflow: Workflow): Node[] {
         border: workflow.terminalStates.includes(key)
           ? '3px solid #ef4444'
           : key === workflow.initialState
-          ? '3px solid #10b981'
-          : '1px solid rgba(255,255,255,0.3)',
+            ? '3px solid #10b981'
+            : '1px solid rgba(255,255,255,0.3)',
         borderRadius: '12px',
         padding: '12px 16px',
         minWidth: '160px',
@@ -153,10 +153,10 @@ export default function WorkflowPage() {
   useEffect(() => {
     workflowApi.list().then(data => {
       setWorkflowList(data.workflows.map(w => ({ file: w.file, name: w.name })));
-    }).catch(() => {});
+    }).catch(() => { });
     templatesApi.list().then(data => {
       setTemplateList(data.templates);
-    }).catch(() => {});
+    }).catch(() => { });
   }, []);
 
   // Live validation on workflow changes
@@ -164,7 +164,7 @@ export default function WorkflowPage() {
     const timer = setTimeout(() => {
       workflowApi.validate(workflow).then(result => {
         setValidationErrors(result.valid ? [] : result.errors);
-      }).catch(() => {});
+      }).catch(() => { });
     }, 500);
     return () => clearTimeout(timer);
   }, [workflow]);

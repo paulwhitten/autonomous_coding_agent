@@ -741,7 +741,7 @@ export default function ConfigPage() {
             <button
               disabled={step === 0}
               onClick={() => setStep(s => s - 1)}
-              className="flex items-center gap-1 px-4 py-2 bg-gray-100 rounded-lg hover:bg-gray-200 disabled:opacity-40 text-sm"
+              className="flex items-center gap-1 px-4 py-2 bg-gray-100 text-gray-700 rounded-lg hover:bg-gray-200 dark:bg-gray-700 dark:text-gray-200 dark:hover:bg-gray-600 disabled:opacity-40 text-sm"
             >
               <ChevronLeft size={16} /> Previous
             </button>

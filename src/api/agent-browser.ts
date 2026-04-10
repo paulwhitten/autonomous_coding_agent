@@ -9,6 +9,7 @@
 
 import { Bonjour, type Service, type Browser } from 'bonjour-service';
 import { broadcast } from './websocket.js';
+import { discoverAgents } from '../agent-registry.js';
 
 const SERVICE_TYPE = 'autonomous-agent';
 const HEALTH_CHECK_INTERVAL_MS = 30_000; // 30 seconds
@@ -75,16 +76,31 @@ function recordHealthPoint(id: string, health: string): void {
   healthHistory.set(id, points);
 }
 
+async function refreshAgentUrls(): Promise<void> {
+  try {
+    const fresh = await discoverAgents(2000);
+    for (const agent of fresh) {
+      const existing = knownAgents.get(agent.agentId);
+      if (existing && agent.a2aUrl && existing.a2aUrl !== agent.a2aUrl) {
+        existing.a2aUrl = agent.a2aUrl;
+        knownAgents.set(agent.agentId, existing);
+      }
+    }
+  } catch { /* ignore refresh errors */ }
+}
+
 async function runHealthChecks(): Promise<void> {
+  await refreshAgentUrls();
   let changed = false;
   const checks = Array.from(knownAgents.entries()).map(async ([id, agent]) => {
     const health = await checkAgentHealth(agent);
     recordHealthPoint(id, health);
+    // Always broadcast updated history so sparklines stay current
+    broadcast('agents:health', { agentId: id, health, history: healthHistory.get(id) });
     if (agent.health !== health) {
       agent.health = health;
       knownAgents.set(id, agent);
       changed = true;
-      broadcast('agents:health', { agentId: id, health, history: healthHistory.get(id) });
     }
   });
   await Promise.allSettled(checks);

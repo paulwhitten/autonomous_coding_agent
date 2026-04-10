@@ -1,9 +1,9 @@
 // Agent process management — start, stop, and monitor agent sessions
 
-import { Router, Request, Response } from '../express-compat.js';
-import { spawn, ChildProcess } from 'child_process';
+import { ChildProcess, spawn } from 'child_process';
 import { readdir } from 'fs/promises';
 import path from 'path';
+import { Request, Response, Router } from '../express-compat.js';
 import { broadcast } from '../websocket.js';
 
 interface AgentProcess {
@@ -84,7 +84,11 @@ export function createProcessesRouter(projectRoot: string): Router {
       cwd: projectRoot,
       env: { ...process.env },
       stdio: ['ignore', 'pipe', 'pipe'],
+      detached: true,
     });
+
+    // Let the agent survive API server restarts
+    proc.unref();
 
     const info: AgentProcess = {
       id,
@@ -164,7 +168,11 @@ export function createProcessesRouter(projectRoot: string): Router {
         cwd: projectRoot,
         env: { ...process.env },
         stdio: ['ignore', 'pipe', 'pipe'],
+        detached: true,
       });
+
+      // Let the agent survive API server restarts
+      proc.unref();
 
       const info: AgentProcess = {
         id,

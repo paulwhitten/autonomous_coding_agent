@@ -39,12 +39,14 @@ echo "Agents:    3 -- RA + Developer + QA (peer routing, no manager)"
 echo ""
 
 # ----------------------------------------------------------------
-# Kill leftover processes
+# Kill leftover processes from previous regulatory test runs only.
+# Use a narrow pattern that matches the smoke_tests/regulatory agent
+# paths to avoid killing unrelated agents (e.g. project team agents).
 # ----------------------------------------------------------------
-echo "Killing any leftover agent processes..."
-pkill -f "node.*dist/index.js.*config.json" 2>/dev/null || true
+echo "Killing any leftover regulatory test agent processes..."
+pkill -f "node.*smoke_tests/regulatory.*/dist/index.js" 2>/dev/null || true
 sleep 1
-pkill -9 -f "node.*dist/index.js.*config.json" 2>/dev/null || true
+pkill -9 -f "node.*smoke_tests/regulatory.*/dist/index.js" 2>/dev/null || true
 
 # ----------------------------------------------------------------
 # Clean previous artifacts

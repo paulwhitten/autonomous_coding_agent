@@ -372,10 +372,10 @@ export default function ProjectsPage() {
                   if (i < stepIndex) setCurrentStep(step);
                 }}
                 className={`flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-medium transition-colors ${step === currentStep
-                    ? 'bg-blue-600 text-white'
-                    : i < stepIndex
-                      ? 'bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-400 cursor-pointer hover:bg-green-200'
-                      : 'bg-gray-100 text-gray-400 dark:bg-gray-800'
+                  ? 'bg-blue-600 text-white'
+                  : i < stepIndex
+                    ? 'bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-400 cursor-pointer hover:bg-green-200'
+                    : 'bg-gray-100 text-gray-400 dark:bg-gray-800'
                   }`}
               >
                 {i < stepIndex ? <Check size={12} /> : <span>{i + 1}</span>}
@@ -536,8 +536,8 @@ export default function ProjectsPage() {
                       key={wf.file}
                       onClick={() => selectWorkflow(wf.file)}
                       className={`text-left p-3 rounded-lg border transition-colors ${draft.workflow === wf.file
-                          ? 'border-blue-500 bg-blue-50 dark:bg-blue-900/20'
-                          : 'dark:border-gray-600 hover:border-gray-400'
+                        ? 'border-blue-500 bg-blue-50 dark:bg-blue-900/20'
+                        : 'dark:border-gray-600 hover:border-gray-400'
                         }`}
                     >
                       <div className="flex items-center justify-between">

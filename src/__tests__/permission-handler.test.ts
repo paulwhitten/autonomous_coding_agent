@@ -27,6 +27,7 @@ describe('Permission Handler', () => {
         read: 'allow',
         url: 'deny',
         mcp: 'deny',
+        'custom-tool': 'allow',
       });
     });
   });
@@ -167,6 +168,7 @@ describe('Permission Handler', () => {
         read: 'allow',
         url: 'allow',
         mcp: 'allow',
+        'custom-tool': 'allow',
       };
 
       it('should approve shell requests', () => {
@@ -222,6 +224,7 @@ describe('Permission Handler', () => {
         read: 'deny',
         url: 'deny',
         mcp: 'deny',
+        'custom-tool': 'allow',
       };
 
       it('should deny shell requests', () => {
@@ -277,6 +280,7 @@ describe('Permission Handler', () => {
         read: 'allow',
         url: 'deny',
         mcp: 'deny',
+        'custom-tool': 'allow',
       };
 
       it('should approve allowlisted commands: git', () => {
@@ -395,6 +399,7 @@ describe('Permission Handler', () => {
         read: 'allow',
         url: 'deny',
         mcp: 'deny',
+        'custom-tool': 'allow',
       };
 
       it('should extract command from fullCommandText (primary SDK field)', () => {
@@ -505,6 +510,7 @@ describe('Permission Handler', () => {
           read: 'allow',
           url: 'deny',
           mcp: 'deny',
+          'custom-tool': 'allow',
           shellAllowAdditional: ['mycustomtool', 'terraform'],
         };
         const handler = createPermissionHandler(config, '/workspace', mockLogger);
@@ -527,6 +533,7 @@ describe('Permission Handler', () => {
           read: 'allow',
           url: 'deny',
           mcp: 'deny',
+          'custom-tool': 'allow',
           shellAllowAdditional: ['mycustomtool'],
         };
         const handler = createPermissionHandler(config, '/workspace', mockLogger);
@@ -544,6 +551,7 @@ describe('Permission Handler', () => {
           read: 'allow',
           url: 'deny',
           mcp: 'deny',
+          'custom-tool': 'allow',
           shellAllowAdditional: ['mycustomtool'],
         };
         const handler = createPermissionHandler(config, '/workspace', mockLogger);
@@ -563,6 +571,7 @@ describe('Permission Handler', () => {
         read: 'workingDir',
         url: 'deny',
         mcp: 'deny',
+        'custom-tool': 'allow',
       };
 
       it('should approve writes within working directory', () => {
@@ -745,6 +754,7 @@ describe('Permission Handler', () => {
           read: 'workingDir',
           url: 'deny',
           mcp: 'deny',
+          'custom-tool': 'allow',
         };
         const handler = createPermissionHandler(locked, '/workspace', mockLogger);
 

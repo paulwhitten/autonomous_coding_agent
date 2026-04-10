@@ -1,9 +1,9 @@
 // Projects API — CRUD for project definitions that drive team formation
 
-import { Router, Request, Response } from '../express-compat.js';
-import { readFile, writeFile, readdir, mkdir, unlink, rm } from 'fs/promises';
+import { mkdir, readdir, readFile, unlink, writeFile } from 'fs/promises';
 import os from 'os';
 import path from 'path';
+import { Request, Response, Router } from '../express-compat.js';
 
 export interface ProjectDefinition {
   id: string;
