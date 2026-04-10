@@ -41,7 +41,7 @@ Everything else has sensible defaults (see `src/config-defaults.ts`).
 ```json
 {
   "agent": { "role": "developer" },
-  "mailbox": { "repoPath": "./mailbox" }
+  "mailbox": { "repoPath": "./shared-mailbox" }
 }
 ```
 
@@ -60,7 +60,7 @@ merged with your overrides) is logged on every startup and hot-reload.
     "checkIntervalMs": 1800000
   },
   "mailbox": {
-    "repoPath": "./mailbox"
+    "repoPath": "./shared-mailbox"
   },
   "copilot": {
     "model": "gpt-5"
@@ -113,7 +113,7 @@ on the first check.
 Create a message file in the agent's inbox:
 
 ```bash
-cd mailbox/mailbox/to_your-hostname_developer/
+cd shared-mailbox/mailbox/to_your-hostname_developer/
 nano 2026-01-30-2100_test_task.md
 ```
 
@@ -175,7 +175,7 @@ All examples below show only the overrides -- defaults fill in the rest.
 ```json
 {
   "agent": { "role": "developer", "checkIntervalMs": 1800000 },
-  "mailbox": { "repoPath": "../mailbox" }
+  "mailbox": { "repoPath": "../shared-mailbox" }
 }
 ```
 
@@ -184,7 +184,7 @@ All examples below show only the overrides -- defaults fill in the rest.
 ```json
 {
   "agent": { "role": "developer" },
-  "mailbox": { "repoPath": "../mailbox" },
+  "mailbox": { "repoPath": "../shared-mailbox" },
   "copilot": { "model": "gpt-5" }
 }
 ```

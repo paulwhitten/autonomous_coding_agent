@@ -27,7 +27,7 @@ async function loadConfig(): Promise<AgentConfig> {
       '  or create one manually with just two fields:',
       '',
       '    { "agent": { "role": "developer" },',
-      '      "mailbox": { "repoPath": "./mailbox" } }',
+      '      "mailbox": { "repoPath": "./shared-mailbox" } }',
     ].join('\n'));
     process.exit(1);
   }

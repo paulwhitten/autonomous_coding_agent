@@ -18,6 +18,7 @@ tmp/
 temp/
 autonomous_copilot_agent
 mailbox/
+shared-mailbox/
 config-*.json
 custom_instructions.json
 

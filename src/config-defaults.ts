@@ -3,7 +3,7 @@
 // Users only need to specify what differs from these defaults.
 // The minimum viable config is:
 //
-//   { "agent": { "role": "developer" }, "mailbox": { "repoPath": "../mailbox" } }
+//   { "agent": { "role": "developer" }, "mailbox": { "repoPath": "../shared-mailbox" } }
 //
 // All other values are filled from this module via applyDefaults().
 
@@ -73,7 +73,7 @@ export const DEFAULT_CONFIG: AgentConfig = {
     },
   },
   mailbox: {
-    repoPath: '../mailbox',  // overridden by user -- required
+    repoPath: '../shared-mailbox',  // overridden by user -- required
     gitSync: false,
     autoCommit: true,
     commitMessage: 'Auto-sync: {hostname}_{role} at {timestamp}',
@@ -173,13 +173,13 @@ export function applyDefaults(partial: DeepPartial<AgentConfig>): AgentConfig {
   if (!partial.agent?.role) {
     throw new Error(
       'Config error: agent.role is required. ' +
-      'Example: { "agent": { "role": "developer" }, "mailbox": { "repoPath": "../mailbox" } }',
+      'Example: { "agent": { "role": "developer" }, "mailbox": { "repoPath": "../shared-mailbox" } }',
     );
   }
   if (!partial.mailbox?.repoPath) {
     throw new Error(
       'Config error: mailbox.repoPath is required. ' +
-      'Example: { "agent": { "role": "developer" }, "mailbox": { "repoPath": "../mailbox" } }',
+      'Example: { "agent": { "role": "developer" }, "mailbox": { "repoPath": "../shared-mailbox" } }',
     );
   }
 

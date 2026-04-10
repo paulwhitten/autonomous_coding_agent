@@ -50,7 +50,7 @@ Keep this running. The CLI will handle all authentication and model requests.
 cd docker
 
 # Create workspace and mailbox directories
-mkdir -p workspace mailbox logs
+mkdir -p workspace shared-mailbox logs
 
 # Copy and customize config
 cp config.json.example config.json
@@ -68,7 +68,7 @@ cp config.json.example config.json
     "sdkTimeoutMs": 300000
   },
   "mailbox": {
-    "repoPath": "/app/mailbox",
+    "repoPath": "/app/shared-mailbox",
     "gitSync": true,
     "autoCommit": true,
     "commitMessage": "Agent: {hostname}_{role} at {timestamp}",
@@ -102,7 +102,7 @@ cp config.json.example config.json
 The mailbox must be a Git repository:
 
 ```bash
-cd mailbox
+cd shared-mailbox
 
 # Option A: Clone existing mailbox repo
 git clone git@github.com:your-org/agent-mailbox.git .
@@ -281,7 +281,7 @@ docker-compose ps
 cat workspace/session_context.json
 
 # Mailbox messages
-ls -la mailbox/mailbox/to_docker-agent_developer/normal/
+ls -la shared-mailbox/mailbox/to_docker-agent_developer/normal/
 ```
 
 ### Resource usage
@@ -349,7 +349,7 @@ docker-compose restart agent
 tar czf backup-workspace-$(date +%Y%m%d).tar.gz workspace/
 
 # Backup mailbox
-cd mailbox && git bundle create ../backup-mailbox.bundle --all
+cd shared-mailbox && git bundle create ../backup-mailbox.bundle --all
 ```
 
 ### Restore from backup

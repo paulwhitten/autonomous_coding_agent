@@ -21,7 +21,7 @@
     }
   },
   "mailbox": {
-    "repoPath": "/app/mailbox",
+    "repoPath": "/app/shared-mailbox",
     "gitSync": true,
     "autoCommit": true,
     "commitMessage": "Agent: {hostname}_{role} at {timestamp}",
