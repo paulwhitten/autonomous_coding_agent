@@ -123,7 +123,7 @@ const defaultValues: ConfigForm = {
     },
   },
   mailbox: {
-    repoPath: '../mailbox_repo',
+    repoPath: '../shared-mailbox',
     gitSync: true,
     autoCommit: true,
     commitMessage: 'Auto-sync: {hostname}_{role} at {timestamp}',
@@ -189,8 +189,8 @@ export default function ConfigPage() {
   const formData = watch();
 
   useEffect(() => {
-    configApi.list().then(data => setConfigFiles(data.configs)).catch(() => {});
-    workflowApi.list().then(data => setWorkflows(data.workflows as WorkflowSummary[])).catch(() => {});
+    configApi.list().then(data => setConfigFiles(data.configs)).catch(() => { });
+    workflowApi.list().then(data => setWorkflows(data.workflows as WorkflowSummary[])).catch(() => { });
   }, []);
 
   // When workflow selection changes, fetch workflow details and auto-set role
@@ -329,7 +329,7 @@ export default function ConfigPage() {
       const config = buildConfig(data);
       await configApi.save(activeFile, config);
       // Refresh file list in case this is a new file
-      configApi.list().then(d => setConfigFiles(d.configs)).catch(() => {});
+      configApi.list().then(d => setConfigFiles(d.configs)).catch(() => { });
       setSaveStatus(`Saved ${activeFile} successfully!`);
       setTimeout(() => setSaveStatus(null), 3000);
     } catch (err) {
@@ -432,13 +432,12 @@ export default function ConfigPage() {
           <button
             key={s}
             onClick={() => setStep(i)}
-            className={`flex-1 py-2 px-3 text-sm rounded-lg transition-colors ${
-              i === step
+            className={`flex-1 py-2 px-3 text-sm rounded-lg transition-colors ${i === step
                 ? 'bg-blue-600 text-white'
                 : i < step
-                ? 'bg-blue-100 text-blue-700'
-                : 'bg-gray-100 text-gray-500'
-            }`}
+                  ? 'bg-blue-100 text-blue-700'
+                  : 'bg-gray-100 text-gray-500'
+              }`}
           >
             {s}
           </button>

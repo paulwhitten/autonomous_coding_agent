@@ -520,8 +520,8 @@ export default function DashboardPage() {
                     <div className="flex flex-wrap gap-2 text-xs mt-1">
                       {(agent.a2aStatus as any).mailbox && (
                         <span className={`inline-flex items-center gap-1 px-1.5 py-0.5 rounded ${((agent.a2aStatus as any).mailbox.unread || 0) > 0
-                            ? 'bg-amber-100 dark:bg-amber-900/30 text-amber-700 dark:text-amber-400'
-                            : 'bg-gray-100 dark:bg-gray-700 text-gray-500 dark:text-gray-400'
+                          ? 'bg-amber-100 dark:bg-amber-900/30 text-amber-700 dark:text-amber-400'
+                          : 'bg-gray-100 dark:bg-gray-700 text-gray-500 dark:text-gray-400'
                           }`}>
                           📬 {(agent.a2aStatus as any).mailbox.unread || 0} unread
                         </span>
@@ -658,12 +658,12 @@ export default function DashboardPage() {
                   <div className="w-full bg-gray-100 dark:bg-gray-700 rounded-full h-2">
                     <div
                       className={`h-2 rounded-full ${folder === 'completed'
-                          ? 'bg-green-500'
-                          : folder === 'failed'
-                            ? 'bg-red-500'
-                            : folder === 'review'
-                              ? 'bg-yellow-500'
-                              : 'bg-blue-500'
+                        ? 'bg-green-500'
+                        : folder === 'failed'
+                          ? 'bg-red-500'
+                          : folder === 'review'
+                            ? 'bg-yellow-500'
+                            : 'bg-blue-500'
                         }`}
                       style={{
                         width: totalItems > 0
@@ -769,8 +769,8 @@ export default function DashboardPage() {
               <span className="text-sm text-gray-500 dark:text-gray-400">Server Status</span>
               {a2aServerStatus ? (
                 <span className={`flex items-center gap-1.5 text-xs font-medium ${a2aServerStatus.running
-                    ? 'text-green-700 dark:text-green-400'
-                    : 'text-gray-500 dark:text-gray-400'
+                  ? 'text-green-700 dark:text-green-400'
+                  : 'text-gray-500 dark:text-gray-400'
                   }`}>
                   <span className={`inline-block w-2 h-2 rounded-full ${a2aServerStatus.running ? 'bg-green-500' : 'bg-gray-400'}`} />
                   {a2aServerStatus.running ? `Running on :${a2aServerStatus.port}` : 'Not running'}
@@ -794,8 +794,8 @@ export default function DashboardPage() {
                   {a2aRecentEntries.map((entry, i) => (
                     <div key={i} className="flex items-center gap-2 text-xs">
                       <span className={`px-1 py-0.5 rounded font-medium ${entry.direction === 'inbound'
-                          ? 'bg-green-100 dark:bg-green-900/30 text-green-700 dark:text-green-400'
-                          : 'bg-blue-100 dark:bg-blue-900/30 text-blue-700 dark:text-blue-400'
+                        ? 'bg-green-100 dark:bg-green-900/30 text-green-700 dark:text-green-400'
+                        : 'bg-blue-100 dark:bg-blue-900/30 text-blue-700 dark:text-blue-400'
                         }`}>
                         {entry.direction === 'inbound' ? '← In' : '→ Out'}
                       </span>
@@ -824,12 +824,12 @@ export default function DashboardPage() {
                 <div key={i} className="flex items-center gap-2 text-xs p-1.5 hover:bg-gray-50 dark:hover:bg-gray-700 rounded">
                   <span className="text-gray-400 w-20 flex-shrink-0">{event.time}</span>
                   <span className={`px-1.5 py-0.5 rounded text-xs ${event.type === 'mailbox'
-                      ? 'bg-blue-100 text-blue-700'
-                      : event.type === 'task'
-                        ? 'bg-green-100 text-green-700'
-                        : event.type === 'log'
-                          ? 'bg-gray-100 text-gray-700'
-                          : 'bg-yellow-100 text-yellow-700'
+                    ? 'bg-blue-100 text-blue-700'
+                    : event.type === 'task'
+                      ? 'bg-green-100 text-green-700'
+                      : event.type === 'log'
+                        ? 'bg-gray-100 text-gray-700'
+                        : 'bg-yellow-100 text-yellow-700'
                     }`}>
                     {event.type}
                   </span>
@@ -870,8 +870,8 @@ export default function DashboardPage() {
               <button
                 onClick={() => setSlideoutTab('message')}
                 className={`flex-1 flex items-center justify-center gap-1.5 px-3 py-2 text-xs font-medium transition-colors ${slideoutTab === 'message'
-                    ? 'text-blue-600 dark:text-blue-400 border-b-2 border-blue-600 dark:border-blue-400'
-                    : 'text-gray-500 dark:text-gray-400 hover:text-gray-700 dark:hover:text-gray-300'
+                  ? 'text-blue-600 dark:text-blue-400 border-b-2 border-blue-600 dark:border-blue-400'
+                  : 'text-gray-500 dark:text-gray-400 hover:text-gray-700 dark:hover:text-gray-300'
                   }`}
               >
                 <MessageSquare size={12} /> Message
@@ -879,8 +879,8 @@ export default function DashboardPage() {
               <button
                 onClick={() => { setSlideoutTab('logs'); loadAgentLogs(messagingAgent); }}
                 className={`flex-1 flex items-center justify-center gap-1.5 px-3 py-2 text-xs font-medium transition-colors ${slideoutTab === 'logs'
-                    ? 'text-blue-600 dark:text-blue-400 border-b-2 border-blue-600 dark:border-blue-400'
-                    : 'text-gray-500 dark:text-gray-400 hover:text-gray-700 dark:hover:text-gray-300'
+                  ? 'text-blue-600 dark:text-blue-400 border-b-2 border-blue-600 dark:border-blue-400'
+                  : 'text-gray-500 dark:text-gray-400 hover:text-gray-700 dark:hover:text-gray-300'
                   }`}
               >
                 <FileText size={12} /> Logs
@@ -950,8 +950,8 @@ export default function DashboardPage() {
                       <p className="text-xs font-medium text-gray-500 dark:text-gray-400">Message History</p>
                       {messageHistory.filter(m => m.to === messagingAgent.agentId).slice(-5).map((msg, i) => (
                         <div key={i} className={`text-xs p-2 rounded ${msg.status === 'sent'
-                            ? 'bg-blue-50 dark:bg-blue-900/20 border border-blue-200 dark:border-blue-800'
-                            : 'bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800'
+                          ? 'bg-blue-50 dark:bg-blue-900/20 border border-blue-200 dark:border-blue-800'
+                          : 'bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800'
                           }`}>
                           <div className="flex items-center justify-between mb-0.5">
                             <span className="font-medium text-gray-700 dark:text-gray-300">{msg.subject}</span>
@@ -985,8 +985,8 @@ export default function DashboardPage() {
 
                   {messageSent && (
                     <div className={`text-xs p-2 rounded ${messageSent === 'success'
-                        ? 'bg-green-100 dark:bg-green-900/30 text-green-700 dark:text-green-400'
-                        : 'bg-red-100 dark:bg-red-900/30 text-red-700 dark:text-red-400'
+                      ? 'bg-green-100 dark:bg-green-900/30 text-green-700 dark:text-green-400'
+                      : 'bg-red-100 dark:bg-red-900/30 text-red-700 dark:text-red-400'
                       }`}>
                       {messageSent === 'success' ? 'Message sent successfully' : `Send failed: ${messageSent}`}
                     </div>
@@ -1079,8 +1079,8 @@ export default function DashboardPage() {
                         <div
                           key={i}
                           className={`whitespace-pre-wrap break-all py-0.5 px-1 rounded ${isError ? 'text-red-400 bg-red-950/30' :
-                              isWarn ? 'text-yellow-400 bg-yellow-950/20' :
-                                ''
+                            isWarn ? 'text-yellow-400 bg-yellow-950/20' :
+                              ''
                             }`}
                         >
                           {line}

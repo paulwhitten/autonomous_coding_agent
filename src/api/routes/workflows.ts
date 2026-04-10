@@ -189,7 +189,7 @@ export function createWorkflowRouter(projectRoot: string): Router {
             },
           },
           mailbox: {
-            repoPath: '../mailbox_repo',
+            repoPath: '../shared-mailbox',
             gitSync: true,
             autoCommit: true,
             commitMessage: `Auto-sync: ${role}-agent_${role} at {timestamp}`,
@@ -324,7 +324,7 @@ export function createWorkflowRouter(projectRoot: string): Router {
             } catch { /* skip unparseable files */ }
           }
         } catch { /* projects dir missing */ }
-        mailboxRoot = foundMailbox || path.resolve(projectRoot, '..', 'mailbox_repo');
+        mailboxRoot = foundMailbox || path.resolve(projectRoot, '..', 'shared-mailbox');
       }
       const targetDir = path.join(mailboxRoot, 'mailbox', `to_${targetAgent}`, 'normal');
       await mkdir(targetDir, { recursive: true });

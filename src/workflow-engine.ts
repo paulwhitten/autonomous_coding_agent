@@ -919,6 +919,41 @@ export class WorkflowEngine {
       }
     }
 
+    // ── Cycle-visit guard ────────────────────────────────────────────
+    // Even when maxRetries hasn't been exceeded, we may be caught in a
+    // cross-state loop (e.g. VALIDATING → REWORK → VALIDATING) where
+    // retryCount resets on each successful exit from the intermediate
+    // state.  If the *target* state defines `maxCycleVisits`, count how
+    // many times the task has already visited it across its full history
+    // and escalate when the limit is reached.
+    const targetStateDef = workflow.states[newState];
+    if (
+      targetStateDef?.maxCycleVisits != null &&
+      !workflow.terminalStates.includes(newState)
+    ) {
+      const priorVisits = task.history.filter(
+        (h) => h.toState === newState,
+      ).length;
+      if (priorVisits >= targetStateDef.maxCycleVisits) {
+        const escalationState =
+          workflow.terminalStates.find((s) => s === 'ESCALATED') ??
+          workflow.terminalStates.find((s) => s === 'FAILED') ??
+          workflow.terminalStates[0] ??
+          'ESCALATED';
+        this.logger.warn(
+          {
+            taskId,
+            targetState: newState,
+            priorVisits,
+            maxCycleVisits: targetStateDef.maxCycleVisits,
+            escalationState,
+          },
+          'Max cycle visits reached — forcing escalation instead of re-entering state',
+        );
+        newState = escalationState;
+      }
+    }
+
     // Record the transition
     const record: StateTransitionRecord = {
       fromState,

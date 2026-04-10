@@ -7,9 +7,9 @@
 // Also runs periodic health checks against A2A endpoints to report
 // online/offline/degraded status.
 
-import { Bonjour, type Service, type Browser } from 'bonjour-service';
-import { broadcast } from './websocket.js';
+import { Bonjour, type Browser, type Service } from 'bonjour-service';
 import { discoverAgents } from '../agent-registry.js';
+import { broadcast } from './websocket.js';
 
 const SERVICE_TYPE = 'autonomous-agent';
 const HEALTH_CHECK_INTERVAL_MS = 30_000; // 30 seconds

@@ -360,6 +360,20 @@ export interface StateDefinition {
   /** Maximum failures before escalation (default: 2) */
   maxRetries?: number;
 
+  /**
+   * Maximum number of times this state may be visited across the
+   * lifetime of a task.  When the engine is about to transition into
+   * this state and the visit count has already reached the limit, it
+   * escalates to a terminal state instead.
+   *
+   * This prevents unbounded cycles such as VALIDATING → REWORK →
+   * VALIDATING that bypass per-state maxRetries (because retryCount
+   * is reset on each successful transition out of REWORK).
+   *
+   * Default: no limit (undefined).
+   */
+  maxCycleVisits?: number;
+
   /** Hard time limit for this state in milliseconds */
   timeoutMs?: number;
 
