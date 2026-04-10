@@ -217,6 +217,39 @@ export default function ProjectsPage() {
     }
   };
 
+  // Reset all agent and mailbox state for this project
+  const [resetting, setResetting] = useState(false);
+  const resetProjectState = async () => {
+    if (!editingId) return;
+    const running = runningProcesses.filter(p => p.status === 'running');
+    if (running.length > 0) {
+      setLaunchStatus('Stop all agents before resetting state');
+      setTimeout(() => setLaunchStatus(null), 4000);
+      return;
+    }
+    if (!window.confirm(
+      'Reset all agent state for this project?\n\n' +
+      'This will delete:\n' +
+      '  - Session contexts (message tracking, task progress)\n' +
+      '  - Decomposed work items (pending, completed, in-progress)\n' +
+      '  - Mailbox messages (all queues and archives)\n' +
+      '  - A2A message archives\n\n' +
+      'Project configuration and git workspaces will be preserved.\n\n' +
+      'This cannot be undone.'
+    )) return;
+    setResetting(true);
+    setLaunchStatus('Resetting agent state...');
+    try {
+      const result = await projectsApi.resetState(editingId);
+      setLaunchStatus(`State reset complete — ${result.cleaned.length} items cleaned`);
+      setTimeout(() => setLaunchStatus(null), 5000);
+    } catch (err) {
+      setLaunchStatus(`Error: ${(err as Error).message}`);
+    } finally {
+      setResetting(false);
+    }
+  };
+
   // Wizard navigation
   const stepIndex = STEPS.indexOf(currentStep);
   const canNext = () => {
@@ -714,6 +747,17 @@ export default function ProjectsPage() {
                 <Link to="/processes" className="flex items-center gap-1 text-blue-500 hover:text-blue-600 whitespace-nowrap">
                   <ExternalLink size={12} /> Processes
                 </Link>
+              </div>
+
+              <div className="border-t border-gray-200 dark:border-gray-700 pt-3 mt-3">
+                <button
+                  onClick={resetProjectState}
+                  disabled={resetting || runningProcesses.some(p => p.status === 'running')}
+                  className="w-full py-2 border border-amber-500 text-amber-600 dark:text-amber-400 rounded-lg text-sm font-medium hover:bg-amber-50 dark:hover:bg-amber-950 disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2"
+                >
+                  <Trash2 size={14} /> Reset Agent &amp; Mailbox State
+                </button>
+                <p className="text-center text-xs text-gray-400 mt-1">Clears all agent progress, tasks, and messages. Preserves configs and workspaces.</p>
               </div>
             </div>
           )}

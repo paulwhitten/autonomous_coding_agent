@@ -1,7 +1,8 @@
 // Projects API — CRUD for project definitions that drive team formation
 
 import { Router, Request, Response } from '../express-compat.js';
-import { readFile, writeFile, readdir, mkdir, unlink } from 'fs/promises';
+import { readFile, writeFile, readdir, mkdir, unlink, rm } from 'fs/promises';
+import os from 'os';
 import path from 'path';
 
 export interface ProjectDefinition {
@@ -159,6 +160,117 @@ export function createProjectsRouter(projectRoot: string): Router {
     }
   });
 
+  // POST /api/projects/:id/reset-state — wipe agent runtime state while preserving project config
+  router.post('/:id/reset-state', async (req: Request, res: Response) => {
+    try {
+      const id = sanitizeFilename(req.params.id);
+      const projectDir = path.join(projectRoot, 'projects', id);
+      const projectFile = path.join(projectsDir, `${id}.json`);
+
+      // Verify project exists
+      try {
+        await readFile(projectFile, 'utf-8');
+      } catch {
+        res.status(404).json({ error: 'Project not found' });
+        return;
+      }
+
+      const cleaned: string[] = [];
+
+      // Discover role directories (manager/, developer/, qa/, etc.)
+      let entries: string[] = [];
+      try {
+        entries = await readdir(projectDir);
+      } catch {
+        res.json({ success: true, cleaned: [] });
+        return;
+      }
+
+      for (const entry of entries) {
+        const entryPath = path.join(projectDir, entry);
+
+        // Skip non-role items: config files, custom_instructions, mailbox, logs (handled separately)
+        if (entry.endsWith('.json') || entry === 'mailbox' || entry === 'workflows' || entry === 'logs') continue;
+
+        // Reset session context
+        const contextFile = path.join(entryPath, `session_context_${entry}.json`);
+        try {
+          const freshContext = {
+            agentId: `${os.hostname()}_${entry}`,
+            lastMailboxCheck: null,
+            messagesProcessed: 0,
+            status: 'idle',
+            workingDirectory: path.join(entryPath, 'project'),
+            nextMessageSequence: 1,
+            messageTracking: {},
+            reworkTracking: {},
+            sessionId: null,
+            currentTask: null,
+          };
+          await writeFile(contextFile, JSON.stringify(freshContext, null, 2), 'utf-8');
+          cleaned.push(`${entry}/session_context`);
+        } catch { /* may not exist yet */ }
+
+        // Clear task folders
+        for (const taskDir of ['pending', 'completed', 'in-progress', 'review']) {
+          const p = path.join(entryPath, 'tasks', taskDir);
+          try {
+            const files = await readdir(p);
+            for (const f of files) await unlink(path.join(p, f));
+            if (files.length > 0) cleaned.push(`${entry}/tasks/${taskDir} (${files.length} files)`);
+          } catch { /* dir may not exist */ }
+        }
+
+        // Clear A2A archive and inbox
+        for (const a2aDir of ['a2a_archive', 'a2a_inbox']) {
+          const p = path.join(entryPath, a2aDir);
+          try {
+            const files = await readdir(p);
+            for (const f of files) await unlink(path.join(p, f));
+            if (files.length > 0) cleaned.push(`${entry}/${a2aDir} (${files.length} files)`);
+          } catch { /* dir may not exist */ }
+        }
+      }
+
+      // Clear shared mailbox messages (all agent inboxes: priority, normal, archive)
+      const mailboxDir = path.join(projectDir, 'mailbox', 'mailbox');
+      try {
+        const agents = await readdir(mailboxDir);
+        for (const agent of agents) {
+          const agentDir = path.join(mailboxDir, agent);
+          for (const queue of ['priority', 'normal', 'background', 'archive']) {
+            const queueDir = path.join(agentDir, queue);
+            try {
+              const files = await readdir(queueDir);
+              for (const f of files) await unlink(path.join(queueDir, f));
+              if (files.length > 0) cleaned.push(`mailbox/${agent}/${queue} (${files.length} files)`);
+            } catch { /* queue may not exist */ }
+          }
+        }
+      } catch { /* mailbox may not exist yet */ }
+
+      // Clear mailbox attachments
+      const attachDir = path.join(projectDir, 'mailbox', 'attachments');
+      try {
+        const files = await readdir(attachDir);
+        for (const f of files) await unlink(path.join(attachDir, f));
+        if (files.length > 0) cleaned.push(`mailbox/attachments (${files.length} files)`);
+      } catch { /* may not exist */ }
+
+      // Clear audit logs
+      const auditDir = path.join(projectDir, 'mailbox', 'audit', 'a2a');
+      try {
+        const files = await readdir(auditDir);
+        for (const f of files) await unlink(path.join(auditDir, f));
+        if (files.length > 0) cleaned.push(`audit/a2a (${files.length} files)`);
+      } catch { /* may not exist */ }
+
+      res.json({ success: true, cleaned });
+    } catch (err) {
+      res.status(500).json({ error: `Failed to reset project state: ${(err as Error).message}` });
+    }
+  });
+
   // DELETE /api/projects/:id — delete a project
   router.delete('/:id', async (req: Request, res: Response) => {
     try {
@@ -237,17 +349,38 @@ export function createProjectsRouter(projectRoot: string): Router {
           const sharedMailbox = path.join(projectDir, 'mailbox');
           await mkdir(sharedMailbox, { recursive: true });
 
+          // Ensure role workspace and log dirs exist before writing configs
+          for (const role of roles) {
+            await mkdir(path.join(projectDir, role), { recursive: true });
+          }
+          const roleLogsDir = path.join(projectDir, 'logs');
+          await mkdir(roleLogsDir, { recursive: true });
+
+          // Build teamMembers array so each agent can route to peers
+          const hostname = os.hostname();
+          const allTeamMembers = [...roles].map(r => ({
+            hostname: `${hostname}_${r}`,
+            role: r,
+            responsibilities: r,
+          }));
+
           for (const role of roles) {
             const roleWorkspace = path.join(projectDir, role);
-            await mkdir(roleWorkspace, { recursive: true });
 
             const config: Record<string, unknown> = {
-              agent: { role },
+              agent: {
+                role,
+                workflowFile: `../workflows/${project.workflow}`,
+              },
               mailbox: { repoPath: sharedMailbox },
               workspace: {
                 path: roleWorkspace,
                 ...(project.repoUrl ? { projectRepo: project.repoUrl } : {}),
               },
+              logging: {
+                path: path.join(roleLogsDir, `${role}.log`),
+              },
+              teamMembers: allTeamMembers.filter(m => m.role !== role),
             };
             const configFile = `config-${role}.json`;
             const configPath = path.join(projectDir, configFile);

@@ -267,7 +267,7 @@ export function createWorkflowRouter(projectRoot: string): Router {
 
       // Build the workflow assignment payload
       const assignment = {
-        type: 'workflow_assignment' as const,
+        type: 'workflow' as const,
         workflowId: workflow.id,
         taskId: String(taskId),
         targetState: initialState,
@@ -291,11 +291,42 @@ export function createWorkflowRouter(projectRoot: string): Router {
         },
       };
 
-      // Write to the target agent's mailbox
-      const mailboxRoot = repoPath
-        ? path.resolve(projectRoot, repoPath)
-        : path.resolve(projectRoot, '..', 'mailbox_repo');
-      const targetDir = path.join(mailboxRoot, 'mailbox', `to_${targetAgent}`, 'priority');
+      // Write to the target agent's mailbox.
+      // Resolve the mailbox path: use explicit repoPath if provided,
+      // otherwise find the project whose workflow matches this file and
+      // read mailbox.repoPath from its first config.
+      let mailboxRoot: string;
+      if (repoPath) {
+        mailboxRoot = path.resolve(projectRoot, repoPath);
+      } else {
+        // Look for a project that uses this workflow
+        let foundMailbox: string | null = null;
+        const projectsDir = path.join(projectRoot, 'projects');
+        try {
+          const projectFiles = await readdir(projectsDir);
+          for (const pf of projectFiles) {
+            if (!pf.endsWith('.json')) continue;
+            try {
+              const proj = JSON.parse(await readFile(path.join(projectsDir, pf), 'utf-8'));
+              if (proj.workflow === filename) {
+                // Found the project — read the first config to get mailbox.repoPath
+                const projDir = path.join(projectsDir, proj.id);
+                const configs = (await readdir(projDir).catch(() => [] as string[]))
+                  .filter((f: string) => f.startsWith('config-') && f.endsWith('.json'));
+                if (configs.length > 0) {
+                  const cfg = JSON.parse(await readFile(path.join(projDir, configs[0]), 'utf-8'));
+                  if (cfg.mailbox?.repoPath) {
+                    foundMailbox = cfg.mailbox.repoPath;
+                    break;
+                  }
+                }
+              }
+            } catch { /* skip unparseable files */ }
+          }
+        } catch { /* projects dir missing */ }
+        mailboxRoot = foundMailbox || path.resolve(projectRoot, '..', 'mailbox_repo');
+      }
+      const targetDir = path.join(mailboxRoot, 'mailbox', `to_${targetAgent}`, 'normal');
       await mkdir(targetDir, { recursive: true });
 
       const now = new Date();
@@ -309,7 +340,7 @@ export function createWorkflowRouter(projectRoot: string): Router {
         `From: ${from}`,
         `To: ${targetAgent}`,
         `Subject: [Workflow] ${taskTitle}`,
-        `Priority: HIGH`,
+        `Priority: NORMAL`,
         `MessageType: workflow`,
         '---',
         JSON.stringify(assignment, null, 2),

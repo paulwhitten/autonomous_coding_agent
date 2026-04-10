@@ -32,6 +32,8 @@ export interface PermissionsConfig {
   url: PermissionPolicy;
   /** MCP server tool calls — "allow" | "deny" */
   mcp: PermissionPolicy;
+  /** Custom tool calls (registered mailbox/workflow tools) — "allow" | "deny" */
+  'custom-tool': PermissionPolicy;
   /** Additional shell commands to allow when shell policy is "allowlist" */
   shellAllowAdditional?: string[];
 }
@@ -40,7 +42,7 @@ export interface PermissionsConfig {
  * SDK PermissionRequest shape (matches @github/copilot-sdk types)
  */
 export interface PermissionRequest {
-  kind: 'shell' | 'write' | 'mcp' | 'read' | 'url';
+  kind: 'shell' | 'write' | 'mcp' | 'read' | 'url' | 'custom-tool';
   toolCallId?: string;
   [key: string]: unknown;
 }
@@ -233,6 +235,7 @@ export const DEFAULT_PERMISSIONS: PermissionsConfig = {
   read: 'allow',
   url: 'deny',
   mcp: 'deny',
+  'custom-tool': 'allow',
 };
 
 /**
@@ -244,7 +247,7 @@ export const DEFAULT_PERMISSIONS: PermissionsConfig = {
  *
  * Keys mirror PermissionsConfig but only present keys are overridden.
  */
-export type PermissionOverrides = Partial<Pick<PermissionsConfig, 'write' | 'read' | 'shell' | 'url' | 'mcp'>>;
+export type PermissionOverrides = Partial<Pick<PermissionsConfig, 'write' | 'read' | 'shell' | 'url' | 'mcp' | 'custom-tool'>>;
 
 /**
  * Create a permission handler function compatible with the Copilot SDK.

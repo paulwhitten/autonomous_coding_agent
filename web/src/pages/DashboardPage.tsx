@@ -189,17 +189,35 @@ export default function DashboardPage() {
     setAgentLogsLoading(true);
     setAgentLogs([]);
     try {
-      // Try to find a matching process by PID
+      // Try to find a matching process by PID (works when process Map is populated)
       const procs = await processesApi.list();
       const match = procs.processes.find(p => p.pid === agent.pid);
       if (match) {
         const data = await processesApi.output(match.id, 100);
-        setAgentLogs(data.output);
-      } else if (agent.workspacePath) {
-        // Fall back to log file in the agent's workspace
-        const data = await agentsApi.logs(100, `${agent.workspacePath}/../logs/agent.log`);
-        setAgentLogs(data.lines);
+        if (data.output.length > 0) {
+          setAgentLogs(data.output);
+          return;
+        }
       }
+      // Try workspace-specific log file, then per-role log, then global
+      if (agent.workspacePath) {
+        // Try workspace-adjacent log: {projectDir}/logs/{role}.log
+        const roleLogPath = `${agent.workspacePath}/../logs/${agent.role}.log`;
+        const roleData = await agentsApi.logs(100, roleLogPath);
+        if (roleData.lines.length > 0) {
+          setAgentLogs(roleData.lines);
+          return;
+        }
+        // Try legacy workspace-adjacent: {projectDir}/logs/agent.log
+        const data = await agentsApi.logs(100, `${agent.workspacePath}/../logs/agent.log`);
+        if (data.lines.length > 0) {
+          setAgentLogs(data.lines);
+          return;
+        }
+      }
+      // Fall back to global log (default path on server: {projectRoot}/logs/agent.log)
+      const data = await agentsApi.logs(100);
+      setAgentLogs(data.lines);
     } catch { /* ignore */ }
     finally { setAgentLogsLoading(false); }
   }, []);
@@ -465,7 +483,7 @@ export default function DashboardPage() {
             </div>
           ) : (
             <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-3">
-              {discoveredAgents.map((agent) => (
+              {[...discoveredAgents].sort((a, b) => a.agentId.localeCompare(b.agentId)).map((agent) => (
                 <div
                   key={agent.agentId}
                   className="rounded-lg border p-3 bg-gray-50 dark:bg-gray-700/50 border-gray-200 dark:border-gray-600 cursor-pointer hover:border-blue-400 dark:hover:border-blue-500 transition-colors"
@@ -1158,7 +1176,8 @@ function TeamTopologyPanel({ agents, onSelectAgent }: { agents: DiscoveredAgent[
     });
     if (agent.teamMembers) {
       for (const member of agent.teamMembers) {
-        const memberId = `${member.hostname}_${member.role}`;
+        // member.hostname is already the agentId (e.g. "pcw5860_developer")
+        const memberId = member.hostname;
         if (!nodeMap.has(memberId)) {
           nodeMap.set(memberId, { id: memberId, hostname: member.hostname, role: member.role, isDiscovered: false });
         }

@@ -222,6 +222,11 @@ export const projectsApi = {
       `/projects/${encodeURIComponent(id)}/apply`,
       { method: 'POST' }
     ),
+  resetState: (id: string) =>
+    request<{ success: boolean; cleaned: string[] }>(
+      `/projects/${encodeURIComponent(id)}/reset-state`,
+      { method: 'POST' }
+    ),
 };
 
 // A2A Protocol API

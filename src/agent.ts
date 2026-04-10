@@ -1384,13 +1384,22 @@ ${message.content}
       this.pendingWorkItems = null;
 
       // ---- Empty-prompt fast-path (mechanical routing) ----
-      // When the ASSIGN state has no prompt, the manager is acting as a
-      // pure routing gate.  Skip the LLM turn entirely and transition
-      // immediately.  This avoids wasted tokens and prevents the LLM
-      // from calling tools (like send_message) that fail because no
-      // meaningful context was provided.
-      const statePrompt = received.prompt?.trim() ?? '';
-      if (statePrompt.length === 0) {
+      // When the ASSIGN state has no prompt in the workflow definition,
+      // the manager is acting as a pure routing gate.  Skip the LLM turn
+      // entirely and transition immediately.  We check the raw state
+      // prompt from the workflow definition, NOT the composed prompt
+      // (which includes task details, history, etc. and is never empty).
+      const rawStatePrompt = workflow?.states[assignment.targetState]?.prompt?.trim() ?? '';
+      this.logger.info({
+        taskId: assignment.taskId,
+        targetState: assignment.targetState,
+        workflowId: assignment.workflowId,
+        workflowFound: !!workflow,
+        stateFound: !!workflow?.states[assignment.targetState],
+        rawPromptLen: rawStatePrompt.length,
+        rawPromptPreview: rawStatePrompt.slice(0, 80),
+      }, 'Mechanical routing check');
+      if (rawStatePrompt.length === 0) {
         this.logger.info(
           { taskId: assignment.taskId, targetState: assignment.targetState },
           'Empty prompt -- mechanical routing (no LLM turn)',
