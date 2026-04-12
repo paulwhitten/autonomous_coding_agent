@@ -8,27 +8,26 @@
 // goes next (transition).  The LLM only does the creative work inside
 // each state.
 
-import {
-  WorkflowDefinition,
-  StateDefinition,
-  StateCommand,
-  TaskState,
-  StateTransitionRecord,
-  StateExecutionResult,
-  WorkflowAssignment,
-  OutOfBandMessage,
-  WorkflowMessage,
-  WorkflowInstance,
-  StateVariableDefinition,
-  ExitEvaluation,
-  DataRef,
-  WorkflowNote,
-  StatePermissions,
-  TOOL_GROUPS,
-  WorkflowValidationError,
-} from './workflow-types.js';
 import { readFile } from 'fs/promises';
 import pino from 'pino';
+import {
+    DataRef,
+    ExitEvaluation,
+    OutOfBandMessage,
+    StateCommand,
+    StateDefinition,
+    StateExecutionResult,
+    StatePermissions,
+    StateTransitionRecord,
+    TaskState,
+    TOOL_GROUPS,
+    WorkflowAssignment,
+    WorkflowDefinition,
+    WorkflowInstance,
+    WorkflowMessage,
+    WorkflowNote,
+    WorkflowValidationError
+} from './workflow-types.js';
 
 // Marker used to embed / extract structured messages in message content.
 // Uses an HTML comment so it is invisible when the markdown is rendered
