@@ -502,7 +502,7 @@ export class AutonomousAgent {
         // PRIORITY 2: WIP gate for manager role.
         // If there are in-flight delegations at or above the WIP limit,
         // the manager waits for completion messages before delegating more work.
-        const wipLimit = this.config.agent.wipLimit ?? 0; // 0 = disabled
+        const wipLimit = this.config.agent.wipLimit ?? 1; // default: 1
         if (wipLimit > 0 && this.config.agent.role === 'manager') {
           const inFlightCount = this.getInFlightCount();
           if (inFlightCount >= wipLimit) {
@@ -2653,7 +2653,7 @@ ${message.content}
    * undefined otherwise so the tools layer pays zero overhead.
    */
   private createOnMessageSentCallback(): OnMessageSentCallback | undefined {
-    const wipLimit = this.config.agent.wipLimit ?? 0;
+    const wipLimit = this.config.agent.wipLimit ?? 1; // default: 1
     if (wipLimit <= 0 || this.config.agent.role !== 'manager') {
       return undefined;
     }

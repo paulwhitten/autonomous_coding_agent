@@ -59,7 +59,7 @@ export interface AgentConfig {
       milestones?: number[];
     };
     /** Max concurrent delegations the manager will have in-flight at once.
-     *  0 or absent = disabled (no gate).  Requires role = 'manager'. */
+     *  Default: 1.  Set to 0 to disable the gate.  Requires role = 'manager'. */
     wipLimit?: number;
   };
   mailbox: {

@@ -191,7 +191,11 @@ describe('agent-browser', () => {
       await jest.advanceTimersByTimeAsync(0);
 
       mockFetch.mockClear();
+      // Advance 30s to fire the setInterval, then 3s more so the
+      // inner discoverAgents(2000) setTimeout resolves and the
+      // health-check fetch actually executes.
       await jest.advanceTimersByTimeAsync(30_000);
+      await jest.advanceTimersByTimeAsync(3_000);
 
       expect(mockFetch).toHaveBeenCalled();
     });
@@ -206,7 +210,10 @@ describe('agent-browser', () => {
       expect(getKnownAgents()[0].health).toBe('online');
 
       mockFetch.mockRejectedValue(new Error('ECONNREFUSED'));
+      // Advance 30s to fire the setInterval, then 3s more so the
+      // inner discoverAgents(2000) setTimeout resolves.
       await jest.advanceTimersByTimeAsync(30_000);
+      await jest.advanceTimersByTimeAsync(3_000);
 
       expect(getKnownAgents()[0].health).toBe('offline');
     });

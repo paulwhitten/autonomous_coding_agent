@@ -4,10 +4,12 @@
  */
 
 import { createApiServer } from '../api/server.js';
+import { stopAgentBrowser } from '../api/agent-browser.js';
 import { Server } from 'http';
 import path from 'path';
+import { fileURLToPath } from 'url';
 
-const PROJECT_ROOT = path.resolve(__dirname, '..', '..');
+const PROJECT_ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..', '..');
 
 let httpServer: Server;
 let port: number;
@@ -35,6 +37,7 @@ beforeAll(async () => {
 });
 
 afterAll(async () => {
+  stopAgentBrowser();
   if (httpServer) {
     await new Promise<void>((resolve) => httpServer.close(() => resolve()));
   }
