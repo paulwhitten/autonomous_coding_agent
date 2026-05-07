@@ -252,7 +252,7 @@ export function createWorkflowRouter(projectRoot: string): Router {
       const raw = await readFile(filePath, 'utf-8');
       const workflow = JSON.parse(raw);
 
-      const { targetAgent, taskId, taskTitle, taskDescription, acceptanceCriteria, from, repoPath } = req.body;
+      const { targetAgent, taskId, taskTitle, taskDescription, acceptanceCriteria, dependsOn, from, repoPath } = req.body;
       if (!targetAgent || !taskId || !taskTitle || !from) {
         res.status(400).json({ error: 'Required: targetAgent, taskId, taskTitle, from' });
         return;
@@ -281,6 +281,7 @@ export function createWorkflowRouter(projectRoot: string): Router {
             taskTitle,
             taskDescription: taskDescription || '',
             acceptanceCriteria: acceptanceCriteria || '',
+            ...(dependsOn ? { dependsOn: Array.isArray(dependsOn) ? dependsOn.join(',') : String(dependsOn) } : {}),
             ...(workflow.globalContext || {}),
           },
           retryCount: 0,

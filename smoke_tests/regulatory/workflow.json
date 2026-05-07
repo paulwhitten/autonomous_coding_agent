@@ -19,14 +19,14 @@
       "name": "Requirements Definition",
       "role": "requirements-analyst",
       "description": "RA writes the initial minimal requirement for a CLI application.",
-      "prompt": "You are the Requirements Analyst. Write or update the requirements specification for the task described below.\n\nWork in your workspace/project directory:\n1. Pull latest from origin (there may be prior work from earlier tasks)\n2. Create or update docs/requirements-specification.md with a section for the requirement described in the task details. Include the REQ-HCDP-XXX identifier\n3. Create or update docs/acceptance-criteria-checklist.md with acceptance criteria for this requirement\n4. Push to origin and report completion\n\nKeep changes focused on the single requirement in this task.",
+      "prompt": "You are the Requirements Analyst. Your PRIMARY deliverable is the requirements specification document.\n\nWork in your workspace/project directory:\n1. Pull latest from origin (there may be prior work from earlier tasks)\n2. MANDATORY: Create or update docs/requirements-specification.md -- add a new section for this task's requirement. The section MUST include:\n   - The REQ-HCDP-XXX identifier as a heading (## REQ-HCDP-XXX: Title)\n   - Requirement Identifier field\n   - Title, Purpose, Scope, Out of Scope, and Traceability subsections\n   - This file is the authoritative requirements record. If this file does not contain the REQ-HCDP-XXX identifier, the exit gate WILL FAIL and you will be asked to redo the work.\n3. Create or update docs/acceptance-criteria-checklist.md with acceptance criteria for this requirement\n4. VERIFY before finishing: run `grep -q 'REQ-HCDP-' docs/requirements-specification.md` to confirm the identifier is present. If not found, you missed writing it -- go back and add it.\n5. Push to origin and report completion\n\nKeep changes focused on the single requirement in this task.",
       "allowedTools": ["terminal", "file_ops", "reporting"],
       "transitions": {
         "onSuccess": "IMPLEMENTING",
         "onFailure": "REQUIREMENTS_DEFINITION"
       },
       "exitEvaluation": {
-        "prompt": "Based on the requirements definition work just completed, were ALL of the following accomplished: (1) requirements-specification.md created or updated with the REQ-HCDP-XXX identifier and source annotation, (2) acceptance-criteria-checklist.md created or updated, and (3) changes committed and pushed to origin? Answer with a single word: true or false.",
+        "prompt": "Based on the requirements definition work just completed, were ALL of the following accomplished: (1) docs/requirements-specification.md contains a full section with the REQ-HCDP-XXX identifier from this task (not just the checklist -- the SPECIFICATION document must have it), (2) docs/acceptance-criteria-checklist.md created or updated, and (3) changes committed and pushed to origin? Answer with a single word: true or false.",
         "responseFormat": "boolean",
         "mapping": { "true": "success", "false": "failure" },
         "defaultOutcome": "failure"
@@ -41,6 +41,7 @@
       "onExitCommands": [
         { "command": "git add -A", "reason": "Stage all new and modified files including untracked files.", "failOnError": false },
         { "command": "git commit -m '{{role}}: {{state}} for {{taskId}}'", "reason": "Commit all staged changes. If there is nothing new to commit, use the --allow-empty flag.", "failOnError": false },
+        { "command": "grep -oP 'REQ-HCDP-\\d+' docs/acceptance-criteria-checklist.md | sort -u | while read req; do grep -q \"$req\" docs/requirements-specification.md || { echo \"GATE FAIL: $req missing from docs/requirements-specification.md\"; exit 1; }; done", "reason": "Deterministic exit gate: verify every REQ-HCDP-XXX in the acceptance criteria checklist also appears in the requirements specification. If any requirement ID is missing from the spec, this command fails and the state retries with feedback.", "failOnError": true },
         { "command": "git rev-parse HEAD", "reason": "Capture the commit SHA for downstream traceability.", "captureAs": "commitSha" },
         { "command": "git push origin {{branch}}", "reason": "Push all local commits to origin so subsequent agents can pull this work. This is critical -- if this fails, downstream agents will not see your changes. Retry or diagnose the failure.", "failOnError": false }
       ],

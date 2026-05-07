@@ -1512,4 +1512,136 @@ describe('WorkflowEngine', () => {
       expect(result.newState).toBe('REVIEW');
     });
   });
+
+  // =====================================================================
+  // Task Manifest & Dependency Gating
+  // =====================================================================
+
+  describe('Task manifest and dependency gating', () => {
+    beforeEach(() => {
+      engine.loadWorkflow(createTestWorkflow());
+    });
+
+    const twoTaskManifest = {
+      workflowId: 'test-workflow',
+      name: 'Test Manifest',
+      wipLimit: 2,
+      tasks: [
+        { taskId: 'task-A', spec: 'a.md', dependsOn: [] },
+        { taskId: 'task-B', spec: 'b.md', dependsOn: ['task-A'] },
+      ],
+    };
+
+    it('should mark tasks without deps as ready on load', () => {
+      engine.loadManifest(twoTaskManifest);
+      expect(engine.getManifestTaskStatus('task-A')).toBe('ready');
+      expect(engine.getManifestTaskStatus('task-B')).toBe('pending');
+    });
+
+    it('isTaskReady returns true for ready tasks, false for pending', () => {
+      engine.loadManifest(twoTaskManifest);
+      expect(engine.isTaskReady('task-A').ready).toBe(true);
+      expect(engine.isTaskReady('task-B').ready).toBe(false);
+      expect(engine.isTaskReady('task-B').reason).toContain('task-A');
+    });
+
+    it('markTaskDone unblocks downstream tasks', () => {
+      engine.loadManifest(twoTaskManifest);
+      engine.markTaskDispatched('task-A');
+      engine.markTaskDone('task-A');
+      expect(engine.getManifestTaskStatus('task-A')).toBe('done');
+      expect(engine.getManifestTaskStatus('task-B')).toBe('ready');
+    });
+
+    it('markTaskDone unblocks previously blocked tasks', () => {
+      engine.loadManifest(twoTaskManifest);
+      // Simulate: task-B got blocked via dependency gate
+      engine.markTaskBlocked('task-B');
+      expect(engine.getManifestTaskStatus('task-B')).toBe('blocked');
+
+      // Now complete task-A
+      engine.markTaskDone('task-A');
+      expect(engine.getManifestTaskStatus('task-B')).toBe('ready');
+    });
+
+    it('markTaskEscalated cascades to downstream tasks', () => {
+      engine.loadManifest(twoTaskManifest);
+      engine.markTaskEscalated('task-A');
+      expect(engine.getManifestTaskStatus('task-A')).toBe('blocked');
+      expect(engine.getManifestTaskStatus('task-B')).toBe('blocked');
+    });
+
+    it('unblockTask re-evaluates dependencies', () => {
+      engine.loadManifest(twoTaskManifest);
+      engine.markTaskBlocked('task-B');
+      engine.unblockTask('task-B');
+      // task-A is not done, so task-B goes back to pending
+      expect(engine.getManifestTaskStatus('task-B')).toBe('pending');
+    });
+
+    it('unblockTask sets ready if deps are met', () => {
+      engine.loadManifest(twoTaskManifest);
+      engine.markTaskDone('task-A');
+      engine.markTaskBlocked('task-B');
+      engine.unblockTask('task-B');
+      expect(engine.getManifestTaskStatus('task-B')).toBe('ready');
+    });
+
+    it('getBlockedTasksDueForRecheck returns due tasks with met deps', () => {
+      engine.loadManifest(twoTaskManifest);
+      engine.markTaskBlocked('task-B');
+
+      // Not due yet (timeout not elapsed)
+      expect(engine.getBlockedTasksDueForRecheck(60_000)).toEqual([]);
+
+      // Manually complete dep and set blocked time in the past
+      engine.markTaskDone('task-A');
+      // Force the blocked time to be in the past by calling markTaskBlocked again
+      engine.markTaskBlocked('task-B');
+
+      // Still not due if timeout hasn't passed
+      expect(engine.getBlockedTasksDueForRecheck(999_999_999)).toEqual([]);
+
+      // Due if timeout is 0 (immediate)
+      expect(engine.getBlockedTasksDueForRecheck(0)).toEqual(['task-B']);
+    });
+
+    it('WIP limit gates dispatch', () => {
+      const manifest = {
+        workflowId: 'test-workflow',
+        wipLimit: 1,
+        tasks: [
+          { taskId: 'x', spec: 'x.md', dependsOn: [] },
+          { taskId: 'y', spec: 'y.md', dependsOn: [] },
+        ],
+      };
+      engine.loadManifest(manifest);
+      engine.markTaskDispatched('x');
+      const result = engine.isTaskReady('y');
+      expect(result.ready).toBe(false);
+      expect(result.reason).toContain('WIP');
+    });
+
+    it('persistManifestStatus and restoreManifestStatus round-trip', async () => {
+      const fs = await import('fs/promises');
+      const os = await import('os');
+      const tmpFile = path.join(os.default.tmpdir(), `manifest-status-test-${Date.now()}.json`);
+
+      engine.loadManifest(twoTaskManifest);
+      engine.markTaskDone('task-A');
+      await engine.persistManifestStatus(tmpFile);
+
+      // Create a fresh engine and load the same manifest
+      const engine2 = new WorkflowEngine(createMockLogger());
+      engine2.loadWorkflow(createTestWorkflow());
+      engine2.loadManifest(twoTaskManifest);
+      await engine2.restoreManifestStatus(tmpFile);
+
+      expect(engine2.getManifestTaskStatus('task-A')).toBe('done');
+      expect(engine2.getManifestTaskStatus('task-B')).toBe('ready');
+
+      // Clean up
+      await fs.unlink(tmpFile);
+    });
+  });
 });

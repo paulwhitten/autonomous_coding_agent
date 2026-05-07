@@ -19,6 +19,7 @@ import { createProcessesRouter } from './routes/processes.js';
 import { createInstructionsRouter } from './routes/instructions.js';
 import { createA2ARouter } from './routes/a2a.js';
 import { createProjectsRouter } from './routes/projects.js';
+import { createTasksRouter } from './routes/tasks.js';
 import { initWebSocket, broadcast } from './websocket.js';
 import { startFileWatcher } from './file-watcher.js';
 import { loadWorkflowSchema } from './validation.js';
@@ -120,6 +121,15 @@ export async function createApiServer(projectRoot: string, port: number = 3001) 
     '/api/projects/{id}/apply': {
       post: { summary: 'Apply project — generate configs and custom_instructions', tags: ['Projects'], parameters: [{ name: 'id', in: 'path', required: true, schema: { type: 'string' } }], responses: { '200': { description: 'Apply results' } } },
     },
+    '/api/tasks': {
+      get: { summary: 'List all workflow tasks with state', tags: ['Tasks'], responses: { '200': { description: 'Task list with current states' } } },
+    },
+    '/api/tasks/blocked': {
+      get: { summary: 'List blocked tasks', tags: ['Tasks'], responses: { '200': { description: 'Blocked task list' } } },
+    },
+    '/api/tasks/{taskId}/unblock': {
+      post: { summary: 'Unblock a task with optional note and context', tags: ['Tasks'], parameters: [{ name: 'taskId', in: 'path', required: true, schema: { type: 'string' } }], responses: { '200': { description: 'Unblock result' } } },
+    },
   };
 
   app.use('/api-docs', swaggerUi.serve, swaggerUi.setup(swaggerSpec));
@@ -135,6 +145,7 @@ export async function createApiServer(projectRoot: string, port: number = 3001) 
   app.use('/api/instructions', createInstructionsRouter(projectRoot));
   app.use('/api/a2a', createA2ARouter(projectRoot));
   app.use('/api/projects', createProjectsRouter(projectRoot));
+  app.use('/api/tasks', createTasksRouter(projectRoot));
 
   // Health check
   app.get('/api/health', (_req: Request, res: Response) => {

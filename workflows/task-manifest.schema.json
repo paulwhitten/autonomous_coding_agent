@@ -1,0 +1,91 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "task-manifest.schema.json",
+  "title": "Task Manifest",
+  "description": "Declares the set of tasks for a workflow and their inter-task dependencies. The workflow engine uses this to gate dispatch: a task cannot leave ASSIGN until all its dependsOn tasks have reached DONE. When a dependency escalates and blockOnFailure is true, the dependent task transitions to BLOCKED.",
+  "type": "object",
+  "required": ["workflowId", "tasks"],
+  "additionalProperties": false,
+  "properties": {
+    "$schema": {
+      "type": "string",
+      "description": "Optional JSON Schema self-reference for editor validation."
+    },
+    "workflowId": {
+      "type": "string",
+      "minLength": 1,
+      "description": "Workflow ID this manifest applies to. Must match a loaded workflow definition's id field."
+    },
+    "name": {
+      "type": "string",
+      "description": "Human-readable manifest name."
+    },
+    "wipLimit": {
+      "type": "integer",
+      "minimum": 1,
+      "description": "Maximum number of tasks that may be in non-terminal, non-ASSIGN states simultaneously. Prevents cascade failures when early tasks escalate. Default: no limit (all ready tasks can be dispatched)."
+    },
+    "branchStrategy": {
+      "type": "string",
+      "enum": ["branch-per-task", "single-branch"],
+      "default": "branch-per-task",
+      "description": "Branch strategy for the workflow.\n  - branch-per-task: each task works on its own feature branch and merges to targetBranch on success\n  - single-branch: all tasks commit to a shared long-lived branch"
+    },
+    "targetBranch": {
+      "type": "string",
+      "default": "main",
+      "description": "Branch that successful tasks merge into. Default: main."
+    },
+    "tasks": {
+      "type": "array",
+      "minItems": 1,
+      "items": { "$ref": "#/$defs/TaskManifestEntry" },
+      "description": "Ordered list of tasks with dependency declarations. Order is advisory (suggests natural execution sequence) but dependencies are authoritative for dispatch gating."
+    }
+  },
+  "$defs": {
+    "TaskManifestEntry": {
+      "type": "object",
+      "required": ["taskId", "spec"],
+      "additionalProperties": false,
+      "description": "A single entry in the task manifest declaring a task and its dependencies.",
+      "properties": {
+        "taskId": {
+          "type": "string",
+          "minLength": 1,
+          "pattern": "^[a-z0-9][a-z0-9-]*$",
+          "description": "Unique task identifier. Must match the taskId used in dispatch. Lowercase with hyphens."
+        },
+        "spec": {
+          "type": "string",
+          "minLength": 1,
+          "description": "Path to the task specification file, relative to the project root. The spec contains the Title, Description, Work Items, and Acceptance Criteria for the task."
+        },
+        "description": {
+          "type": "string",
+          "description": "Optional human-readable description of what this task accomplishes."
+        },
+        "dependsOn": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "minLength": 1
+          },
+          "uniqueItems": true,
+          "default": [],
+          "description": "Task IDs that must reach DONE before this task can leave ASSIGN. Empty array means no dependencies (can start immediately). Referenced taskIds must exist elsewhere in this manifest."
+        },
+        "blockOnFailure": {
+          "type": "boolean",
+          "default": true,
+          "description": "When true, if any task in dependsOn reaches ESCALATED or FAILED, this task transitions to BLOCKED automatically. When false, the task remains pending and can be dispatched manually even if a dependency failed."
+        },
+        "parallelizable": {
+          "type": "boolean",
+          "default": true,
+          "description": "Whether this task can execute in parallel with other tasks that share no dependency relationship. When wipLimit is 1, this is effectively false for all tasks. When true and wipLimit > 1, multiple ready tasks with no shared dependencies may be dispatched simultaneously."
+        }
+      }
+    }
+  }
+}

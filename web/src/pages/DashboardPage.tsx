@@ -4,6 +4,8 @@ import { onFileChange, onAgentDiscovery, onAgentHealth } from '../lib/socket';
 import { Activity, CheckCircle, AlertTriangle, Clock, Inbox, XCircle, FolderOpen, X, Mail, ChevronRight, Radio, Rocket, Settings, GitBranch, Search, Wifi, WifiOff, RefreshCw, Send, MessageSquare, Play, Circle, FileText } from 'lucide-react';
 import WorkflowVisualization from '../components/WorkflowVisualization';
 import TaskProgress from '../components/TaskProgress';
+import BlockedTasks from '../components/BlockedTasks';
+import DependencyGraph from '../components/DependencyGraph';
 
 interface DiscoveredAgent {
   agentId: string;
@@ -697,6 +699,21 @@ export default function DashboardPage() {
 
         {/* Task Progress Tracking */}
         <TaskProgress workItems={workItems} />
+
+        {/* Task Dependency Graph */}
+        <div className="lg:col-span-2">
+          <DependencyGraph />
+        </div>
+
+        {/* Blocked Workflow Tasks (shown when attached to workspace with mailbox) */}
+        {workspacePath && mailboxRepoPath && (
+          <div className="bg-white dark:bg-gray-800 rounded-xl border dark:border-gray-700 p-4 lg:col-span-2">
+            <BlockedTasks
+              repoPath={mailboxRepoPath}
+              targetAgent={agentContext?.agentId}
+            />
+          </div>
+        )}
 
         {/* Mailbox (shown when attached to workspace with mailbox config) */}
         {workspacePath && mailboxRepoPath && (

@@ -58,6 +58,7 @@ export default function MailboxPage() {
     taskTitle: '',
     taskDescription: '',
     acceptanceCriteria: '',
+    dependsOn: '',
   });
 
   useEffect(() => {
@@ -168,18 +169,24 @@ export default function MailboxPage() {
       return;
     }
     try {
+      // Parse dependsOn (comma-separated task IDs)
+      const dependsOnList = workflowTask.dependsOn
+        ? workflowTask.dependsOn.split(',').map(s => s.trim()).filter(Boolean)
+        : undefined;
+
       const result = await workflowApi.startTask(workflowFile, {
         targetAgent,
         taskId,
         taskTitle,
         taskDescription: workflowTask.taskDescription || undefined,
         acceptanceCriteria: workflowTask.acceptanceCriteria || undefined,
+        dependsOn: dependsOnList && dependsOnList.length > 0 ? dependsOnList : undefined,
         from: agentContext?.agentId || 'ui-orchestrator',
         repoPath: agentContext?.mailboxRepoPath || undefined,
       });
       setStatus(`Workflow task sent! ${result.assignment.workflowId}/${result.assignment.taskId} → ${result.assignment.targetAgent} (${result.assignment.targetState})`);
       setShowComposer(false);
-      setWorkflowTask({ workflowFile: '', targetAgent: '', taskId: '', taskTitle: '', taskDescription: '', acceptanceCriteria: '' });
+      setWorkflowTask({ workflowFile: '', targetAgent: '', taskId: '', taskTitle: '', taskDescription: '', acceptanceCriteria: '', dependsOn: '' });
       if (a2aUrl) loadA2AMessages();
       setTimeout(() => setStatus(null), 5000);
     } catch (err) {
@@ -391,6 +398,16 @@ export default function MailboxPage() {
                     placeholder="- Criterion 1&#10;- Criterion 2"
                     className="input text-sm h-20 w-full font-mono"
                   />
+                </div>
+                <div>
+                  <label className="text-xs text-gray-500 dark:text-gray-400 block mb-1">Depends On (task IDs, comma-separated)</label>
+                  <input
+                    value={workflowTask.dependsOn}
+                    onChange={(e) => setWorkflowTask(prev => ({ ...prev, dependsOn: e.target.value }))}
+                    placeholder="e.g. sdk-p0, sdk-p1"
+                    className="input text-sm w-full font-mono"
+                  />
+                  <span className="text-[10px] text-gray-400">Task will be gated until all listed tasks reach DONE</span>
                 </div>
               </div>
               <div className="flex justify-end gap-2">

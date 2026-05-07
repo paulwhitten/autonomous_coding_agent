@@ -34,6 +34,10 @@ export interface PermissionsConfig {
   mcp: PermissionPolicy;
   /** Custom tool calls (registered mailbox/workflow tools) — "allow" | "deny" */
   'custom-tool': PermissionPolicy;
+  /** Memory operations — "allow" | "deny" */
+  memory?: PermissionPolicy;
+  /** Hook operations — "allow" | "deny" */
+  hook?: PermissionPolicy;
   /** Additional shell commands to allow when shell policy is "allowlist" */
   shellAllowAdditional?: string[];
 }
@@ -42,14 +46,13 @@ export interface PermissionsConfig {
  * SDK PermissionRequest shape (matches @github/copilot-sdk types)
  */
 export interface PermissionRequest {
-  kind: 'shell' | 'write' | 'mcp' | 'read' | 'url' | 'custom-tool';
+  kind: 'shell' | 'write' | 'mcp' | 'read' | 'url' | 'custom-tool' | 'memory' | 'hook';
   toolCallId?: string;
   [key: string]: unknown;
 }
 
 export interface PermissionRequestResult {
-  kind: 'approved' | 'denied-by-rules';
-  rules?: unknown[];
+  kind: 'approve-once' | 'reject';
 }
 
 /**
@@ -236,6 +239,8 @@ export const DEFAULT_PERMISSIONS: PermissionsConfig = {
   url: 'deny',
   mcp: 'deny',
   'custom-tool': 'allow',
+  memory: 'allow',
+  hook: 'allow',
 };
 
 /**
@@ -247,7 +252,7 @@ export const DEFAULT_PERMISSIONS: PermissionsConfig = {
  *
  * Keys mirror PermissionsConfig but only present keys are overridden.
  */
-export type PermissionOverrides = Partial<Pick<PermissionsConfig, 'write' | 'read' | 'shell' | 'url' | 'mcp' | 'custom-tool'>>;
+export type PermissionOverrides = Partial<Pick<PermissionsConfig, 'write' | 'read' | 'shell' | 'url' | 'mcp' | 'custom-tool' | 'memory' | 'hook'>>;
 
 /**
  * Create a permission handler function compatible with the Copilot SDK.
@@ -307,7 +312,7 @@ export function createPermissionHandler(
         decision: 'denied',
         reason: 'unknown-kind',
       }, 'Permission denied: unknown kind');
-      return { kind: 'denied-by-rules' };
+      return { kind: 'reject' };
     }
 
     if (policy === 'deny') {
@@ -317,7 +322,7 @@ export function createPermissionHandler(
         decision: 'denied',
         reason: 'policy-deny',
       }, `Permission denied by policy: ${request.kind}`);
-      return { kind: 'denied-by-rules' };
+      return { kind: 'reject' };
     }
 
     if (policy === 'allow') {
@@ -327,7 +332,7 @@ export function createPermissionHandler(
         decision: 'approved',
         reason: 'policy-allow',
       }, `Permission approved: ${request.kind}`);
-      return { kind: 'approved' };
+      return { kind: 'approve-once' };
     }
 
     // policy === 'allowlist': Check if the command's base executable is allowed
@@ -342,7 +347,7 @@ export function createPermissionHandler(
 
     // Fallback (shouldn't reach here with TypeScript's exhaustive checks)
     logger.warn({ kind: request.kind, policy, decision: 'denied' }, 'Unhandled policy — denied');
-    return { kind: 'denied-by-rules' };
+    return { kind: 'reject' };
   };
 }
 
@@ -366,7 +371,7 @@ function evaluateAllowlist(
       decision: 'approved',
       reason: 'no-command-to-validate',
     }, 'Shell permission approved (no command to validate)');
-    return { kind: 'approved' };
+    return { kind: 'approve-once' };
   }
 
   const baseCommand = extractBaseCommand(command);
@@ -380,7 +385,7 @@ function evaluateAllowlist(
       decision: 'approved',
       reason: 'allowlisted',
     }, `Shell approved (allowlisted): ${baseCommand}`);
-    return { kind: 'approved' };
+    return { kind: 'approve-once' };
   }
 
   // Not in allowlist — deny and log prominently so operator can review
@@ -392,7 +397,7 @@ function evaluateAllowlist(
     decision: 'denied',
     reason: 'not-in-allowlist',
   }, `Shell DENIED (not in allowlist): ${baseCommand} — add to shellAllowAdditional config if needed`);
-  return { kind: 'denied-by-rules' };
+  return { kind: 'reject' };
 }
 
 /**
@@ -414,7 +419,7 @@ function evaluateWorkingDir(
       decision: 'approved',
       reason: 'no-path-to-validate',
     }, `Permission approved (workingDir policy, no path): ${request.kind}`);
-    return { kind: 'approved' };
+    return { kind: 'approve-once' };
   }
 
   if (isWithinDirectory(requestPath, workingDirectory)) {
@@ -425,7 +430,7 @@ function evaluateWorkingDir(
       decision: 'approved',
       reason: 'within-working-dir',
     }, `Permission approved (within working dir): ${request.kind}`);
-    return { kind: 'approved' };
+    return { kind: 'approve-once' };
   }
 
   logger.warn({
@@ -436,7 +441,7 @@ function evaluateWorkingDir(
     decision: 'denied',
     reason: 'outside-working-dir',
   }, `Permission denied (outside working dir): ${request.kind}`);
-  return { kind: 'denied-by-rules' };
+  return { kind: 'reject' };
 }
 
 /**

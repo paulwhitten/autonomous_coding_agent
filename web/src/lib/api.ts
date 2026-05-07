@@ -96,7 +96,7 @@ export const workflowApi = {
       `/workflows/${filename}/team-configs`,
       { method: 'POST' }
     ),
-  startTask: (filename: string, task: { targetAgent: string; taskId: string; taskTitle: string; taskDescription?: string; acceptanceCriteria?: string; from: string; repoPath?: string }) =>
+  startTask: (filename: string, task: { targetAgent: string; taskId: string; taskTitle: string; taskDescription?: string; acceptanceCriteria?: string; dependsOn?: string[]; from: string; repoPath?: string }) =>
     request<{ success: boolean; filename: string; assignment: { workflowId: string; taskId: string; targetState: string; targetRole: string; targetAgent: string } }>(
       `/workflows/${filename}/start-task`,
       { method: 'POST', body: JSON.stringify(task) }
@@ -269,3 +269,44 @@ export const a2aApi = {
   queryAgents: () =>
     request<{ agents: Array<Record<string, unknown>>; total: number; reachable: number; timestamp: string }>('/a2a/query-agents', { method: 'POST' }),
 };
+
+// Tasks API (workflow task state and intervention)
+export interface WorkflowTask {
+  filename: string;
+  folder: string;
+  taskId: string;
+  workflowId: string;
+  currentState: string;
+  subject: string;
+  date: string;
+  notes: Array<{ state: string; role: string; content: string; timestamp: string }>;
+  context: Record<string, string>;
+}
+
+export const tasksApi = {
+  list: (repoPath?: string) =>
+    request<{ tasks: WorkflowTask[] }>(`/tasks${repoPath ? `?repoPath=${encodeURIComponent(repoPath)}` : ''}`),
+  blocked: (repoPath?: string) =>
+    request<{ tasks: WorkflowTask[]; total: number }>(`/tasks/blocked${repoPath ? `?repoPath=${encodeURIComponent(repoPath)}` : ''}`),
+  manifest: () =>
+    request<{ manifest: TaskManifest | null; status: Record<string, string> }>('/tasks/manifest'),
+  unblock: (taskId: string, data: { note?: string; context?: Record<string, string>; targetAgent: string; repoPath?: string }) =>
+    request<{ success: boolean; taskId: string; filename: string; message: string; note: string | null; context: Record<string, string> }>(
+      `/tasks/${encodeURIComponent(taskId)}/unblock`,
+      { method: 'POST', body: JSON.stringify(data) }
+    ),
+};
+
+export interface TaskManifest {
+  workflowId: string;
+  name?: string;
+  wipLimit?: number;
+  tasks: Array<{
+    taskId: string;
+    spec: string;
+    description?: string;
+    dependsOn?: string[];
+    blockOnFailure?: boolean;
+    parallelizable?: boolean;
+  }>;
+}

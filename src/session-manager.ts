@@ -22,8 +22,8 @@ export interface SessionConfig {
 // Default permission handler: auto-approve all requests.
 // Used when config.onPermissionRequest is not provided, ensuring
 // compatibility with SDK versions where the field is required.
-const defaultPermissionHandler = (request: any, _invocation: { sessionId: string }) => {
-  return { permission: 'allow' as const, ...request };
+const defaultPermissionHandler = (_request: any, _invocation: { sessionId: string }) => {
+  return { kind: 'approve-once' as const };
 };
 
 export interface SessionState {

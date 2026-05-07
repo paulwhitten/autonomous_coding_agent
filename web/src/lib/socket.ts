@@ -68,3 +68,18 @@ export function onAgentHealth(callback: (data: { agentId: string; health: string
   s.on('agents:health', callback);
   return () => { s.off('agents:health', callback); };
 }
+
+export interface TaskStateChangeEvent {
+  taskId: string;
+  previousState: string;
+  newState: string;
+  trigger: string;
+  reason?: string;
+  timestamp: string;
+}
+
+export function onTaskStateChange(callback: (data: TaskStateChangeEvent) => void): () => void {
+  const s = getSocket();
+  s.on('task:stateChange', callback);
+  return () => { s.off('task:stateChange', callback); };
+}

@@ -13,12 +13,15 @@ import pino from 'pino';
 import {
     DataRef,
     ExitEvaluation,
+    ManifestTaskStatus,
     OutOfBandMessage,
     StateCommand,
     StateDefinition,
     StateExecutionResult,
     StatePermissions,
     StateTransitionRecord,
+    TaskManifest,
+    TaskManifestEntry,
     TaskState,
     TOOL_GROUPS,
     WorkflowAssignment,
@@ -1556,6 +1559,434 @@ export class WorkflowEngine {
         );
       }
     }
+  }
+
+  // -----------------------------------------------------------------------
+  // Task manifest & dependency gating
+  // -----------------------------------------------------------------------
+
+  private manifests: Map<string, TaskManifest> = new Map();
+  private manifestTaskStatus: Map<string, ManifestTaskStatus> = new Map();
+  /** Tracks when each task entered BLOCKED state (epoch ms) */
+  private blockedSince: Map<string, number> = new Map();
+
+  /**
+   * Load a task manifest that declares inter-task dependencies.
+   *
+   * The manifest gates task dispatch: a task cannot leave ASSIGN until
+   * all its `dependsOn` tasks have reached DONE.  When a dependency
+   * escalates and `blockOnFailure` is true, the dependent task
+   * transitions to BLOCKED.
+   */
+  loadManifest(manifest: TaskManifest): void {
+    // Validate: check for unknown dependency references
+    const taskIds = new Set(manifest.tasks.map(t => t.taskId));
+    for (const entry of manifest.tasks) {
+      if (entry.dependsOn) {
+        for (const dep of entry.dependsOn) {
+          if (!taskIds.has(dep)) {
+            throw new Error(
+              `Task manifest error: '${entry.taskId}' depends on unknown task '${dep}'`,
+            );
+          }
+        }
+      }
+    }
+
+    // Validate: no circular dependencies (topological sort check)
+    const visited = new Set<string>();
+    const inStack = new Set<string>();
+    const depMap = new Map<string, string[]>();
+    for (const entry of manifest.tasks) {
+      depMap.set(entry.taskId, entry.dependsOn ?? []);
+    }
+
+    const hasCycle = (taskId: string): boolean => {
+      if (inStack.has(taskId)) return true;
+      if (visited.has(taskId)) return false;
+      visited.add(taskId);
+      inStack.add(taskId);
+      for (const dep of depMap.get(taskId) ?? []) {
+        if (hasCycle(dep)) return true;
+      }
+      inStack.delete(taskId);
+      return false;
+    };
+
+    for (const entry of manifest.tasks) {
+      if (hasCycle(entry.taskId)) {
+        throw new Error(
+          `Task manifest error: circular dependency detected involving '${entry.taskId}'`,
+        );
+      }
+    }
+
+    this.manifests.set(manifest.workflowId, manifest);
+
+    // Initialize status for all tasks
+    for (const entry of manifest.tasks) {
+      this.manifestTaskStatus.set(entry.taskId, 'pending');
+    }
+
+    // Mark tasks with no dependencies as ready
+    for (const entry of manifest.tasks) {
+      if (!entry.dependsOn || entry.dependsOn.length === 0) {
+        this.manifestTaskStatus.set(entry.taskId, 'ready');
+      }
+    }
+
+    this.logger.info(
+      {
+        workflowId: manifest.workflowId,
+        taskCount: manifest.tasks.length,
+        wipLimit: manifest.wipLimit,
+      },
+      'Loaded task manifest',
+    );
+  }
+
+  /**
+   * Load a task manifest from a JSON file on disk.
+   */
+  async loadManifestFromFile(filePath: string): Promise<void> {
+    const raw = await readFile(filePath, 'utf-8');
+    const manifest: TaskManifest = JSON.parse(raw);
+    this.loadManifest(manifest);
+  }
+
+  /**
+   * Get the manifest for a workflow, if one was loaded.
+   */
+  getManifest(workflowId: string): TaskManifest | undefined {
+    return this.manifests.get(workflowId);
+  }
+
+  /**
+   * Check whether a task is ready to be dispatched.
+   *
+   * A task is ready when:
+   *   1. All `dependsOn` tasks have reached DONE
+   *   2. The WIP limit (if set) has not been reached
+   *   3. The task is not BLOCKED or cancelled
+   *
+   * @returns Object with `ready` boolean and `reason` if not ready
+   */
+  isTaskReady(taskId: string): { ready: boolean; reason?: string } {
+    const status = this.manifestTaskStatus.get(taskId);
+    if (!status) {
+      // No manifest entry — task is not dependency-gated
+      return { ready: true };
+    }
+
+    if (status === 'blocked' || status === 'cancelled') {
+      return { ready: false, reason: `Task is ${status}` };
+    }
+
+    if (status === 'done') {
+      return { ready: false, reason: 'Task already completed' };
+    }
+
+    if (status === 'dispatched') {
+      return { ready: false, reason: 'Task already dispatched' };
+    }
+
+    // Find the manifest entry
+    let manifest: TaskManifest | undefined;
+    let entry: TaskManifestEntry | undefined;
+    for (const m of this.manifests.values()) {
+      const found = m.tasks.find(t => t.taskId === taskId);
+      if (found) {
+        manifest = m;
+        entry = found;
+        break;
+      }
+    }
+
+    if (!manifest || !entry) {
+      return { ready: true };
+    }
+
+    // Check dependencies
+    if (entry.dependsOn && entry.dependsOn.length > 0) {
+      const unmetDeps: string[] = [];
+      for (const dep of entry.dependsOn) {
+        const depStatus = this.manifestTaskStatus.get(dep);
+        if (depStatus !== 'done') {
+          unmetDeps.push(`${dep} (${depStatus ?? 'unknown'})`);
+        }
+      }
+      if (unmetDeps.length > 0) {
+        return {
+          ready: false,
+          reason: `Unmet dependencies: ${unmetDeps.join(', ')}`,
+        };
+      }
+    }
+
+    // Check WIP limit
+    if (manifest.wipLimit != null) {
+      let activeCount = 0;
+      for (const t of manifest.tasks) {
+        const s = this.manifestTaskStatus.get(t.taskId);
+        if (s === 'dispatched') activeCount++;
+      }
+      if (activeCount >= manifest.wipLimit) {
+        return {
+          ready: false,
+          reason: `WIP limit reached (${activeCount}/${manifest.wipLimit})`,
+        };
+      }
+    }
+
+    return { ready: true };
+  }
+
+  /**
+   * Get all tasks that are ready to be dispatched.
+   */
+  getReadyTasks(workflowId: string): TaskManifestEntry[] {
+    const manifest = this.manifests.get(workflowId);
+    if (!manifest) return [];
+
+    const ready: TaskManifestEntry[] = [];
+    for (const entry of manifest.tasks) {
+      const { ready: isReady } = this.isTaskReady(entry.taskId);
+      if (isReady) ready.push(entry);
+    }
+    return ready;
+  }
+
+  /**
+   * Get the current manifest status of a specific task.
+   */
+  getManifestTaskStatus(taskId: string): ManifestTaskStatus | undefined {
+    return this.manifestTaskStatus.get(taskId);
+  }
+
+  /**
+   * Mark a task as dispatched in the manifest.
+   * Called when a task leaves ASSIGN and enters IMPLEMENTING.
+   */
+  markTaskDispatched(taskId: string): void {
+    if (this.manifestTaskStatus.has(taskId)) {
+      this.manifestTaskStatus.set(taskId, 'dispatched');
+    }
+  }
+
+  /**
+   * Mark a task as done in the manifest and update downstream readiness.
+   * Called when a task reaches the DONE terminal state.
+   */
+  markTaskDone(taskId: string): void {
+    this.manifestTaskStatus.set(taskId, 'done');
+
+    // Re-evaluate readiness of tasks that depend on this one
+    for (const manifest of this.manifests.values()) {
+      for (const entry of manifest.tasks) {
+        if (entry.dependsOn?.includes(taskId)) {
+          const currentStatus = this.manifestTaskStatus.get(entry.taskId);
+          if (currentStatus === 'pending' || currentStatus === 'blocked') {
+            // Check if ALL dependencies are now met
+            const allMet = entry.dependsOn.every(
+              dep => this.manifestTaskStatus.get(dep) === 'done',
+            );
+            if (allMet) {
+              this.manifestTaskStatus.set(entry.taskId, 'ready');
+              this.blockedSince.delete(entry.taskId);
+              this.logger.info(
+                { taskId: entry.taskId, completedDep: taskId },
+                'Task dependencies met — now ready for dispatch',
+              );
+            }
+          }
+        }
+      }
+    }
+  }
+
+  /**
+   * Mark a task as escalated/failed and block dependent tasks.
+   * Called when a task reaches ESCALATED terminal state.
+   */
+  markTaskEscalated(taskId: string): void {
+    this.manifestTaskStatus.set(taskId, 'blocked');
+    this.blockedSince.set(taskId, Date.now());
+
+    // Block downstream tasks that have blockOnFailure (default true)
+    for (const manifest of this.manifests.values()) {
+      for (const entry of manifest.tasks) {
+        if (entry.dependsOn?.includes(taskId)) {
+          const blockOnFailure = entry.blockOnFailure !== false; // default true
+          if (blockOnFailure) {
+            const currentStatus = this.manifestTaskStatus.get(entry.taskId);
+            if (currentStatus === 'pending' || currentStatus === 'ready') {
+              this.manifestTaskStatus.set(entry.taskId, 'blocked');
+              this.blockedSince.set(entry.taskId, Date.now());
+              this.logger.warn(
+                { taskId: entry.taskId, blockedBy: taskId },
+                'Task blocked due to dependency escalation',
+              );
+              // Cascade: block tasks that depend on this now-blocked task
+              this.markTaskEscalated(entry.taskId);
+            }
+          }
+        }
+      }
+    }
+  }
+
+  /**
+   * Unblock a task (e.g., after manager intervention resolves an escalation).
+   * Re-evaluates its dependencies and sets to 'ready' if all are met,
+   * otherwise back to 'pending'.
+   */
+  unblockTask(taskId: string): void {
+    const currentStatus = this.manifestTaskStatus.get(taskId);
+    if (currentStatus !== 'blocked' && currentStatus !== 'cancelled') {
+      this.logger.warn({ taskId, currentStatus }, 'Cannot unblock — task is not blocked');
+      return;
+    }
+
+    // Find the entry
+    let entry: TaskManifestEntry | undefined;
+    for (const manifest of this.manifests.values()) {
+      entry = manifest.tasks.find(t => t.taskId === taskId);
+      if (entry) break;
+    }
+
+    if (!entry) {
+      this.manifestTaskStatus.set(taskId, 'ready');
+      return;
+    }
+
+    // Check if dependencies are now met
+    if (!entry.dependsOn || entry.dependsOn.length === 0) {
+      this.manifestTaskStatus.set(taskId, 'ready');
+    } else {
+      const allMet = entry.dependsOn.every(
+        dep => this.manifestTaskStatus.get(dep) === 'done',
+      );
+      this.manifestTaskStatus.set(taskId, allMet ? 'ready' : 'pending');
+    }
+
+    this.blockedSince.delete(taskId);
+    this.logger.info(
+      { taskId, newStatus: this.manifestTaskStatus.get(taskId) },
+      'Task unblocked',
+    );
+  }
+
+  /**
+   * Record that a task entered BLOCKED state (called from the agent
+   * dependency gate when the workflow transition fires).
+   */
+  markTaskBlocked(taskId: string): void {
+    this.manifestTaskStatus.set(taskId, 'blocked');
+    this.blockedSince.set(taskId, Date.now());
+  }
+
+  /**
+   * Return BLOCKED tasks whose timeout has elapsed and whose dependencies
+   * are now met.  The agent calls this periodically to auto-unblock tasks.
+   */
+  getBlockedTasksDueForRecheck(timeoutMs: number): string[] {
+    const now = Date.now();
+    const due: string[] = [];
+    for (const [taskId, since] of this.blockedSince.entries()) {
+      if (now - since >= timeoutMs) {
+        // Check dependencies directly (bypass the 'blocked' status guard in isTaskReady)
+        let entry: TaskManifestEntry | undefined;
+        for (const m of this.manifests.values()) {
+          entry = m.tasks.find(t => t.taskId === taskId);
+          if (entry) break;
+        }
+
+        const depsmet = !entry?.dependsOn || entry.dependsOn.every(
+          dep => this.manifestTaskStatus.get(dep) === 'done',
+        );
+
+        if (depsmet) {
+          due.push(taskId);
+        } else {
+          // Reset timer so we don't re-check every tick
+          this.blockedSince.set(taskId, now);
+        }
+      }
+    }
+    return due;
+  }
+
+  /**
+   * Persist the current manifest task statuses to a JSON file.
+   * Called after state changes to survive agent restarts.
+   */
+  async persistManifestStatus(filePath: string): Promise<void> {
+    const data: Record<string, ManifestTaskStatus> = {};
+    for (const [taskId, status] of this.manifestTaskStatus.entries()) {
+      data[taskId] = status;
+    }
+    const { writeFile } = await import('fs/promises');
+    await writeFile(filePath, JSON.stringify(data, null, 2), 'utf-8');
+  }
+
+  /**
+   * Restore manifest task statuses from a previously persisted file.
+   * Called at startup after loadManifest.
+   */
+  async restoreManifestStatus(filePath: string): Promise<void> {
+    try {
+      const raw = await readFile(filePath, 'utf-8');
+      const data: Record<string, ManifestTaskStatus> = JSON.parse(raw);
+      for (const [taskId, status] of Object.entries(data)) {
+        if (this.manifestTaskStatus.has(taskId)) {
+          this.manifestTaskStatus.set(taskId, status);
+        }
+      }
+      this.logger.info(
+        { filePath, restored: Object.keys(data).length },
+        'Restored manifest task status from disk',
+      );
+    } catch {
+      // File does not exist — fresh start
+    }
+  }
+
+  /**
+   * Get the dependency status of all tasks in a manifest.
+   * Useful for the manager UI or status reporting.
+   */
+  getManifestStatus(workflowId: string): Array<{
+    taskId: string;
+    status: ManifestTaskStatus;
+    dependsOn: string[];
+    blockedBy?: string[];
+  }> {
+    const manifest = this.manifests.get(workflowId);
+    if (!manifest) return [];
+
+    return manifest.tasks.map(entry => {
+      const status = this.manifestTaskStatus.get(entry.taskId) ?? 'pending';
+      const result: {
+        taskId: string;
+        status: ManifestTaskStatus;
+        dependsOn: string[];
+        blockedBy?: string[];
+      } = {
+        taskId: entry.taskId,
+        status,
+        dependsOn: entry.dependsOn ?? [],
+      };
+
+      // If blocked, identify which dependency caused it
+      if (status === 'blocked' && entry.dependsOn) {
+        result.blockedBy = entry.dependsOn.filter(dep => {
+          const depStatus = this.manifestTaskStatus.get(dep);
+          return depStatus === 'blocked' || depStatus === 'cancelled';
+        });
+      }
+
+      return result;
+    });
   }
 
   private getWorkflowOrThrow(workflowId: string): WorkflowDefinition {

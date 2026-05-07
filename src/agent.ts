@@ -28,6 +28,7 @@ import { WorkItemExecutor } from './work-item-executor.js';
 import { WorkflowEngine } from './workflow-engine.js';
 import { ExitEvaluation, OutOfBandMessage, StateCommand, StateExecutionResult, WorkflowAssignment } from './workflow-types.js';
 import { WorkItem, WorkspaceManager } from './workspace-manager.js';
+import { broadcast } from './api/websocket.js';
 
 /** Format an AgentAddress as a flat "hostname_role" string. */
 function formatAgentId(addr: AgentAddress): string {
@@ -75,6 +76,8 @@ export class AutonomousAgent {
   private contextFile: string;
   private retryAttempts: Map<string, number> = new Map(); // Track retry attempts per work item
   private agentRegistry: AgentRegistry | null = null;
+  /** Path to the manifest status persistence file (set at startup) */
+  private manifestStatusPath: string | null = null;
 
   constructor(config: AgentConfig, configPath?: string) {
     this.config = config;
@@ -366,6 +369,25 @@ export class AutonomousAgent {
           { workflowFile: this.config.agent.workflowFile },
           'Workflow engine loaded'
         );
+
+        // Look for a sibling task manifest (same directory, .task-manifest.json suffix)
+        const workflowDir = path.dirname(workflowPath);
+        const workflowBasename = path.basename(workflowPath, '.workflow.json');
+        const manifestPath = path.join(workflowDir, `${workflowBasename}.task-manifest.json`);
+        try {
+          await this.workflowEngine.loadManifestFromFile(manifestPath);
+          this.logger.info(
+            { manifestPath },
+            'Task manifest loaded -- dependency gating active'
+          );
+
+          // Persist/restore status file alongside the manifest
+          this.manifestStatusPath = manifestPath.replace(/\.json$/, '.status.json');
+          await this.workflowEngine.restoreManifestStatus(this.manifestStatusPath);
+        } catch {
+          // No manifest file -- dependency gating disabled (optional feature)
+          this.logger.debug({ manifestPath }, 'No task manifest found (optional)');
+        }
       } catch (error) {
         this.logger.error(
           { error: String(error), workflowFile: this.config.agent.workflowFile },
@@ -531,6 +553,9 @@ export class AutonomousAgent {
         if (hasWork) {
           await this.processNextWorkItem();
         } else {
+          // PRIORITY 3.5: Re-check BLOCKED tasks whose timeout has elapsed
+          await this.recheckBlockedTasks();
+
           // PRIORITY 4: Check normal and background mailbox for new messages
           await this.checkAndProcessMailbox();
         }
@@ -976,6 +1001,43 @@ export class AutonomousAgent {
   }
 
   /**
+   * Re-evaluate BLOCKED tasks whose timeout has elapsed.
+   * If dependencies are now met, unblock and re-dispatch them.
+   */
+  private async recheckBlockedTasks(): Promise<void> {
+    if (!this.workflowEngine) return;
+
+    // Default 5 minutes; matches timeoutMs on BLOCKED state in workflow JSON
+    const timeoutMs = 300_000;
+
+    const due = this.workflowEngine.getBlockedTasksDueForRecheck(timeoutMs);
+    for (const taskId of due) {
+      this.logger.info({ taskId }, 'BLOCKED timeout elapsed — dependencies now met, unblocking');
+      this.workflowEngine.unblockTask(taskId);
+
+      broadcast('task:stateChange', {
+        taskId,
+        previousState: 'BLOCKED',
+        newState: 'ASSIGN',
+        trigger: 'timeout-recheck',
+        timestamp: new Date().toISOString(),
+      });
+
+      // Persist updated status
+      await this.persistManifestStatus();
+    }
+  }
+
+  /**
+   * Persist manifest task status to disk (survives agent restarts).
+   */
+  private async persistManifestStatus(): Promise<void> {
+    if (this.manifestStatusPath && this.workflowEngine) {
+      await this.workflowEngine.persistManifestStatus(this.manifestStatusPath);
+    }
+  }
+
+  /**
    * Check mailbox for normal and background priority messages
    */
   private async checkAndProcessMailbox(): Promise<void> {
@@ -1360,10 +1422,57 @@ ${message.content}
         }, 'Manager received terminal workflow assignment');
         this.logger.info({ taskId: assignment.taskId }, 'Workflow reached terminal state -- complete');
 
+        // Update manifest status for terminal state
+        if (assignment.targetState === 'DONE') {
+          this.workflowEngine!.markTaskDone(assignment.taskId);
+        } else {
+          this.workflowEngine!.markTaskEscalated(assignment.taskId);
+        }
+
         // Remove the task from active tracking so the Bug 12 guard
         // does not block subsequent unstructured messages (e.g. defect
         // reports) after the workflow completes.
         this.workflowEngine!.removeTask(assignment.taskId);
+        return;
+      }
+
+      // ---- Dependency gating ----
+      // Before dispatching, check the task manifest (if loaded) to see
+      // whether this task's dependencies are met and WIP limit allows it.
+      const readiness = this.workflowEngine!.isTaskReady(assignment.taskId);
+      if (!readiness.ready) {
+        this.logger.warn({
+          taskId: assignment.taskId,
+          reason: readiness.reason,
+        }, 'Task not ready -- dependencies unmet or WIP limit reached, transitioning to BLOCKED');
+
+        // Hydrate the task in the engine so it has state, then force
+        // a failure transition which sends it to BLOCKED per the workflow.
+        const received = this.workflowEngine!.receiveAssignment(assignment);
+        this.activeWorkflowTaskId = received.taskId;
+        this.workflowPhaseResponseText = '';
+
+        // Force failure transition (ASSIGN onFailure → BLOCKED)
+        const result: StateExecutionResult = {
+          success: false,
+          outputs: {},
+          error: `Dependency gate: ${readiness.reason}`,
+        };
+        this.workflowEngine!.transition(assignment.taskId, result);
+        this.workflowEngine!.markTaskBlocked(assignment.taskId);
+        this.activeWorkflowTaskId = null;
+        this.workItemExecutor.clearWorkflowContext();
+
+        broadcast('task:stateChange', {
+          taskId: assignment.taskId,
+          previousState: 'ASSIGN',
+          newState: 'BLOCKED',
+          trigger: 'dependency-gate',
+          reason: readiness.reason,
+          timestamp: new Date().toISOString(),
+        });
+
+        await this.persistManifestStatus();
         return;
       }
 
@@ -1920,6 +2029,7 @@ ${message.content}
         delete this.permissionOverrides[key as keyof PermissionOverrides];
       }
 
+      const preTransitionState = this.workflowEngine.getTask(taskId)?.currentState ?? 'unknown';
       const transition = this.workflowEngine.transition(taskId, result);
 
       this.logger.info({
@@ -1929,10 +2039,53 @@ ${message.content}
         isTerminal: transition.isTerminal,
       }, 'Workflow state transition');
 
+      // Broadcast state change for real-time UI
+      broadcast('task:stateChange', {
+        taskId,
+        previousState: preTransitionState,
+        newState: transition.newState,
+        trigger: result.success ? 'success' : 'failure',
+        timestamp: new Date().toISOString(),
+      });
+
+      // Update manifest task status based on transition outcome
+      if (transition.newState === 'IMPLEMENTING') {
+        this.workflowEngine.markTaskDispatched(taskId);
+        await this.persistManifestStatus();
+      }
+
       if (transition.isTerminal) {
         // Capture the workflowId before removing the task
         const taskInfo = this.workflowEngine.getTask(taskId);
         const workflowId = taskInfo?.workflowId ?? 'unknown';
+
+        // Mark task done in the manifest so downstream dependencies unblock
+        if (transition.newState === 'DONE') {
+          this.workflowEngine.markTaskDone(taskId);
+
+          // Broadcast for any downstream tasks that just became ready
+          const manifest = this.workflowEngine.getManifest(workflowId);
+          if (manifest) {
+            for (const entry of manifest.tasks) {
+              if (entry.dependsOn?.includes(taskId)) {
+                const status = this.workflowEngine.getManifestTaskStatus(entry.taskId);
+                if (status === 'ready') {
+                  broadcast('task:stateChange', {
+                    taskId: entry.taskId,
+                    previousState: 'BLOCKED',
+                    newState: 'ASSIGN',
+                    trigger: 'dependency-resolved',
+                    timestamp: new Date().toISOString(),
+                  });
+                }
+              }
+            }
+          }
+        } else {
+          // Terminal but not DONE (e.g. ESCALATED) — mark as escalated
+          this.workflowEngine.markTaskEscalated(taskId);
+        }
+        await this.persistManifestStatus();
 
         // Task complete -- clean up locally
         this.workflowEngine.removeTask(taskId);

@@ -848,6 +848,96 @@ export const TOOL_GROUPS: Record<string, string[]> = {
 };
 
 // ---------------------------------------------------------------------------
+// Task Manifest (inter-task dependency graph)
+// ---------------------------------------------------------------------------
+
+/**
+ * A task manifest declares the set of tasks for a workflow and their
+ * inter-task dependencies.  The workflow engine uses this to gate
+ * dispatch: a task cannot leave ASSIGN until all its `dependsOn`
+ * tasks have reached DONE.
+ *
+ * The manifest is a companion to the workflow definition.  The workflow
+ * defines *states* (the lifecycle of a single task); the manifest
+ * defines *tasks* (the graph of work items that traverse those states).
+ */
+export interface TaskManifest {
+  /** Workflow ID this manifest applies to */
+  workflowId: string;
+
+  /** Human-readable manifest name */
+  name?: string;
+
+  /** Ordered list of tasks with dependency declarations */
+  tasks: TaskManifestEntry[];
+
+  /**
+   * Maximum number of tasks that may be in non-terminal, non-ASSIGN
+   * states simultaneously.  Prevents cascade failures when early tasks
+   * escalate.  Default: no limit.
+   */
+  wipLimit?: number;
+
+  /**
+   * Branch strategy for the workflow.
+   *   - "branch-per-task": each task works on its own feature branch
+   *     and merges to main on success (default, existing behavior)
+   *   - "single-branch": all tasks commit to a shared long-lived branch
+   */
+  branchStrategy?: 'branch-per-task' | 'single-branch';
+
+  /** Target branch that successful tasks merge into */
+  targetBranch?: string;
+}
+
+/**
+ * A single entry in the task manifest declaring a task and its
+ * dependencies on other tasks.
+ */
+export interface TaskManifestEntry {
+  /** Unique task identifier (matches taskId used in dispatch) */
+  taskId: string;
+
+  /** Path to the task specification file (relative to project root) */
+  spec: string;
+
+  /**
+   * Task IDs that must reach DONE before this task can leave ASSIGN.
+   * Empty array or omitted means no dependencies (can start immediately).
+   */
+  dependsOn?: string[];
+
+  /**
+   * When true, if any task in `dependsOn` reaches ESCALATED or FAILED,
+   * this task transitions to BLOCKED automatically.
+   * Default: true.
+   */
+  blockOnFailure?: boolean;
+
+  /** Optional human-readable description */
+  description?: string;
+
+  /**
+   * Whether this task can execute in parallel with other tasks that
+   * share no dependency relationship.  Default: true.
+   * When wipLimit is 1, this is effectively false for all tasks.
+   */
+  parallelizable?: boolean;
+}
+
+/**
+ * Status of a task within the manifest's dependency graph.
+ * Extends the workflow states with BLOCKED for dependency failures.
+ */
+export type ManifestTaskStatus =
+  | 'pending'     // Not yet dispatched
+  | 'ready'       // All dependencies met, can be dispatched
+  | 'dispatched'  // Currently in the workflow (ASSIGN or later)
+  | 'done'        // Reached DONE terminal state
+  | 'blocked'     // A dependency escalated/failed with blockOnFailure
+  | 'cancelled';  // Manually cancelled or cascading block
+
+// ---------------------------------------------------------------------------
 // Validation
 // ---------------------------------------------------------------------------
 
