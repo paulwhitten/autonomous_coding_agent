@@ -1662,6 +1662,13 @@ export class WorkflowEngine {
   }
 
   /**
+   * Get all loaded manifests as [workflowId, manifest] pairs.
+   */
+  getAllManifests(): IterableIterator<[string, TaskManifest]> {
+    return this.manifests.entries();
+  }
+
+  /**
    * Check whether a task is ready to be dispatched.
    *
    * A task is ready when:

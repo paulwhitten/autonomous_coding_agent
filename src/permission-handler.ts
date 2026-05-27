@@ -147,6 +147,8 @@ export const DEFAULT_SHELL_ALLOWLIST: ReadonlySet<string> = new Set([
   'select',
   '[',              // test synonym
   '[[',             // extended test
+  'source',         // shell builtin — loads env (e.g. venv activate)
+  '.',              // POSIX equivalent of source
 
   'cat',
   'echo',

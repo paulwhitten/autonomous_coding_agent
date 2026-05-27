@@ -888,6 +888,9 @@ export interface TaskManifest {
 
   /** Target branch that successful tasks merge into */
   targetBranch?: string;
+
+  /** Target directory within the repo to scope git add/commit operations */
+  targetDir?: string;
 }
 
 /**

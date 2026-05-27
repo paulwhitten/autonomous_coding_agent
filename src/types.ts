@@ -29,6 +29,10 @@ export interface AgentConfig {
      *  When set, the workflow engine drives prompt construction, tool gating,
      *  and state transitions instead of the static roles.json prompts. */
     workflowFile?: string;
+    /** Path to a .task-manifest.json file (relative to config.json or absolute).
+     *  When set, overrides the naming-convention discovery (workflowBaseName.task-manifest.json).
+     *  This allows multiple projects to share the same workflow with different manifests. */
+    manifestFile?: string;
     checkIntervalMs: number;
     stuckTimeoutMs: number;
     sdkTimeoutMs: number;

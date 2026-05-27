@@ -370,7 +370,8 @@ export function createProjectsRouter(projectRoot: string): Router {
             const config: Record<string, unknown> = {
               agent: {
                 role,
-                workflowFile: `../workflows/${project.workflow}`,
+                workflowFile: `../../workflows/${project.workflow}`,
+                manifestFile: 'task-manifest.json',
               },
               mailbox: { repoPath: sharedMailbox },
               workspace: {

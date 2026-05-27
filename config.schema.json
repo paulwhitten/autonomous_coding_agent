@@ -44,6 +44,10 @@
           "type": "string",
           "description": "Path to a .workflow.json file for workflow-driven execution."
         },
+        "manifestFile": {
+          "type": "string",
+          "description": "Path to a .task-manifest.json file for task dispatch (relative to config file directory)."
+        },
         "checkIntervalMs": {
           "type": "integer",
           "default": 60000,

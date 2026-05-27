@@ -161,7 +161,14 @@ export class MailboxManager {
         const normalMessages = await this.readMessagesFromFolder(this.normalPath);
         const backgroundMessages = await this.readMessagesFromFolder(this.backgroundPath);
         
-        // Priority messages first, then normal, then background
+        // Sort within each tier by date, then concatenate in priority order.
+        // This preserves priority > normal > background ordering while
+        // maintaining chronological order within each tier.
+        const byDate = (a: MailboxMessage, b: MailboxMessage) => a.date.getTime() - b.date.getTime();
+        priorityMessages.sort(byDate);
+        normalMessages.sort(byDate);
+        backgroundMessages.sort(byDate);
+        
         messages.push(...priorityMessages);
         messages.push(...normalMessages);
         messages.push(...backgroundMessages);
@@ -169,16 +176,19 @@ export class MailboxManager {
         // Legacy: Check root mailbox folder (excluding subfolders)
         const rootMessages = await this.readMessagesFromFolder(this.mailboxPath, true);
         messages.push(...rootMessages);
+        messages.sort((a, b) => a.date.getTime() - b.date.getTime());
       }
       
       // Check broadcast mailbox if supported
       if (this.supportBroadcast) {
         const broadcastMessages = await this.readMessagesFromFolder(this.toAllPath);
+        broadcastMessages.sort((a, b) => a.date.getTime() - b.date.getTime());
+        // Broadcast messages are treated as normal priority — append after
+        // existing messages but before background (already added above).
+        // For simplicity, append at end since broadcasts are typically
+        // informational.
         messages.push(...broadcastMessages);
       }
-      
-      // Sort by date within each priority level
-      messages.sort((a, b) => a.date.getTime() - b.date.getTime());
       
       return messages;
     } catch (error) {
@@ -277,7 +287,10 @@ export class MailboxManager {
     
     const timestamp = formatMailboxTimestamp();
     const sanitizedSubject = subject.toLowerCase().replace(/[^a-z0-9]+/g, '_');
-    const filename = `${timestamp}_${sanitizedSubject}.md`;
+    // Truncate to stay under Linux's 255-byte filename limit.
+    // timestamp ~15 chars + underscore + ".md" = ~19 overhead → 236 for subject.
+    const trimmedSubject = sanitizedSubject.slice(0, 236);
+    const filename = `${timestamp}_${trimmedSubject}.md`;
     
     const targetMailboxBase = path.join(
       path.dirname(path.dirname(this.mailboxPath)),
@@ -335,7 +348,7 @@ export class MailboxManager {
     
     const timestamp = formatMailboxTimestamp();
     const sanitizedSubject = subject.toLowerCase().replace(/[^a-z0-9]+/g, '_');
-    const filename = `${timestamp}_${sanitizedSubject}.md`;
+    const filename = `${timestamp}_${sanitizedSubject.slice(0, 236)}.md`;
     
     const filepath = await createMailboxMessage(
       this.toAllPath,

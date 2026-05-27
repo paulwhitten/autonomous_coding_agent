@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef, useCallback } from 'react';
 import {
   FolderOpen, Plus, ArrowRight, ArrowLeft, Check, GitBranch, Code, Wrench,
   FileText, Rocket, Trash2, ChevronDown, ChevronUp, Play, AlertCircle, Square, ExternalLink,
@@ -87,6 +87,22 @@ export default function ProjectsPage() {
   // Expanded project card
   const [expandedProject, setExpandedProject] = useState<string | null>(null);
 
+  // Debounced auto-save: persist draft changes to backend after 800ms of inactivity
+  const saveTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const debouncedSave = useCallback((id: string, data: Partial<ProjectDefinition>) => {
+    if (saveTimerRef.current) clearTimeout(saveTimerRef.current);
+    saveTimerRef.current = setTimeout(() => {
+      projectsApi.update(id, data).catch(() => { });
+    }, 800);
+  }, []);
+
+  useEffect(() => {
+    if (editingId && wizardOpen) {
+      debouncedSave(editingId, draft);
+    }
+    return () => { if (saveTimerRef.current) clearTimeout(saveTimerRef.current); };
+  }, [draft, editingId, wizardOpen, debouncedSave]);
+
   useEffect(() => {
     loadProjects();
     workflowApi.list().then(d => setWorkflows(d.workflows as unknown as WorkflowSummary[])).catch(() => { });
@@ -104,6 +120,10 @@ export default function ProjectsPage() {
   // Workflow selection — load states and derive roles
   const selectWorkflow = async (filename: string) => {
     setDraft(prev => ({ ...prev, workflow: filename }));
+    // Persist workflow change immediately for existing projects
+    if (editingId) {
+      projectsApi.update(editingId, { workflow: filename }).catch(() => { });
+    }
     if (!filename) {
       setWorkflowStates([]);
       setWorkflowRoles([]);
@@ -182,14 +202,20 @@ export default function ProjectsPage() {
 
   // Launch team
   const launchTeam = async () => {
-    if (teamConfigs.length === 0) {
+    if (!editingId) return;
+    // Re-apply project to regenerate configs with latest settings
+    setLaunchStatus('Applying project config...');
+    const applied = await applyProject(editingId);
+    if (!applied) return;
+    const configs = applied.teamConfigs || teamConfigs;
+    if (configs.length === 0) {
       setLaunchStatus('No team configs to launch');
       setTimeout(() => setLaunchStatus(null), 3000);
       return;
     }
     setLaunchStatus('Launching agents...');
     try {
-      const files = teamConfigs.map(c => c.configFile);
+      const files = configs.map(c => c.configFile);
       const data = await processesApi.batch(files);
       setLaunchStatus(`Launched ${data.launched} agents`);
       setTimeout(() => setLaunchStatus(null), 5000);

@@ -26,7 +26,7 @@ import { AgentConfig, SessionContext } from './types.js';
 import { loadJSON, saveJSON, sleep } from './utils.js';
 import { WorkItemExecutor } from './work-item-executor.js';
 import { WorkflowEngine } from './workflow-engine.js';
-import { ExitEvaluation, OutOfBandMessage, StateCommand, StateExecutionResult, WorkflowAssignment } from './workflow-types.js';
+import { ExitEvaluation, OutOfBandMessage, StateCommand, StateExecutionResult, TaskState, WorkflowAssignment } from './workflow-types.js';
 import { WorkItem, WorkspaceManager } from './workspace-manager.js';
 import { broadcast } from './api/websocket.js';
 
@@ -78,6 +78,8 @@ export class AutonomousAgent {
   private agentRegistry: AgentRegistry | null = null;
   /** Path to the manifest status persistence file (set at startup) */
   private manifestStatusPath: string | null = null;
+  /** Directory containing the manifest file (used to resolve spec paths) */
+  private manifestDir: string | null = null;
 
   constructor(config: AgentConfig, configPath?: string) {
     this.config = config;
@@ -370,10 +372,13 @@ export class AutonomousAgent {
           'Workflow engine loaded'
         );
 
-        // Look for a sibling task manifest (same directory, .task-manifest.json suffix)
+        // Look for a task manifest: explicit config path takes priority,
+        // otherwise fall back to naming convention (sibling .task-manifest.json)
         const workflowDir = path.dirname(workflowPath);
         const workflowBasename = path.basename(workflowPath, '.workflow.json');
-        const manifestPath = path.join(workflowDir, `${workflowBasename}.task-manifest.json`);
+        const manifestPath = this.config.agent.manifestFile
+          ? path.resolve(path.dirname(this.configPath), this.config.agent.manifestFile)
+          : path.join(workflowDir, `${workflowBasename}.task-manifest.json`);
         try {
           await this.workflowEngine.loadManifestFromFile(manifestPath);
           this.logger.info(
@@ -383,6 +388,7 @@ export class AutonomousAgent {
 
           // Persist/restore status file alongside the manifest
           this.manifestStatusPath = manifestPath.replace(/\.json$/, '.status.json');
+          this.manifestDir = path.dirname(manifestPath);
           await this.workflowEngine.restoreManifestStatus(this.manifestStatusPath);
         } catch {
           // No manifest file -- dependency gating disabled (optional feature)
@@ -523,28 +529,32 @@ export class AutonomousAgent {
 
         // PRIORITY 2: WIP gate for manager role.
         // If there are in-flight delegations at or above the WIP limit,
-        // the manager waits for completion messages before delegating more work.
+        // the manager still processes incoming messages (especially DONE
+        // notifications) but skips manifest-driven dispatch.
         const wipLimit = this.config.agent.wipLimit ?? 1; // default: 1
-        if (wipLimit > 0 && this.config.agent.role === 'manager') {
-          const inFlightCount = this.getInFlightCount();
-          if (inFlightCount >= wipLimit) {
-            this.logger.info(
-              { inFlightCount, wipLimit },
-              'WIP limit reached -- checking for completion messages only',
-            );
-            await this.checkForCompletionMessages();
-            this.expireStaleInFlightDelegations();
-            await saveJSON(this.contextFile, this.context);
-            const wipJitter = 0.75 + Math.random() * 0.5;
-            const wipSleepMs = Math.round(this.config.agent.checkIntervalMs * wipJitter);
-            this.logger.debug(`WIP gate active -- sleeping ${(wipSleepMs / 1000).toFixed(1)}s`);
-            const sleepChunkMs = 1000;
-            const wipChunks = Math.ceil(wipSleepMs / sleepChunkMs);
-            for (let i = 0; i < wipChunks && this.running; i++) {
-              await sleep(sleepChunkMs);
-            }
-            continue;
+        const isManager = this.config.agent.role === 'manager';
+        const wipFull = isManager && wipLimit > 0 && this.getInFlightCount() >= wipLimit;
+
+        if (wipFull) {
+          this.logger.info(
+            { inFlightCount: this.getInFlightCount(), wipLimit },
+            'WIP limit reached -- processing messages but skipping new dispatch',
+          );
+          // Still process incoming messages to handle DONE notifications
+          await this.checkForCompletionMessages();
+          this.expireStaleInFlightDelegations();
+          // Also check normal mailbox for workflow DONE messages
+          await this.checkAndProcessMailbox();
+          await saveJSON(this.contextFile, this.context);
+          const wipJitter = 0.75 + Math.random() * 0.5;
+          const wipSleepMs = Math.round(this.config.agent.checkIntervalMs * wipJitter);
+          this.logger.debug(`WIP gate active -- sleeping ${(wipSleepMs / 1000).toFixed(1)}s`);
+          const sleepChunkMs = 1000;
+          const wipChunks = Math.ceil(wipSleepMs / sleepChunkMs);
+          for (let i = 0; i < wipChunks && this.running; i++) {
+            await sleep(sleepChunkMs);
           }
+          continue;
         }
 
         // PRIORITY 3: Process pending work items from previous messages
@@ -558,6 +568,12 @@ export class AutonomousAgent {
 
           // PRIORITY 4: Check normal and background mailbox for new messages
           await this.checkAndProcessMailbox();
+
+          // PRIORITY 5: Manifest-driven dispatch of ready tasks.
+          // After processing messages (which may include DONE notifications
+          // that unblock downstream tasks), dispatch any newly-ready tasks
+          // from the manifest up to the WIP limit.
+          await this.dispatchReadyTasks();
         }
 
         // Save context after each iteration
@@ -1029,6 +1045,143 @@ export class AutonomousAgent {
   }
 
   /**
+   * Dispatch ready tasks from the manifest when WIP capacity is available.
+   *
+   * This is the manifest-driven dispatch loop: after processing incoming
+   * messages (especially DONE notifications), the manager checks the manifest
+   * for tasks whose dependencies are met and dispatches them to the developer.
+   *
+   * Replaces the old model where the seed script had to send individual
+   * assignment messages for every task upfront.
+   */
+  private async dispatchReadyTasks(): Promise<void> {
+    if (!this.workflowEngine || !this.manifestDir) return;
+    if (this.config.agent.role !== 'manager') return;
+
+    const wipLimit = this.config.agent.wipLimit ?? 1;
+
+    // Iterate all loaded manifests
+    for (const [workflowId, manifest] of this.workflowEngine.getAllManifests()) {
+      const readyTasks = this.workflowEngine.getReadyTasks(workflowId);
+      if (readyTasks.length === 0) continue;
+
+      for (const entry of readyTasks) {
+        // Re-check WIP limit for each dispatch (it may have filled up)
+        if (wipLimit > 0) {
+          const inFlightCount = this.getInFlightCount();
+          if (inFlightCount >= wipLimit) {
+            this.logger.info(
+              { inFlightCount, wipLimit, taskId: entry.taskId },
+              'Manifest dispatch: WIP limit reached -- deferring remaining tasks',
+            );
+            return;
+          }
+        }
+
+        // Read the spec file to get the task prompt
+        const specPath = path.join(this.manifestDir, entry.spec);
+        let taskPrompt: string;
+        try {
+          const raw = await fs.readFile(specPath, 'utf-8');
+          // Strip YAML frontmatter if present
+          const fmMatch = raw.match(/^---\n[\s\S]*?\n---\n([\s\S]*)$/);
+          taskPrompt = fmMatch ? fmMatch[1].trim() : raw.trim();
+        } catch (err) {
+          this.logger.error(
+            { taskId: entry.taskId, specPath, error: String(err) },
+            'Manifest dispatch: failed to read spec file -- skipping task',
+          );
+          continue;
+        }
+
+        // Extract subject from the manifest entry description
+        const subject = entry.description || entry.taskId;
+
+        this.logger.info(
+          { taskId: entry.taskId, workflowId, subject },
+          'Manifest dispatch: dispatching ready task',
+        );
+
+        // Build a WorkflowAssignment targeting ASSIGN on the manager
+        // (same format as what pack-workflow / seed script creates)
+        const now = new Date().toISOString();
+
+        // Inject manifest-level variables into task context so workflow
+        // templates ({{targetBranch}}, {{targetDir}}) resolve per-project.
+        const manifestContext: Record<string, string> = {};
+        const manifest = this.workflowEngine.getManifest(workflowId);
+        if (manifest) {
+          if (manifest.targetBranch) {
+            manifestContext.targetBranch = manifest.targetBranch;
+          }
+          if (manifest.targetDir) {
+            manifestContext.targetDir = manifest.targetDir;
+          }
+        }
+
+        const taskState: TaskState = {
+          taskId: entry.taskId,
+          workflowId,
+          currentState: 'ASSIGN',
+          context: { ...manifestContext },
+          retryCount: 0,
+          history: [
+            {
+              fromState: '__init__',
+              toState: 'ASSIGN',
+              result: 'success' as const,
+              role: 'manager',
+              timestamp: now,
+            },
+          ],
+          notes: [],
+          createdAt: now,
+          updatedAt: now,
+        };
+
+        const assignment: WorkflowAssignment = {
+          type: 'workflow',
+          workflowId,
+          taskId: entry.taskId,
+          targetState: 'ASSIGN',
+          targetRole: 'manager',
+          taskPrompt,
+          taskState,
+        };
+
+        // Process the assignment through the existing workflow handler.
+        // This will: receive the assignment → mechanical routing (ASSIGN has
+        // empty prompt) → transition to IMPLEMENTING → route to developer.
+        try {
+          // Synthesize a minimal message object for processWorkflowAssignment
+          const syntheticMessage = {
+            id: `manifest-dispatch-${entry.taskId}`,
+            subject: `[Workflow] ASSIGN: ${subject}`,
+            content: '',
+            from: this.config.agent.hostname,
+            priority: 'NORMAL' as const,
+          };
+
+          await this.processWorkflowAssignment(syntheticMessage, assignment);
+
+          this.logger.info(
+            { taskId: entry.taskId },
+            'Manifest dispatch: task dispatched successfully',
+          );
+        } catch (err) {
+          this.logger.error(
+            { taskId: entry.taskId, error: String(err) },
+            'Manifest dispatch: failed to dispatch task',
+          );
+        }
+
+        // Persist status after each dispatch
+        await this.persistManifestStatus();
+      }
+    }
+  }
+
+  /**
    * Persist manifest task status to disk (survives agent restarts).
    */
   private async persistManifestStatus(): Promise<void> {
@@ -1429,6 +1582,20 @@ ${message.content}
           this.workflowEngine!.markTaskEscalated(assignment.taskId);
         }
 
+        // Clear any in-flight WIP delegation for this task so the WIP
+        // slot is freed regardless of which code path handled the DONE
+        // message (checkPriorityMailbox, checkForCompletionMessages, or
+        // checkAndProcessMailbox).
+        const delegations = this.context.inFlightDelegations ?? {};
+        for (const [key, d] of Object.entries(delegations)) {
+          if (d.subject?.includes(assignment.taskId) || key.includes(assignment.taskId)) {
+            this.clearInFlightDelegation(key);
+            break;
+          }
+        }
+
+        await this.persistManifestStatus();
+
         // Remove the task from active tracking so the Bug 12 guard
         // does not block subsequent unstructured messages (e.g. defect
         // reports) after the workflow completes.
@@ -1715,14 +1882,17 @@ ${message.content}
       return;
     }
 
-    // If the workflow state has an empty prompt, it is purely mechanical
-    // (e.g. MERGING, VALIDATING) -- the onEntryCommands already ran
-    // above and there is nothing for the LLM to decompose.  Proceed
-    // directly to the completion / state-transition handler.
-    if (!received.prompt || received.prompt.trim() === '') {
+    // If the workflow state has an empty prompt in the workflow definition,
+    // it is purely mechanical (e.g. MERGING) -- the onEntryCommands already
+    // ran above and there is nothing for the LLM to decompose.  Check the
+    // raw state prompt from the workflow definition, not the composed prompt
+    // (which includes history, notes, task details and is never truly empty).
+    const workflow = this.workflowEngine!.getWorkflow(assignment.workflowId);
+    const rawStatePrompt = workflow?.states[assignment.targetState]?.prompt?.trim() ?? '';
+    if (rawStatePrompt.length === 0) {
       this.logger.info(
         { taskId: received.taskId, state: assignment.targetState },
-        'Workflow state has empty prompt -- skipping LLM decomposition (mechanical state)',
+        'Workflow state has empty raw prompt -- skipping LLM decomposition (mechanical state)',
       );
       await this.handleWorkflowTransition();
       return;
@@ -1990,10 +2160,10 @@ ${message.content}
       // to do it during the main work items.
       const exitCommands = this.workflowEngine.getStateCommands(taskId, 'exit');
       if (exitCommands.length > 0) {
-        const { success: exitOk, captured } = await this.executeStateCommands(exitCommands, 'exit', taskId);
+        const { success: exitOk, captured, failedCommand, failedError } = await this.executeStateCommands(exitCommands, 'exit', taskId);
         if (!exitOk) {
           this.logger.error(
-            { taskId },
+            { taskId, failedCommand, failedError },
             'Exit commands failed -- marking transition as failure so workflow can retry or escalate',
           );
           result.success = false;
@@ -2001,12 +2171,16 @@ ${message.content}
 
           // Record the failure as a persistent note so the retrying agent
           // can see that work was completed but the commit/push failed.
+          // Include the specific error output so the agent can fix the issue.
           const currentTask = this.workflowEngine.getTask(taskId);
           const currentState = currentTask?.currentState ?? 'unknown';
+          const errorDetail = failedError
+            ? `\nFailed command: ${failedCommand}\nError output:\n${failedError}`
+            : '';
           this.workflowEngine.addNote(
             taskId,
             this.config.agent.role,
-            `[${currentState}] Exit commands failed: ${result.error}. Work was completed but may not have been committed/pushed.`,
+            `[${currentState}] Exit commands failed: ${result.error}. Work was completed but may not have been committed/pushed.${errorDetail}`,
           );
         }
         // Merge captured values (e.g. commitSha from `git rev-parse HEAD`)
@@ -2124,7 +2298,7 @@ ${message.content}
                 to: target,
                 subject,
                 content: '',
-                priority: 'NORMAL',
+                priority: 'HIGH',
                 messageType: 'workflow',
                 payload,
               },
@@ -2180,7 +2354,9 @@ ${message.content}
           );
         }
 
-        const subject = `[Workflow] ${assignment.targetState}: ${this.context.currentTask?.subject || taskId}`;
+        // Use the task ID as the subject base to avoid accumulating nested
+        // [Workflow] prefixes from prior state transitions.
+        const subject = `[Workflow] ${assignment.targetState}: ${taskId}`;
 
         // Self-loop detection: if the target role matches our own role,
         // re-queue to ourselves instead of looking in teamMembers (which
@@ -2193,17 +2369,28 @@ ${message.content}
           : await this.resolveTargetByRole(transition.role!);
         if (target) {
           // Send using strict schema -- JSON payload, no embedded markers
+          // Terminal state notifications (DONE, ESCALATED) use HIGH priority
+          // so the manager processes them before queued assignments.
+          const msgPriority = transition.isTerminal ? 'HIGH' : 'NORMAL';
           const routeResult = await this.backend.sendMessage(
             target,
             {
               to: target,
               subject,
               content: '',
-              priority: 'NORMAL',
+              priority: msgPriority,
               messageType: 'workflow',
               payload: assignment as unknown as Record<string, unknown>,
             },
           );
+
+          if (!routeResult.success) {
+            this.logger.error(
+              { taskId, target: target.hostname, error: routeResult.message },
+              'Failed to send workflow assignment to peer',
+            );
+            return;
+          }
 
           // Record WIP delegation so the manager's WIP gate blocks
           // further dispatches until the developer completes this task.
@@ -2896,8 +3083,12 @@ ${message.content}
           this.logger.info({ key, from: senderStr, subject: msg.subject }, 'WIP: matched completion message');
           matched = true;
           await this.backend.acknowledgeMessage(msg.id);
-          if (d.workflowTaskId && this.workflowEngine) {
-            this.activeWorkflowTaskId = d.workflowTaskId;
+          // Always process completion messages through the workflow
+          // pipeline so markTaskDone() fires and unblocks downstream
+          // tasks in the manifest.  Previously gated on d.workflowTaskId
+          // which was never set, causing DONE messages to be consumed
+          // without updating the manifest dependency graph.
+          if (this.workflowEngine) {
             await this.classifyAndProcessMessage(msg);
           }
           this.clearInFlightDelegation(key);
