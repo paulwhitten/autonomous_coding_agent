@@ -46,6 +46,7 @@ echo "Copying source code..."
 cp -r ../../src manager/agent/
 cp -r ../../templates manager/agent/
 cp ../../package.json manager/agent/
+  cp ../../package-lock.json manager/agent/
 cp ../../tsconfig.json manager/agent/
 cp ../../roles.json manager/agent/
 
@@ -56,7 +57,7 @@ cp manager/agent/config.template.json manager/agent/config.json
 # Install dependencies
 echo "Installing dependencies..."
 cd manager/agent
-npm install
+npm ci
 cd ../..
 
 # Now that tsx is available, define the CLI command

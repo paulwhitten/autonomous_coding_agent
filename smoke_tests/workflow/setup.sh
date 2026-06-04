@@ -23,7 +23,7 @@ if [ ! -d "${HARNESS_ROOT}/node_modules" ]; then
 fi
 
 # CLI will be invoked via npx tsx after deps are installed
-CLI=""  # set after npm install
+CLI=""  # set after npm ci
 
 echo "Setting up workflow engine smoke test..."
 echo "This tests workflow classification, prompt injection, and transition routing."
@@ -48,6 +48,7 @@ echo "Copying source code..."
 cp -r ../../src developer/agent/
 cp -r ../../templates developer/agent/
 cp ../../package.json developer/agent/
+cp ../../package-lock.json developer/agent/
 cp ../../tsconfig.json developer/agent/
 cp ../../roles.json developer/agent/
 
@@ -58,7 +59,7 @@ cp developer/agent/config.template.json developer/agent/config.json
 # Install dependencies (needed before CLI can run)
 echo "Installing dependencies..."
 cd developer/agent
-npm install
+npm ci
 cd ../..
 
 # Now that tsx is available, define the CLI command

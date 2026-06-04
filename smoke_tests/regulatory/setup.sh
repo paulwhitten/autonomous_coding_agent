@@ -120,6 +120,7 @@ setup_agent() {
   cp -r ../../src ${AGENT_DIR}/agent/
   cp -r ../../templates ${AGENT_DIR}/agent/
   cp ../../package.json ${AGENT_DIR}/agent/
+  cp ../../package-lock.json ${AGENT_DIR}/agent/
   cp ../../tsconfig.json ${AGENT_DIR}/agent/
   cp ../../roles.json ${AGENT_DIR}/agent/
   cp ${AGENT_DIR}/agent/config.template.json ${AGENT_DIR}/agent/config.json
@@ -135,8 +136,8 @@ setup_agent() {
   echo "  Cloned origin.git -> ${AGENT_DIR}/agent/workspace/project/"
 
   echo "Installing ${AGENT_NAME} agent dependencies..."
-  ( cd ${AGENT_DIR}/agent && npm install --silent 2>&1 | tail -5 ) || {
-    echo "WARNING: npm install for ${AGENT_NAME} exited non-zero (continuing)"
+  ( cd ${AGENT_DIR}/agent && npm ci --silent 2>&1 | tail -5 ) || {
+    echo "WARNING: npm ci for ${AGENT_NAME} exited non-zero (continuing)"
   }
 }
 
@@ -144,7 +145,7 @@ setup_agent "RA (Requirements Analyst)" "ra"
 setup_agent "Developer" "developer"
 setup_agent "QA" "qa"
 
-# CLI available after npm install
+# CLI available after npm ci
 CLI="npx --prefix developer/agent tsx ${HARNESS_ROOT}/scripts/smoke-test-cli.ts"
 
 # ----------------------------------------------------------------
