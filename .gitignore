@@ -46,5 +46,8 @@ smoke_tests/**/agent/*.sh
 smoke_tests/**/agent/*.js
 smoke_tests/**/agent/mailbox/
 
+# Judge reports (generated at runtime)
+smoke_tests/**/judge/*.json
+
 # tests
 web/test-results/

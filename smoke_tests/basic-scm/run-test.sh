@@ -145,4 +145,8 @@ echo "  - test.log (agent execution log)"
 echo "  - agent/workspace/project/ (project with git history)"
 echo ""
 
+# Run LLM judge (non-blocking — does not affect test exit code)
+source "$SCRIPT_DIR/../judge/run-judge.sh"
+run_judge "$SCRIPT_DIR"
+
 exit $RESULT

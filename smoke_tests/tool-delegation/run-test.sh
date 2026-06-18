@@ -160,4 +160,8 @@ echo "  - test.log (agent execution log)"
 echo "  - shared-mailbox/mailbox/to_* (recipient mailboxes)"
 echo ""
 
+# Run LLM judge (non-blocking — does not affect test exit code)
+source "$SCRIPT_DIR/../judge/run-judge.sh"
+run_judge "$SCRIPT_DIR"
+
 exit $RESULT
