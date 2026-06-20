@@ -17,6 +17,14 @@ run_judge() {
   local test_dir="$1"
   shift
 
+  # Optional task-specific instructions override (opt-in via env var).
+  # When set, the judge grades against this file instead of the default
+  # workspace/project/.github/copilot-instructions.md.
+  local instructions_args=()
+  if [ -n "${JUDGE_INSTRUCTIONS:-}" ]; then
+    instructions_args=(--instructions "$JUDGE_INSTRUCTIONS")
+  fi
+
   # If no roles specified, use the default single-agent layout
   if [ $# -eq 0 ]; then
     local workspace="${test_dir}/agent/workspace"
@@ -24,7 +32,7 @@ run_judge() {
       echo ""
       echo "Running LLM judge..."
       npx --prefix "${test_dir}/agent" tsx "$JUDGE_SCRIPT" \
-        --smoke-test "$test_dir" 2>&1 || echo "(Judge returned non-zero — report may be incomplete)"
+        --smoke-test "$test_dir" "${instructions_args[@]}" 2>&1 || echo "(Judge returned non-zero — report may be incomplete)"
     else
       echo "(Skipping judge — no workspace/tasks found)"
     fi

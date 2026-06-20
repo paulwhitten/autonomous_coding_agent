@@ -55,6 +55,11 @@ export class AutonomousAgent {
   private quotaManager: QuotaManager;
   private hostname: string;
   private workflowEngine: WorkflowEngine | null = null;
+  /** True once a workflow definition has loaded successfully. In this mode the
+   *  workflow engine is the sole driver of the message lifecycle, so the
+   *  message-lifecycle/routing mailbox tools are suppressed from the LLM
+   *  session to prevent it from short-circuiting the engine. */
+  private workflowModeActive: boolean = false;
   /** Task ID currently active in the workflow engine (set when a workflow
    *  assignment message is received, consumed during work item execution). */
   private activeWorkflowTaskId: string | null = null;
@@ -367,6 +372,7 @@ export class AutonomousAgent {
           this.config.agent.workflowFile
         );
         await this.workflowEngine.loadWorkflowFromFile(workflowPath);
+        this.workflowModeActive = true;
         this.logger.info(
           { workflowFile: this.config.agent.workflowFile },
           'Workflow engine loaded'
@@ -748,8 +754,13 @@ export class AutonomousAgent {
     // Create WIP tracking callback and store for later use in processWorkflowAssignment()
     this.onMessageSentCallback = this.createOnMessageSentCallback();
 
-    // Create tools array with WIP tracking callback for manager role
-    const tools = createMailboxTools(this.mailbox, this.onMessageSentCallback);
+    // Create tools array with WIP tracking callback for manager role.
+    // In workflow-driven mode, suppress the message-lifecycle/routing tools so
+    // the LLM cannot intercept or archive workflow assignments and bypass the
+    // engine (the engine is the sole driver of the message lifecycle).
+    const tools = createMailboxTools(this.mailbox, this.onMessageSentCallback, {
+      workflowDriven: this.workflowModeActive,
+    });
 
     this.logger.info({
       toolCount: tools.length,
@@ -804,7 +815,9 @@ export class AutonomousAgent {
 
       // Create WIP tracking callback and store for later use in processWorkflowAssignment()
       this.onMessageSentCallback = this.createOnMessageSentCallback();
-      const tools = createMailboxTools(this.mailbox, this.onMessageSentCallback);
+      const tools = createMailboxTools(this.mailbox, this.onMessageSentCallback, {
+        workflowDriven: this.workflowModeActive,
+      });
 
       const config = {
         model: quotaCheck.model,

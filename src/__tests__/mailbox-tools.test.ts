@@ -60,6 +60,32 @@ describe('Mailbox Tools', () => {
       expect(names).toContain('send_completion_report');
     });
 
+    it('should suppress message-lifecycle and routing tools in workflow-driven mode', () => {
+      const tools = createMailboxTools(mailbox, undefined, { workflowDriven: true });
+      const names = tools.map((t: any) => t.name);
+      // Message-lifecycle / routing tools are owned by the workflow engine
+      expect(names).not.toContain('check_mailbox');
+      expect(names).not.toContain('read_message');
+      expect(names).not.toContain('archive_message');
+      expect(names).not.toContain('send_completion_report');
+      expect(names).not.toContain('escalate_issue');
+      expect(names).not.toContain('send_message');
+      expect(names).not.toContain('send_broadcast');
+      // Read-only discovery tools remain available
+      expect(names).toContain('get_team_roster');
+      expect(names).toContain('find_agents_by_role');
+      expect(names).toContain('find_agents_by_capability');
+      expect(names).toContain('get_agent_info');
+    });
+
+    it('should expose all tools when workflowDriven is false', () => {
+      const tools = createMailboxTools(mailbox, undefined, { workflowDriven: false });
+      const names = tools.map((t: any) => t.name);
+      expect(names).toContain('check_mailbox');
+      expect(names).toContain('archive_message');
+      expect(names).toContain('send_completion_report');
+    });
+
     it('should create tools with correct structure', () => {
       const tools = createMailboxTools(mailbox);
       tools.forEach((tool: any) => {

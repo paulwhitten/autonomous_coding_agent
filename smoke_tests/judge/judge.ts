@@ -26,6 +26,7 @@ import { CopilotClient } from '@github/copilot-sdk';
 import { SessionManager } from '../../src/session-manager.js';
 import fs from 'fs/promises';
 import path from 'path';
+import { execSync } from 'node:child_process';
 import { parseArgs } from 'node:util';
 import pino from 'pino';
 
@@ -74,7 +75,10 @@ interface JudgeReport {
   test: string;
   timestamp: string;
   workspace: string;
-  model: string;
+  /** The model that performed the evaluation (the LLM judge). */
+  judge_model: string;
+  /** The model that produced the work being assessed (the agent under test). */
+  assessed_model: string;
   config: JudgeConfig;
   scores: Scores;
   overall: JudgeVerdict['overall'];
@@ -100,6 +104,7 @@ interface WorkspaceArtifacts {
   completedTasks: string[];
   failedTasks: string[];
   pendingTasks: string[];
+  gitEvidence: string;
 }
 
 // ---------------------------------------------------------------------------
@@ -166,6 +171,59 @@ async function loadConfig(): Promise<JudgeConfig> {
   }
 
   return config;
+}
+
+// ---------------------------------------------------------------------------
+// Git Evidence Collection
+//
+// The rubric scores commit history and working-tree cleanliness, but the judge
+// LLM has no terminal access. Without real git data it fabricates command
+// output (e.g. "git log -- . is empty"), producing inconsistent scores across
+// runs with identical artifacts. We collect the actual git state here and pass
+// it into the prompt so scoring is strictly evidence-based.
+// ---------------------------------------------------------------------------
+
+function collectGitEvidence(projectPath: string): string {
+  const run = (cmd: string): string => {
+    try {
+      return execSync(cmd, {
+        cwd: projectPath,
+        encoding: 'utf-8',
+        stdio: ['ignore', 'pipe', 'ignore'],
+      }).trim();
+    } catch {
+      return '';
+    }
+  };
+
+  // Is the project directory ITSELF a git repository?  `--is-inside-work-tree`
+  // alone is insufficient: it returns true even when only a parent directory is
+  // a repo (e.g. the project sits inside the harness's own checkout). Tests that
+  // do not use source control would then leak the outer repo's commits and
+  // status into the evidence. Require the repo top-level to be the project dir.
+  const isRepo = run('git rev-parse --is-inside-work-tree') === 'true';
+  const topLevel = isRepo ? run('git rev-parse --show-toplevel') : '';
+  const projectIsRepoRoot =
+    isRepo && topLevel !== '' && path.resolve(topLevel) === path.resolve(projectPath);
+  if (!projectIsRepoRoot) {
+    return '(No git repository in the project directory — this test does not use source control, so commit history and working-tree cleanliness are not applicable and must NOT be scored or penalized.)';
+  }
+
+  const log = run('git log --oneline --no-decorate') || '(no commits)';
+  const status = run('git status --porcelain');
+  const statusText = status === '' ? '(clean — no uncommitted changes)' : status;
+  const fileHistory = run("git log --name-only --pretty=format:'commit %h %s'") || '(no commits)';
+
+  return [
+    '### git log (oldest at bottom)',
+    log,
+    '',
+    '### git status --porcelain',
+    statusText,
+    '',
+    '### Commits with files changed',
+    fileHistory,
+  ].join('\n');
 }
 
 // ---------------------------------------------------------------------------
@@ -238,7 +296,44 @@ async function collectArtifacts(
     readTaskNames('pending'),
   ]);
 
-  return { instructions, projectFiles, completedTasks, failedTasks, pendingTasks };
+  const gitEvidence = collectGitEvidence(projectPath);
+
+  return { instructions, projectFiles, completedTasks, failedTasks, pendingTasks, gitEvidence };
+}
+
+// ---------------------------------------------------------------------------
+// Assessed-Model Extraction
+//
+// Determines which model produced the work under test (the agent), as
+// opposed to the judge model.  The agent directory is the parent of the
+// workspace directory (workspace = <agent>/workspace).  Sources are
+// checked in order of reliability:
+//   1. agent/logs/agent.log — the model actually used at runtime (most
+//      reliable; the agent logs `{"model":"..."}` when creating sessions)
+//   2. agent/config.json — an explicit `copilot.model` override.  When the
+//      config exists but sets no model, the agent ran on the framework
+//      default, so this returns 'default'.
+// Returns 'unknown' only when no log and no config can be read.
+// ---------------------------------------------------------------------------
+
+async function extractAssessedModel(workspacePath: string): Promise<string> {
+  const agentDir = path.dirname(workspacePath);
+
+  // 1. Runtime log — authoritative record of the model actually used
+  try {
+    const logRaw = await fs.readFile(path.join(agentDir, 'logs', 'agent.log'), 'utf-8');
+    const match = logRaw.match(/"model"\s*:\s*"([^"]+)"/);
+    if (match && match[1]) return match[1];
+  } catch { /* no log — fall through */ }
+
+  // 2. Config — explicit override, or 'default' when the config sets no model
+  try {
+    const configRaw = await fs.readFile(path.join(agentDir, 'config.json'), 'utf-8');
+    const config = JSON.parse(configRaw) as { copilot?: { model?: string } };
+    return config.copilot?.model ?? 'default';
+  } catch { /* no config — fall through */ }
+
+  return 'unknown';
 }
 
 // ---------------------------------------------------------------------------
@@ -290,6 +385,22 @@ ${artifacts.instructions}
 ## Work Item Execution Summary
 
 ${taskLines}
+
+---
+
+## Git Evidence (actual repository state)
+
+The following is the real git history and working-tree status of the agent's
+project directory, captured directly from the repository. Use ONLY this evidence
+when scoring commit history, incremental commits, and working-tree cleanliness.
+Do NOT assume or fabricate git command output beyond what is shown here.
+
+If the evidence states that the project does not use source control, then commit
+history and working-tree cleanliness are NOT applicable to this test: do not
+score, deduct, or comment on them, and judge the run solely on its other
+deliverables.
+
+${artifacts.gitEvidence}
 
 ---
 
@@ -564,8 +675,9 @@ async function main(): Promise<void> {
   // Load config (convention over configuration)
   const config = await loadConfig();
 
-  // CLI --model overrides config.yml which overrides default
-  const model = (values['model'] as string | undefined) ?? config.model;
+  // CLI --model overrides config.yml which overrides default.
+  // This is the JUDGE model (the evaluator), not the model under test.
+  const judgeModel = (values['model'] as string | undefined) ?? config.model;
 
   // Resolve paths
   let workspacePath: string;
@@ -609,10 +721,14 @@ async function main(): Promise<void> {
 
   const logger = pino({ level: 'silent' });
 
+  // Determine which model produced the work under test (the agent)
+  const assessedModel = await extractAssessedModel(workspacePath);
+
   console.log(`Judge: ${testName}`);
   console.log(`Workspace: ${workspacePath}`);
   console.log(`Instructions: ${instructionsPath}`);
-  console.log(`Model: ${model}`);
+  console.log(`Judge model:    ${judgeModel}`);
+  console.log(`Assessed model: ${assessedModel}`);
   console.log(`Weights: ${Object.entries(config.weights).map(([k, v]) => `${k}=${(v * 100).toFixed(0)}%`).join(', ')}`);
   console.log('');
 
@@ -631,7 +747,7 @@ async function main(): Promise<void> {
 
   // Call LLM
   console.log('Calling LLM judge...');
-  const rawResponse = await callJudge(prompt, model, logger);
+  const rawResponse = await callJudge(prompt, judgeModel, logger);
 
   if (!rawResponse.trim()) {
     process.stderr.write('error: LLM returned an empty response\n');
@@ -657,7 +773,8 @@ async function main(): Promise<void> {
     test: testName,
     timestamp: new Date().toISOString(),
     workspace: workspacePath,
-    model,
+    judge_model: judgeModel,
+    assessed_model: assessedModel,
     config,
     scores: verdict.scores,
     overall: verdict.overall,
@@ -719,7 +836,13 @@ async function main(): Promise<void> {
   console.log(`Report saved to: ${outputPath}`);
 }
 
-main().catch(err => {
-  process.stderr.write(`error: ${err instanceof Error ? err.message : String(err)}\n`);
-  process.exit(1);
-});
+main()
+  .then(() => {
+    // The Copilot SDK client keeps an open connection that prevents the event
+    // loop from draining, so exit explicitly once the report is written.
+    process.exit(0);
+  })
+  .catch(err => {
+    process.stderr.write(`error: ${err instanceof Error ? err.message : String(err)}\n`);
+    process.exit(1);
+  });

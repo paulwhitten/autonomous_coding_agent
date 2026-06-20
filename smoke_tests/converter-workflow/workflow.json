@@ -1,0 +1,133 @@
+{
+  "$schema": "../../workflows/workflow.schema.json",
+  "id": "converter-workflow",
+  "name": "Converter Build Workflow",
+  "description": "Deterministic single-developer workflow that builds the SAME unit converter module as the converter-ad-hoc smoke test. The LLM only writes source/test code; the workflow engine performs all git commits and Jest runs deterministically via onExitCommands. This is the workflow-driven counterpart to converter-ad-hoc (LLM-driven) for A/B comparison.",
+  "version": "1.0.0",
+  "initialState": "CREATE_MODULE",
+  "terminalStates": ["DONE"],
+  "globalContext": {
+    "projectPath": "workspace/project"
+  },
+  "states": {
+    "CREATE_MODULE": {
+      "name": "Create Converter Module",
+      "role": "developer",
+      "description": "Developer creates converter.ts with three conversion functions. The engine commits the file deterministically on exit.",
+      "prompt": "You are building a TypeScript unit converter module. The project is at {{projectPath}} and already has a Jest + TypeScript setup (package.json, jest.config.cjs, tsconfig.json) — do NOT create or modify those.\n\nYour ONLY task in this step:\n\nCreate a file named `converter.ts` in {{projectPath}} that exports exactly these three functions:\n  - `celsiusToFahrenheit(c: number): number` — returns (c * 9/5) + 32\n  - `fahrenheitToCelsius(f: number): number` — returns (f - 32) * 5/9\n  - `milesToKilometers(m: number): number` — returns m * 1.60934\n\nUse `export function` declarations. Do not add any other functions yet.\n\nIMPORTANT — the workflow engine handles process steps for you:\n  - Do NOT run git or make commits.\n  - Do NOT run jest or any tests.\n  - Do NOT create test files yet.\nJust write converter.ts and report what you created.",
+      "allowedTools": ["terminal", "file_ops"],
+      "transitions": {
+        "onSuccess": "WRITE_TESTS",
+        "onFailure": "CREATE_MODULE"
+      },
+      "maxRetries": 1,
+      "timeoutMs": 300000,
+      "onExitCommands": [
+        { "command": "test -f converter.ts", "reason": "Gate: the developer must have created converter.ts before we can proceed.", "failOnError": true },
+        { "command": "git add converter.ts && git commit -m 'feat: add unit converter module'", "reason": "Deterministic incremental commit of the new module.", "failOnError": true }
+      ],
+      "exitActions": [
+        { "type": "log", "params": { "message": "converter.ts created and committed for task {{taskId}}", "level": "info" } }
+      ]
+    },
+
+    "WRITE_TESTS": {
+      "name": "Write Unit Tests",
+      "role": "developer",
+      "description": "Developer writes converter.test.ts. The engine runs Jest (gating success), captures output, and commits deterministically.",
+      "prompt": "Continue building the converter module in {{projectPath}}. `converter.ts` already exists with celsiusToFahrenheit, fahrenheitToCelsius, and milesToKilometers.\n\nYour ONLY task in this step:\n\nCreate a file named `converter.test.ts` in {{projectPath}} with Jest tests for the three existing functions. Include at least these 8 cases:\n  - celsiusToFahrenheit(0) === 32\n  - celsiusToFahrenheit(100) === 212\n  - celsiusToFahrenheit(-40) === -40\n  - fahrenheitToCelsius(32) === 0\n  - fahrenheitToCelsius(212) === 100\n  - fahrenheitToCelsius(-40) === -40\n  - milesToKilometers(1) ≈ 1.60934 (use toBeCloseTo)\n  - milesToKilometers(0) === 0\n\nImport from './converter'. Use standard Jest `describe`/`it`/`expect`.\n\nIMPORTANT — the workflow engine handles process steps for you:\n  - Do NOT run git or make commits.\n  - Do NOT run jest yourself — the engine runs the tests and will fail this step if they do not pass.\nJust write converter.test.ts and report what you created.",
+      "allowedTools": ["terminal", "file_ops"],
+      "transitions": {
+        "onSuccess": "ADD_KG",
+        "onFailure": "WRITE_TESTS"
+      },
+      "maxRetries": 1,
+      "timeoutMs": 300000,
+      "onExitCommands": [
+        { "command": "test -f converter.test.ts", "reason": "Gate: the developer must have created converter.test.ts.", "failOnError": true },
+        { "command": "npx jest > test_output.txt 2>&1", "reason": "Run Jest deterministically: gates success (non-zero exit blocks the transition) AND captures the console output to test_output.txt.", "failOnError": true },
+        { "command": "git add converter.test.ts && git commit -m 'test: add converter unit tests'", "reason": "Deterministic incremental commit of the test file.", "failOnError": true },
+        { "command": "git add test_output.txt && git commit -m 'docs: capture test output'", "reason": "Deterministic commit of the captured Jest output.", "failOnError": true }
+      ],
+      "exitActions": [
+        { "type": "log", "params": { "message": "Tests written, Jest passed, output captured for task {{taskId}}", "level": "info" } }
+      ]
+    },
+
+    "UPDATE_README": {
+      "name": "Update README",
+      "role": "developer",
+      "description": "Developer documents the converter in README.md. Runs after the module is complete so all four functions are documented. The engine commits deterministically.",
+      "prompt": "The converter module in {{projectPath}} is now complete: `converter.ts` exports all four functions (celsiusToFahrenheit, fahrenheitToCelsius, milesToKilometers, kilogramsToPounds) and the tests pass.\n\nYour ONLY task in this step:\n\nUpdate `README.md` in {{projectPath}} to describe the unit converter module. Include a short description and a usage example showing how to import and call EACH of the four functions, including kilogramsToPounds.\n\nIMPORTANT — the workflow engine handles process steps for you:\n  - Do NOT run git or make commits.\n  - Do NOT run jest.\nJust update README.md and report what you changed.",
+      "allowedTools": ["terminal", "file_ops"],
+      "transitions": {
+        "onSuccess": "DONE",
+        "onFailure": "UPDATE_README"
+      },
+      "maxRetries": 1,
+      "timeoutMs": 300000,
+      "onExitCommands": [
+        { "command": "git add README.md && (git diff --cached --quiet || git commit -m 'docs: update README with converter usage')", "reason": "Deterministic commit of README changes, if any.", "failOnError": false }
+      ],
+      "exitActions": [
+        { "type": "log", "params": { "message": "README updated for task {{taskId}}", "level": "info" } }
+      ]
+    },
+
+    "ADD_KG": {
+      "name": "Add kilogramsToPounds",
+      "role": "developer",
+      "description": "Developer extends converter.ts with a fourth function WITHOUT removing the existing three. The engine gates and commits deterministically.",
+      "prompt": "Extend the existing converter module in {{projectPath}}. `converter.ts` already exports celsiusToFahrenheit, fahrenheitToCelsius, and milesToKilometers — you MUST keep all three.\n\nYour ONLY task in this step:\n\nAdd one new exported function to `converter.ts`:\n  - `kilogramsToPounds(kg: number): number` — returns kg * 2.20462\n\nDo NOT remove or rename the existing functions. Do NOT modify the test file in this step.\n\nIMPORTANT — the workflow engine handles process steps for you:\n  - Do NOT run git or make commits.\n  - Do NOT run jest.\nJust edit converter.ts and report what you added.",
+      "allowedTools": ["terminal", "file_ops"],
+      "transitions": {
+        "onSuccess": "ADD_KG_TESTS",
+        "onFailure": "ADD_KG"
+      },
+      "maxRetries": 1,
+      "timeoutMs": 300000,
+      "onExitCommands": [
+        { "command": "grep -q 'kilogramsToPounds' converter.ts", "reason": "Gate: converter.ts must now contain kilogramsToPounds.", "failOnError": true },
+        { "command": "grep -q 'celsiusToFahrenheit' converter.ts && grep -q 'fahrenheitToCelsius' converter.ts && grep -q 'milesToKilometers' converter.ts", "reason": "Gate: the original three functions must still be present (no overwrite).", "failOnError": true },
+        { "command": "git add converter.ts && (git diff --cached --quiet || git commit -m 'feat: add kilogramsToPounds converter')", "reason": "Deterministic commit of the extended module.", "failOnError": true }
+      ],
+      "exitActions": [
+        { "type": "log", "params": { "message": "kilogramsToPounds added for task {{taskId}}", "level": "info" } }
+      ]
+    },
+
+    "ADD_KG_TESTS": {
+      "name": "Test kilogramsToPounds",
+      "role": "developer",
+      "description": "Developer adds tests for the fourth function. The engine re-runs Jest (gating success), recaptures output, and commits deterministically.",
+      "prompt": "Finish the converter module in {{projectPath}}. converter.ts now has four functions including kilogramsToPounds.\n\nYour ONLY task in this step:\n\nAdd at least 3 new Jest test cases for kilogramsToPounds to the existing `converter.test.ts` (keep all existing tests). Include:\n  - kilogramsToPounds(1) ≈ 2.20462 (use toBeCloseTo)\n  - kilogramsToPounds(0) === 0\n  - kilogramsToPounds(100) ≈ 220.462 (use toBeCloseTo)\n\nThe file must end up with at least 11 test cases total.\n\nIMPORTANT — the workflow engine handles process steps for you:\n  - Do NOT run git or make commits.\n  - Do NOT run jest yourself — the engine runs the full test suite and will fail this step if any test does not pass.\nJust edit converter.test.ts and report what you added.",
+      "allowedTools": ["terminal", "file_ops"],
+      "transitions": {
+        "onSuccess": "UPDATE_README",
+        "onFailure": "ADD_KG_TESTS"
+      },
+      "maxRetries": 1,
+      "timeoutMs": 300000,
+      "onExitCommands": [
+        { "command": "npx jest > test_output.txt 2>&1", "reason": "Re-run the full Jest suite deterministically: gates success AND recaptures the updated output.", "failOnError": true },
+        { "command": "git add converter.test.ts && (git diff --cached --quiet || git commit -m 'test: add kilogramsToPounds tests')", "reason": "Deterministic commit of the new tests.", "failOnError": false },
+        { "command": "git add test_output.txt && (git diff --cached --quiet || git commit -m 'docs: update test output with new tests')", "reason": "Deterministic commit of the refreshed Jest output.", "failOnError": false }
+      ],
+      "exitActions": [
+        { "type": "log", "params": { "message": "kilogramsToPounds tests added, full suite passed for task {{taskId}}", "level": "info" } }
+      ]
+    },
+
+    "DONE": {
+      "name": "Complete",
+      "role": "developer",
+      "description": "Terminal state. The converter module is built, tested, documented, and committed incrementally.",
+      "prompt": "",
+      "allowedTools": [],
+      "transitions": {
+        "onSuccess": null,
+        "onFailure": null
+      }
+    }
+  }
+}

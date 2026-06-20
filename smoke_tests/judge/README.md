@@ -71,7 +71,8 @@ A JSON file with this structure:
   "test": "basic",
   "timestamp": "2026-06-12T15:47:07.000Z",
   "workspace": "/path/to/workspace",
-  "model": "gpt-5.4",
+  "judge_model": "gpt-5.4",
+  "assessed_model": "gpt-4.1",
   "config": { "model": "gpt-5.4", "runs": 1, "weights": { "..." } },
   "scores": {
     "task_completion":       { "score": 5, "justification": "..." },
@@ -98,6 +99,24 @@ A JSON file with this structure:
   "raw_response": "..."
 }
 ```
+
+### Model Fields
+
+The report records two distinct models so the verdict is never ambiguous:
+
+| Field | Meaning | Source |
+|-------|---------|--------|
+| `judge_model` | The model that performed the evaluation (the LLM judge) | `--model` flag, else `config.yml`, else `gpt-5.4` |
+| `assessed_model` | The model that produced the work under test (the agent) | Agent runtime log (`agent/logs/agent.log`), else `agent/config.json` |
+
+The `assessed_model` is resolved in order of reliability:
+
+1. **Runtime log** -- the model actually used, read from the `{"model":"..."}` entries the agent writes when creating sessions.
+2. **Config override** -- an explicit `copilot.model` in `agent/config.json`.
+3. **`default`** -- the config exists but sets no model, so the agent ran on the framework default.
+4. **`unknown`** -- neither a log nor a config could be read.
+
+> The nested `config.model` field is the judge configuration snapshot and always matches `judge_model`.
 
 ## Rubric Dimensions
 
