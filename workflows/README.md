@@ -96,6 +96,147 @@ When writing or adapting a workflow:
    git merge, push, and branch cleanup, use empty `prompt` and empty
    `allowedTools`. The entry/exit commands do all the work.
 
+## Architectural Rationale: Declarative Workflows as Symbolic Knowledge
+
+This system uses declarative JSON state machines rather than procedural agent
+orchestration frameworks (LangGraph, CrewAI, AutoGen). This section explains
+the reasoning and the symbolic AI principles that inform the design.
+
+### The separation of knowledge and control
+
+The foundational principle is **separation of knowledge and control**, first
+articulated by Newell and Simon in their work on the General Problem Solver
+(1963) and later formalized in production rule system architectures.
+
+The architecture has three components:
+
+| Component | Symbolic AI term | Implementation |
+|-----------|-----------------|----------------|
+| Knowledge base | Rule base / declarative knowledge | `.workflow.json` files + task manifests |
+| Working memory | Current state of the world | Task state, context variables, mailbox messages |
+| Inference engine | Domain-independent processor | `workflow-engine.ts` + `agent.ts` main loop |
+
+The generic agent loop does not encode domain behavior. It reads the current
+state from the workflow definition, renders the prompt template, restricts
+tools, executes entry/exit commands, evaluates the transition condition, and
+routes the assignment. All behavior differences come from the JSON
+configuration, not from code changes.
+
+### Why not procedural orchestration (LangGraph, CrewAI, etc.)
+
+Procedural orchestration frameworks embed agent behavior in code. Each node
+in a LangGraph graph is a Python function that contains the prompt, tool
+binding, and routing logic. This conflates knowledge and control:
+
+| Requirement | Declarative workflow JSON | Procedural graph code |
+|---|---|---|
+| Per-state prompt templates | `"prompt": "Review {{branch}}"` | Embedded in node function body |
+| Per-state tool restrictions | `"allowedTools": ["terminal"]` | Bound at model level, not per-node |
+| Entry/exit shell commands | `"onExitCommands": [{"cmd": "git push"}]` | Written imperatively in each node |
+| Multi-agent role routing | `"role": "developer"` dispatches to physical agent | Custom routing code per edge |
+| Hot-reload without restart | Edit JSON, re-read at next state | Recompile and redeploy |
+| Non-programmer modification | Edit a JSON file | Edit Python/TypeScript code |
+
+The declarative approach means a workflow author (who may not be a software
+engineer) can define new workflows, add states, change transition logic, and
+modify prompts without touching the inference engine code.
+
+### Production rule systems
+
+The workflow engine is structurally a **production rule system** — a class of
+symbolic AI architecture originating in the 1970s with systems like OPS5,
+CLIPS, and R1/XCON.
+
+A production rule has the form:
+
+```text
+IF <condition> THEN <action>
+```
+
+In this system, each workflow state is a production rule:
+
+```text
+IF state = IMPLEMENTING AND result = success
+THEN execute exitCommands, transition to VALIDATING, route to qa role
+```
+
+The engine pattern-matches against the current state and fires the
+corresponding rule. This is the **recognize-act cycle** that all production
+systems share.
+
+Key properties inherited from production systems:
+
+- **Modularity** — rules (states) are independent; adding a state does not
+  require modifying others
+- **Monotonic growth** — new capabilities are added by adding rules, not by
+  restructuring existing ones
+- **Transparency** — the rule that fired and why is always visible in the
+  transition log
+- **Domain independence** — the same engine runs any workflow definition
+
+### Related architectures
+
+The system also draws from:
+
+- **Blackboard architecture** (Erman et al., 1980) — multiple specialist
+  agents (developer, QA, manager) communicate through a shared workspace
+  (the mailbox). Each agent operates independently and contributes to a
+  common solution without direct coupling.
+
+- **Behavior trees** (Isla, 2005; game AI) — the success/failure branching
+  at each state mirrors behavior tree tick evaluation. `onSuccess` and
+  `onFailure` transitions are selector/sequence nodes expressed declaratively.
+
+- **Table-driven methods** (McConnell, *Code Complete*, 1993) — replace
+  complex conditional logic with data tables. The workflow JSON is a state
+  transition table that eliminates switch statements from the agent code.
+
+### References
+
+1. Newell, A. & Simon, H.A. (1963). GPS: A Program that Simulates Human
+   Thought. In *Computers and Thought*, eds. Feigenbaum & Feldman.
+   — Establishes separation of knowledge and control.
+
+2. Forgy, C.L. (1982). Rete: A Fast Algorithm for the Many Pattern/Many
+   Object Pattern Match Problem. *Artificial Intelligence*, 19(1), 17–37.
+   — Production rule system matching algorithm (OPS5).
+
+3. Buchanan, B.G. & Shortliffe, E.H. (1984). *Rule-Based Expert Systems:
+   The MYCIN Experiments*. Addison-Wesley.
+   — Canonical example of knowledge/control separation in expert systems.
+
+4. Erman, L.D., Hayes-Roth, F., Lesser, V.R., & Reddy, D.R. (1980). The
+   Hearsay-II Speech-Understanding System. *Computing Surveys*, 12(2).
+   — Blackboard architecture for multi-agent cooperation.
+
+5. Isla, D. (2005). Handling Complexity in the Halo 2 AI. *GDC 2005*.
+   — Behavior trees for reactive agent control.
+
+6. McConnell, S. (1993). *Code Complete*. Microsoft Press. Chapter 18:
+   Table-Driven Methods.
+   — Data tables as a replacement for complex conditional logic.
+
+7. Jackson, P. (1998). *Introduction to Expert Systems*, 3rd ed.
+   Addison-Wesley. Chapters 5–7.
+   — Comprehensive treatment of production systems, forward/backward
+   chaining, and the recognize-act cycle.
+
+### Practical consequences
+
+This architecture yields specific operational benefits:
+
+1. **Testability** — the engine is tested with unit tests against synthetic
+   workflow definitions. No LLM calls needed to verify state machine logic.
+2. **Auditability** — every transition is logged with the rule that fired,
+   the inputs, and the outputs. The trace is a complete execution record.
+3. **Evolvability** — adding BLOCKED, ESCALATED, or any new state is a JSON
+   edit. The engine code remains unchanged.
+4. **Multi-tenancy** — different projects can use different workflow
+   definitions with the same agent binary.
+5. **Resilience** — the engine is deterministic. Given the same state and
+   inputs, it always produces the same transition. LLM non-determinism is
+   confined to within-state execution, not to the control flow.
+
 ## Customizing for Your Language
 
 The shipped workflow files default to **Rust** (`cargo build`, `cargo test`,

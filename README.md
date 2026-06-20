@@ -5,6 +5,7 @@ An autonomous coding agent built with GitHub Copilot SDK that can work on tasks 
 ## Quick Links
 
 - **[Quick Start Guide](QUICKSTART.md)** - Get the agent running in 5 minutes
+- **[Web UI Guide](WEB_UI.md)** - Browser-based project setup, monitoring, and team management
 - **[Workflow Hello World](WORKFLOW_HELLO_WORLD.md)** - Create your first workflow in 30 minutes
 - **[Config Validator](CONFIG_VALIDATOR.md)** - Validate config.json before running
 - **[A2A Protocol Integration](A2A_INTEGRATION.md)** - HTTP-based inter-agent communication

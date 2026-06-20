@@ -29,6 +29,10 @@ export interface AgentConfig {
      *  When set, the workflow engine drives prompt construction, tool gating,
      *  and state transitions instead of the static roles.json prompts. */
     workflowFile?: string;
+    /** Path to a .task-manifest.json file (relative to config.json or absolute).
+     *  When set, overrides the naming-convention discovery (workflowBaseName.task-manifest.json).
+     *  This allows multiple projects to share the same workflow with different manifests. */
+    manifestFile?: string;
     checkIntervalMs: number;
     stuckTimeoutMs: number;
     sdkTimeoutMs: number;
@@ -59,7 +63,7 @@ export interface AgentConfig {
       milestones?: number[];
     };
     /** Max concurrent delegations the manager will have in-flight at once.
-     *  0 or absent = disabled (no gate).  Requires role = 'manager'. */
+     *  Default: 1.  Set to 0 to disable the gate.  Requires role = 'manager'. */
     wipLimit?: number;
   };
   mailbox: {
@@ -87,6 +91,8 @@ export interface AgentConfig {
       failed?: string;
     };
     persistContext: boolean;
+    /** Git repository URL to clone into the working folder on first startup. */
+    projectRepo?: string;
   };
   logging: {
     level: 'debug' | 'info' | 'warn' | 'error';
@@ -308,7 +314,7 @@ export interface SessionContext {
   messagesProcessed: number;
   status: 'idle' | 'working' | 'stuck' | 'escalated' | 'breaking_down_task';
   workingDirectory: string;
-  
+
   // Message sequence tracking (Option B: persistent state)
   nextMessageSequence?: number;
   messageTracking?: {
@@ -322,7 +328,7 @@ export interface SessionContext {
       pendingWorkItems?: string[];   // Currently pending work items
     };
   };
-  
+
   // QA rework cycle tracking (prevents infinite rejection loops)
   // Key format: "rework:<original task name>", value: cycle count
   reworkTracking?: {

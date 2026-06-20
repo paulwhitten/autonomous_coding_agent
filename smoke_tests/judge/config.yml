@@ -1,0 +1,40 @@
+# Judge Configuration
+#
+# Convention over configuration: all fields have defaults.
+# Only specify what you want to override.
+
+# Model used for judging (default: gpt-5.4)
+model: gpt-5.4
+
+# Number of judge runs per invocation. Final scores use median.
+# Higher values improve consistency at the cost of API calls.
+runs: 1
+
+# Dimension weights (must sum to 1.0)
+# These control the weighted average in the overall score.
+weights:
+  task_completion: 0.20
+  code_correctness: 0.15
+  test_coverage: 0.15
+  code_quality: 0.10
+  instruction_adherence: 0.15
+  verification: 0.10
+  error_recovery: 0.05
+  decomposition_quality: 0.05
+  safety: 0.05
+
+# Per-test overrides (optional)
+# Uncomment and customize for specific smoke tests:
+#
+# overrides:
+#   basic:
+#     # Basic test doesn't involve multi-agent, so weight recovery lower
+#     weights:
+#       error_recovery: 0.03
+#       decomposition_quality: 0.07
+#
+#   intermediate:
+#     # Intermediate test has more complex decomposition
+#     weights:
+#       decomposition_quality: 0.10
+#       safety: 0.03

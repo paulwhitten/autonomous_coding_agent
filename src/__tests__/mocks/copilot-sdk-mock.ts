@@ -1,6 +1,8 @@
 // Test mock for @github/copilot-sdk
 // Avoids import.meta.resolve() issue in client.js during Jest tests
 
+export default {};
+
 export const defineTool = (name: string, opts: any) => ({
   name,
   description: opts.description ?? '',

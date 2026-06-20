@@ -1,0 +1,21 @@
+{
+  "workflowId": "dep-gate-test",
+  "name": "Dependency Gating Test Manifest",
+  "wipLimit": 2,
+  "tasks": [
+    {
+      "taskId": "task-A",
+      "spec": "task-a.md",
+      "description": "Independent task with no dependencies",
+      "dependsOn": [],
+      "blockOnFailure": true
+    },
+    {
+      "taskId": "task-B",
+      "spec": "task-b.md",
+      "description": "Dependent task -- requires task-A to complete first",
+      "dependsOn": ["task-A"],
+      "blockOnFailure": true
+    }
+  ]
+}

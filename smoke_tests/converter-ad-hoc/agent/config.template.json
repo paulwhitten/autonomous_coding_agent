@@ -1,0 +1,28 @@
+{
+  "agent": {
+    "hostname": "adhoc-test-agent",
+    "role": "developer",
+    "checkIntervalMs": 5000,
+    "taskRetryCount": 2,
+    "validation": {
+      "mode": "always",
+      "reviewEveryNthItem": 1
+    }
+  },
+  "copilot": {
+    "model": "auto"
+  },
+  "mailbox": {
+    "repoPath": "../runtime_mailbox",
+    "autoCommit": false,
+    "supportBroadcast": false,
+    "supportAttachments": false
+  },
+  "manager": {
+    "hostname": "localhost",
+    "escalationPriority": "LOW"
+  },
+  "quota": {
+    "enabled": false
+  }
+}

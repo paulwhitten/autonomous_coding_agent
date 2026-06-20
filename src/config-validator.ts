@@ -164,6 +164,11 @@ export async function validateConfig(
   const valid = validate(userConfig);
 
   if (valid) {
+    // Run additional semantic checks beyond schema validation
+    const semanticErrors = validateSemantics(userConfig);
+    if (semanticErrors.length > 0) {
+      return { valid: false, errors: semanticErrors };
+    }
     return { valid: true, errors: [] };
   }
 
@@ -171,6 +176,57 @@ export async function validateConfig(
     valid: false,
     errors: formatErrors(validate.errors || []),
   };
+}
+
+/**
+ * Semantic validation checks that go beyond JSON Schema.
+ * Validates cross-field consistency, duplicates, and value ranges.
+ */
+function validateSemantics(config: Record<string, unknown>): ConfigValidationError[] {
+  const errors: ConfigValidationError[] = [];
+
+  // Check for duplicate team members
+  const teamMembers = config.teamMembers as Array<{ hostname?: string; role?: string }> | undefined;
+  if (Array.isArray(teamMembers) && teamMembers.length > 0) {
+    const seen = new Set<string>();
+    for (let i = 0; i < teamMembers.length; i++) {
+      const m = teamMembers[i];
+      if (m.hostname && m.role) {
+        const key = `${m.hostname}_${m.role}`;
+        if (seen.has(key)) {
+          errors.push({
+            path: `teamMembers[${i}]`,
+            message: `Duplicate team member "${m.hostname}" with role "${m.role}".`,
+            value: key,
+          });
+        }
+        seen.add(key);
+      }
+    }
+  }
+
+  // Validate A2A server port range
+  const communication = config.communication as { a2a?: { serverPort?: number } } | undefined;
+  const port = communication?.a2a?.serverPort;
+  if (port !== undefined && port !== 0 && (port < 1024 || port > 65535)) {
+    errors.push({
+      path: 'communication.a2a.serverPort',
+      message: 'Server port must be 0 (OS-assigned) or between 1024 and 65535.',
+      value: port,
+    });
+  }
+
+  // Validate agent.wipLimit only applies when role is manager
+  const agent = config.agent as { role?: string; wipLimit?: number } | undefined;
+  if (agent?.wipLimit && agent.wipLimit > 0 && agent.role && agent.role !== 'manager') {
+    errors.push({
+      path: 'agent.wipLimit',
+      message: `wipLimit is only effective for role "manager" (current role: "${agent.role}").`,
+      value: agent.wipLimit,
+    });
+  }
+
+  return errors;
 }
 
 /**

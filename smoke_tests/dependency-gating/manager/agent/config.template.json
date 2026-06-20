@@ -1,0 +1,25 @@
+{
+  "agent": {
+    "hostname": "smoke-dep-mgr",
+    "role": "manager",
+    "checkIntervalMs": 3000,
+    "taskRetryCount": 1,
+    "workflowFile": "../../dep-gate-test.workflow.json",
+    "validation": {
+      "mode": "none",
+      "reviewEveryNthItem": 99
+    }
+  },
+  "mailbox": {
+    "repoPath": "../runtime_mailbox",
+    "autoCommit": false,
+    "supportBroadcast": false,
+    "supportAttachments": false
+  },
+  "manager": {
+    "hostname": "smoke-dep-mgr"
+  },
+  "quota": {
+    "enabled": false
+  }
+}

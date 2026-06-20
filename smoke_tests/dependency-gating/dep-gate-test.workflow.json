@@ -1,0 +1,59 @@
+{
+  "$schema": "../../workflows/workflow.schema.json",
+  "id": "dep-gate-test",
+  "name": "Dependency Gating Smoke Test",
+  "description": "Minimal workflow for testing dependency gating. Single manager agent: ASSIGN goes to DONE (success) or BLOCKED (dependency gate).",
+  "version": "1.0.0",
+  "initialState": "ASSIGN",
+  "terminalStates": ["DONE", "ESCALATED"],
+  "globalContext": {
+    "projectPath": "workspace/project"
+  },
+  "states": {
+    "ASSIGN": {
+      "name": "Assign",
+      "role": "manager",
+      "description": "Manager receives task and checks dependency gate before dispatch.",
+      "prompt": "",
+      "allowedTools": [],
+      "transitions": {
+        "onSuccess": "DONE",
+        "onFailure": "BLOCKED"
+      }
+    },
+    "BLOCKED": {
+      "name": "Blocked",
+      "role": "manager",
+      "description": "Task blocked because dependencies are not met.",
+      "prompt": "This task is blocked. Dependencies are not yet satisfied.",
+      "allowedTools": [],
+      "timeoutMs": 10000,
+      "transitions": {
+        "onSuccess": "ASSIGN",
+        "onFailure": "ESCALATED"
+      }
+    },
+    "DONE": {
+      "name": "Done",
+      "role": "manager",
+      "description": "Task completed successfully.",
+      "prompt": "",
+      "allowedTools": [],
+      "transitions": {
+        "onSuccess": null,
+        "onFailure": null
+      }
+    },
+    "ESCALATED": {
+      "name": "Escalated",
+      "role": "manager",
+      "description": "Task failed.",
+      "prompt": "",
+      "allowedTools": [],
+      "transitions": {
+        "onSuccess": null,
+        "onFailure": null
+      }
+    }
+  }
+}

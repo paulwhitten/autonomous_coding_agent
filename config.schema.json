@@ -44,6 +44,10 @@
           "type": "string",
           "description": "Path to a .workflow.json file for workflow-driven execution."
         },
+        "manifestFile": {
+          "type": "string",
+          "description": "Path to a .task-manifest.json file for task dispatch (relative to config file directory)."
+        },
         "checkIntervalMs": {
           "type": "integer",
           "default": 60000,
@@ -331,6 +335,10 @@
           "type": "boolean",
           "default": true,
           "description": "Save session context across restarts."
+        },
+        "projectRepo": {
+          "type": "string",
+          "description": "Git repository URL to clone into the working folder on first startup. Supports https://, git@, and file:// URLs. The clone is skipped if the working folder already contains a .git directory."
         }
       }
     },

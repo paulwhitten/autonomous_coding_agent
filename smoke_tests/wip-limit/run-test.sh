@@ -245,4 +245,8 @@ echo "  - manager/runtime_mailbox/"
 echo "  - manager/agent/workspace/"
 echo ""
 
+# Run LLM judge (non-blocking — does not affect test exit code)
+source "$SCRIPT_DIR/../judge/run-judge.sh"
+run_judge "$SCRIPT_DIR" manager
+
 exit $RESULT

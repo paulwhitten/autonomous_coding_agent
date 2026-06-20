@@ -296,4 +296,8 @@ echo "  QA work:   qa/agent/workspace/"
 echo "  QA work:   qa/agent/workspace/"
 echo ""
 
+# Run LLM judge per role (non-blocking — does not affect test exit code)
+source "$SCRIPT_DIR/../judge/run-judge.sh"
+run_judge "$SCRIPT_DIR" developer qa
+
 exit $RESULT

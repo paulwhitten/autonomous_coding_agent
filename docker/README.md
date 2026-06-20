@@ -430,8 +430,79 @@ volumes:
 command: npm run dev
 ```
 
+## Web UI in Docker
+
+The Web UI (Express API + React SPA) can run alongside containerized agents.
+See [WEB_UI.md](../WEB_UI.md) for the full guide.
+
+### Option A: Run the UI on the host
+
+The simplest approach — run the UI on your host machine and let it manage
+containerized agents via `docker-compose exec` or the A2A protocol:
+
+```bash
+# On host
+./scripts/start-ui.sh
+```
+
+The Dashboard discovers agents via mDNS. Containerized agents are visible
+when they publish mDNS services on the same network (use `network_mode: "host"`
+on Linux, or expose the A2A port and add the container URL to
+`communication.a2a.knownAgentUrls` in the agent config).
+
+### Option B: Add a UI service to docker-compose
+
+Add a `web-ui` service that runs the API server and serves the built frontend:
+
+```yaml
+  web-ui:
+    build:
+      context: ..
+      dockerfile: docker/Dockerfile
+    container_name: copilot-web-ui
+    ports:
+      - "3001:3001"
+    environment:
+      - COPILOT_CLI_URL=host.docker.internal:3000
+      # - API_KEY=your-secret-key
+    volumes:
+      - ./workspace:/app/workspace
+      - ./mailbox:/app/mailbox
+      - ./logs:/app/logs
+      - ./config.json:/app/config.json:ro
+    command: >
+      sh -c "cd /app/web && npm install && npx vite build &&
+             cd /app && npx tsx src/api/index.ts"
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+```
+
+Then start with:
+
+```bash
+docker-compose up -d web-ui
+```
+
+The UI is available at `http://localhost:3001`. The API server serves the
+pre-built React SPA from `web/dist/` when no Vite dev server is running.
+
+### Exposing A2A ports
+
+For agent discovery across containers, expose each agent's A2A port:
+
+```yaml
+  developer-agent:
+    extends: agent
+    ports:
+      - "4000:4000"
+```
+
+Then add the container URL to the UI-side config or use the A2A page to
+probe `http://localhost:4000` manually.
+
 ## References
 
 - [Copilot SDK Documentation](https://www.npmjs.com/package/@github/copilot-sdk)
 - [Docker Compose Documentation](https://docs.docker.com/compose/)
 - [External Mailbox Protocol](../README.md)
+- [Web UI Guide](../WEB_UI.md)

@@ -27,6 +27,9 @@ describe('Permission Handler', () => {
         read: 'allow',
         url: 'deny',
         mcp: 'deny',
+        'custom-tool': 'allow',
+        memory: 'allow',
+        hook: 'allow',
       });
     });
   });
@@ -167,6 +170,7 @@ describe('Permission Handler', () => {
         read: 'allow',
         url: 'allow',
         mcp: 'allow',
+        'custom-tool': 'allow',
       };
 
       it('should approve shell requests', () => {
@@ -175,7 +179,7 @@ describe('Permission Handler', () => {
           { kind: 'shell', command: 'git init' },
           { sessionId: 'test-session' }
         );
-        expect(result.kind).toBe('approved');
+        expect(result.kind).toBe('approve-once');
       });
 
       it('should approve write requests', () => {
@@ -184,7 +188,7 @@ describe('Permission Handler', () => {
           { kind: 'write', path: '/some/file.ts' },
           { sessionId: 'test-session' }
         );
-        expect(result.kind).toBe('approved');
+        expect(result.kind).toBe('approve-once');
       });
 
       it('should approve read requests', () => {
@@ -193,7 +197,7 @@ describe('Permission Handler', () => {
           { kind: 'read', path: '/some/file.ts' },
           { sessionId: 'test-session' }
         );
-        expect(result.kind).toBe('approved');
+        expect(result.kind).toBe('approve-once');
       });
 
       it('should approve url requests', () => {
@@ -202,7 +206,7 @@ describe('Permission Handler', () => {
           { kind: 'url', url: 'https://example.com' },
           { sessionId: 'test-session' }
         );
-        expect(result.kind).toBe('approved');
+        expect(result.kind).toBe('approve-once');
       });
 
       it('should approve mcp requests', () => {
@@ -211,7 +215,7 @@ describe('Permission Handler', () => {
           { kind: 'mcp' },
           { sessionId: 'test-session' }
         );
-        expect(result.kind).toBe('approved');
+        expect(result.kind).toBe('approve-once');
       });
     });
 
@@ -222,6 +226,7 @@ describe('Permission Handler', () => {
         read: 'deny',
         url: 'deny',
         mcp: 'deny',
+        'custom-tool': 'allow',
       };
 
       it('should deny shell requests', () => {
@@ -230,7 +235,7 @@ describe('Permission Handler', () => {
           { kind: 'shell', command: 'rm -rf /' },
           { sessionId: 'test-session' }
         );
-        expect(result.kind).toBe('denied-by-rules');
+        expect(result.kind).toBe('reject');
       });
 
       it('should deny write requests', () => {
@@ -239,7 +244,7 @@ describe('Permission Handler', () => {
           { kind: 'write', path: '/etc/passwd' },
           { sessionId: 'test-session' }
         );
-        expect(result.kind).toBe('denied-by-rules');
+        expect(result.kind).toBe('reject');
       });
 
       it('should deny read requests', () => {
@@ -248,7 +253,7 @@ describe('Permission Handler', () => {
           { kind: 'read', path: '/etc/shadow' },
           { sessionId: 'test-session' }
         );
-        expect(result.kind).toBe('denied-by-rules');
+        expect(result.kind).toBe('reject');
       });
 
       it('should deny url requests', () => {
@@ -257,7 +262,7 @@ describe('Permission Handler', () => {
           { kind: 'url' },
           { sessionId: 'test-session' }
         );
-        expect(result.kind).toBe('denied-by-rules');
+        expect(result.kind).toBe('reject');
       });
 
       it('should deny mcp requests', () => {
@@ -266,7 +271,7 @@ describe('Permission Handler', () => {
           { kind: 'mcp' },
           { sessionId: 'test-session' }
         );
-        expect(result.kind).toBe('denied-by-rules');
+        expect(result.kind).toBe('reject');
       });
     });
 
@@ -277,6 +282,7 @@ describe('Permission Handler', () => {
         read: 'allow',
         url: 'deny',
         mcp: 'deny',
+        'custom-tool': 'allow',
       };
 
       it('should approve allowlisted commands: git', () => {
@@ -285,7 +291,7 @@ describe('Permission Handler', () => {
           { kind: 'shell', command: 'git init' },
           { sessionId: 'test-session' }
         );
-        expect(result.kind).toBe('approved');
+        expect(result.kind).toBe('approve-once');
       });
 
       it('should approve allowlisted commands: npm', () => {
@@ -294,7 +300,7 @@ describe('Permission Handler', () => {
           { kind: 'shell', command: 'npm install express' },
           { sessionId: 'test-session' }
         );
-        expect(result.kind).toBe('approved');
+        expect(result.kind).toBe('approve-once');
       });
 
       it('should approve allowlisted commands: python3', () => {
@@ -303,7 +309,7 @@ describe('Permission Handler', () => {
           { kind: 'shell', command: 'python3 -m pytest tests/' },
           { sessionId: 'test-session' }
         );
-        expect(result.kind).toBe('approved');
+        expect(result.kind).toBe('approve-once');
       });
 
       it('should approve allowlisted commands: cargo', () => {
@@ -312,7 +318,7 @@ describe('Permission Handler', () => {
           { kind: 'shell', command: 'cargo build --release' },
           { sessionId: 'test-session' }
         );
-        expect(result.kind).toBe('approved');
+        expect(result.kind).toBe('approve-once');
       });
 
       it('should approve allowlisted commands: gcc', () => {
@@ -321,7 +327,7 @@ describe('Permission Handler', () => {
           { kind: 'shell', command: 'gcc -o main main.c' },
           { sessionId: 'test-session' }
         );
-        expect(result.kind).toBe('approved');
+        expect(result.kind).toBe('approve-once');
       });
 
       it('should approve allowlisted commands: g++', () => {
@@ -330,7 +336,7 @@ describe('Permission Handler', () => {
           { kind: 'shell', command: 'g++ -std=c++17 -o app main.cpp' },
           { sessionId: 'test-session' }
         );
-        expect(result.kind).toBe('approved');
+        expect(result.kind).toBe('approve-once');
       });
 
       it('should approve allowlisted commands: make', () => {
@@ -339,7 +345,7 @@ describe('Permission Handler', () => {
           { kind: 'shell', command: 'make all' },
           { sessionId: 'test-session' }
         );
-        expect(result.kind).toBe('approved');
+        expect(result.kind).toBe('approve-once');
       });
 
       it('should approve commands with absolute paths', () => {
@@ -348,7 +354,7 @@ describe('Permission Handler', () => {
           { kind: 'shell', command: '/usr/bin/python3 setup.py' },
           { sessionId: 'test-session' }
         );
-        expect(result.kind).toBe('approved');
+        expect(result.kind).toBe('approve-once');
       });
 
       it('should deny commands not in allowlist', () => {
@@ -357,7 +363,7 @@ describe('Permission Handler', () => {
           { kind: 'shell', command: 'sudo rm -rf /' },
           { sessionId: 'test-session' }
         );
-        expect(result.kind).toBe('denied-by-rules');
+        expect(result.kind).toBe('reject');
       });
 
       it('should deny unknown/dangerous commands', () => {
@@ -366,7 +372,7 @@ describe('Permission Handler', () => {
           { kind: 'shell', command: 'nc -l 4444' },
           { sessionId: 'test-session' }
         );
-        expect(result.kind).toBe('denied-by-rules');
+        expect(result.kind).toBe('reject');
       });
 
       it('should approve when no command info is available', () => {
@@ -375,7 +381,7 @@ describe('Permission Handler', () => {
           { kind: 'shell' },  // No command property
           { sessionId: 'test-session' }
         );
-        expect(result.kind).toBe('approved');
+        expect(result.kind).toBe('approve-once');
       });
 
       it('should handle args array without command property', () => {
@@ -384,7 +390,7 @@ describe('Permission Handler', () => {
           { kind: 'shell', args: ['npm', 'test'] },
           { sessionId: 'test-session' }
         );
-        expect(result.kind).toBe('approved');
+        expect(result.kind).toBe('approve-once');
       });
     });
 
@@ -395,6 +401,7 @@ describe('Permission Handler', () => {
         read: 'allow',
         url: 'deny',
         mcp: 'deny',
+        'custom-tool': 'allow',
       };
 
       it('should extract command from fullCommandText (primary SDK field)', () => {
@@ -407,7 +414,7 @@ describe('Permission Handler', () => {
           },
           { sessionId: 'test-session' }
         );
-        expect(result.kind).toBe('approved');
+        expect(result.kind).toBe('approve-once');
       });
 
       it('should deny dangerous command via fullCommandText', () => {
@@ -420,7 +427,7 @@ describe('Permission Handler', () => {
           },
           { sessionId: 'test-session' }
         );
-        expect(result.kind).toBe('denied-by-rules');
+        expect(result.kind).toBe('reject');
       });
 
       it('should extract from commands[0].identifier when fullCommandText absent', () => {
@@ -432,7 +439,7 @@ describe('Permission Handler', () => {
           },
           { sessionId: 'test-session' }
         );
-        expect(result.kind).toBe('approved');
+        expect(result.kind).toBe('approve-once');
       });
 
       it('should deny via commands[0].identifier when not in allowlist', () => {
@@ -444,7 +451,7 @@ describe('Permission Handler', () => {
           },
           { sessionId: 'test-session' }
         );
-        expect(result.kind).toBe('denied-by-rules');
+        expect(result.kind).toBe('reject');
       });
 
       it('should handle real SDK shape with all metadata fields', () => {
@@ -466,7 +473,7 @@ describe('Permission Handler', () => {
           },
           { sessionId: '9aa61606-d3ac-40ce-8e92-c378a8208422' }
         );
-        expect(result.kind).toBe('approved');
+        expect(result.kind).toBe('approve-once');
       });
 
       it('should handle fullCommandText with absolute path', () => {
@@ -479,7 +486,7 @@ describe('Permission Handler', () => {
           },
           { sessionId: 'test-session' }
         );
-        expect(result.kind).toBe('approved');
+        expect(result.kind).toBe('approve-once');
       });
 
       it('should prefer fullCommandText over commands array', () => {
@@ -493,7 +500,7 @@ describe('Permission Handler', () => {
           },
           { sessionId: 'test-session' }
         );
-        expect(result.kind).toBe('approved');
+        expect(result.kind).toBe('approve-once');
       });
     });
 
@@ -505,6 +512,7 @@ describe('Permission Handler', () => {
           read: 'allow',
           url: 'deny',
           mcp: 'deny',
+          'custom-tool': 'allow',
           shellAllowAdditional: ['mycustomtool', 'terraform'],
         };
         const handler = createPermissionHandler(config, '/workspace', mockLogger);
@@ -512,12 +520,12 @@ describe('Permission Handler', () => {
         expect(handler(
           { kind: 'shell', command: 'mycustomtool deploy' },
           { sessionId: 's1' }
-        ).kind).toBe('approved');
+        ).kind).toBe('approve-once');
 
         expect(handler(
           { kind: 'shell', command: 'terraform plan' },
           { sessionId: 's1' }
-        ).kind).toBe('approved');
+        ).kind).toBe('approve-once');
       });
 
       it('should still allow default commands when additional are specified', () => {
@@ -527,6 +535,7 @@ describe('Permission Handler', () => {
           read: 'allow',
           url: 'deny',
           mcp: 'deny',
+          'custom-tool': 'allow',
           shellAllowAdditional: ['mycustomtool'],
         };
         const handler = createPermissionHandler(config, '/workspace', mockLogger);
@@ -534,7 +543,7 @@ describe('Permission Handler', () => {
         expect(handler(
           { kind: 'shell', command: 'git status' },
           { sessionId: 's1' }
-        ).kind).toBe('approved');
+        ).kind).toBe('approve-once');
       });
 
       it('should still deny unknown commands with additional configured', () => {
@@ -544,6 +553,7 @@ describe('Permission Handler', () => {
           read: 'allow',
           url: 'deny',
           mcp: 'deny',
+          'custom-tool': 'allow',
           shellAllowAdditional: ['mycustomtool'],
         };
         const handler = createPermissionHandler(config, '/workspace', mockLogger);
@@ -551,7 +561,7 @@ describe('Permission Handler', () => {
         expect(handler(
           { kind: 'shell', command: 'sudo reboot' },
           { sessionId: 's1' }
-        ).kind).toBe('denied-by-rules');
+        ).kind).toBe('reject');
       });
     });
 
@@ -563,6 +573,7 @@ describe('Permission Handler', () => {
         read: 'workingDir',
         url: 'deny',
         mcp: 'deny',
+        'custom-tool': 'allow',
       };
 
       it('should approve writes within working directory', () => {
@@ -571,7 +582,7 @@ describe('Permission Handler', () => {
           { kind: 'write', path: '/home/user/workspace/src/main.ts' },
           { sessionId: 'test-session' }
         );
-        expect(result.kind).toBe('approved');
+        expect(result.kind).toBe('approve-once');
       });
 
       it('should approve writes to the working directory itself', () => {
@@ -580,7 +591,7 @@ describe('Permission Handler', () => {
           { kind: 'write', path: '/home/user/workspace' },
           { sessionId: 'test-session' }
         );
-        expect(result.kind).toBe('approved');
+        expect(result.kind).toBe('approve-once');
       });
 
       it('should deny writes outside working directory', () => {
@@ -589,7 +600,7 @@ describe('Permission Handler', () => {
           { kind: 'write', path: '/etc/passwd' },
           { sessionId: 'test-session' }
         );
-        expect(result.kind).toBe('denied-by-rules');
+        expect(result.kind).toBe('reject');
       });
 
       it('should deny writes to parent directory', () => {
@@ -598,7 +609,7 @@ describe('Permission Handler', () => {
           { kind: 'write', path: '/home/user' },
           { sessionId: 'test-session' }
         );
-        expect(result.kind).toBe('denied-by-rules');
+        expect(result.kind).toBe('reject');
       });
 
       it('should deny writes to sibling directory', () => {
@@ -607,7 +618,7 @@ describe('Permission Handler', () => {
           { kind: 'write', path: '/home/user/workspace-other/file.ts' },
           { sessionId: 'test-session' }
         );
-        expect(result.kind).toBe('denied-by-rules');
+        expect(result.kind).toBe('reject');
       });
 
       it('should approve reads within working directory', () => {
@@ -616,7 +627,7 @@ describe('Permission Handler', () => {
           { kind: 'read', path: '/home/user/workspace/package.json' },
           { sessionId: 'test-session' }
         );
-        expect(result.kind).toBe('approved');
+        expect(result.kind).toBe('approve-once');
       });
 
       it('should deny reads outside working directory', () => {
@@ -625,7 +636,7 @@ describe('Permission Handler', () => {
           { kind: 'read', path: '/root/.ssh/id_rsa' },
           { sessionId: 'test-session' }
         );
-        expect(result.kind).toBe('denied-by-rules');
+        expect(result.kind).toBe('reject');
       });
 
       it('should approve when request has no path', () => {
@@ -634,7 +645,7 @@ describe('Permission Handler', () => {
           { kind: 'write' },  // No path property
           { sessionId: 'test-session' }
         );
-        expect(result.kind).toBe('approved');
+        expect(result.kind).toBe('approve-once');
       });
 
       it('should recognize filePath property', () => {
@@ -643,7 +654,7 @@ describe('Permission Handler', () => {
           { kind: 'write', filePath: '/home/user/workspace/test.ts' },
           { sessionId: 'test-session' }
         );
-        expect(result.kind).toBe('approved');
+        expect(result.kind).toBe('approve-once');
       });
 
       it('should recognize uri property', () => {
@@ -652,7 +663,7 @@ describe('Permission Handler', () => {
           { kind: 'read', uri: '/home/user/workspace/data.json' },
           { sessionId: 'test-session' }
         );
-        expect(result.kind).toBe('approved');
+        expect(result.kind).toBe('approve-once');
       });
 
       it('should recognize file property', () => {
@@ -661,7 +672,7 @@ describe('Permission Handler', () => {
           { kind: 'read', file: '/home/user/workspace/README.md' },
           { sessionId: 'test-session' }
         );
-        expect(result.kind).toBe('approved');
+        expect(result.kind).toBe('approve-once');
       });
     });
 
@@ -670,18 +681,18 @@ describe('Permission Handler', () => {
         const handler = createPermissionHandler(DEFAULT_PERMISSIONS, '/workspace', mockLogger);
 
         // shell (allowlist): approve known commands
-        expect(handler({ kind: 'shell', command: 'git status' }, { sessionId: 's1' }).kind).toBe('approved');
-        expect(handler({ kind: 'shell', command: 'npm test' }, { sessionId: 's1' }).kind).toBe('approved');
+        expect(handler({ kind: 'shell', command: 'git status' }, { sessionId: 's1' }).kind).toBe('approve-once');
+        expect(handler({ kind: 'shell', command: 'npm test' }, { sessionId: 's1' }).kind).toBe('approve-once');
         // shell (allowlist): deny unknown commands
-        expect(handler({ kind: 'shell', command: 'sudo reboot' }, { sessionId: 's1' }).kind).toBe('denied-by-rules');
+        expect(handler({ kind: 'shell', command: 'sudo reboot' }, { sessionId: 's1' }).kind).toBe('reject');
         // write: allow
-        expect(handler({ kind: 'write', path: '/any/path' }, { sessionId: 's1' }).kind).toBe('approved');
+        expect(handler({ kind: 'write', path: '/any/path' }, { sessionId: 's1' }).kind).toBe('approve-once');
         // read: allow
-        expect(handler({ kind: 'read', path: '/any/path' }, { sessionId: 's1' }).kind).toBe('approved');
+        expect(handler({ kind: 'read', path: '/any/path' }, { sessionId: 's1' }).kind).toBe('approve-once');
         // url: deny
-        expect(handler({ kind: 'url' }, { sessionId: 's1' }).kind).toBe('denied-by-rules');
+        expect(handler({ kind: 'url' }, { sessionId: 's1' }).kind).toBe('reject');
         // mcp: deny
-        expect(handler({ kind: 'mcp' }, { sessionId: 's1' }).kind).toBe('denied-by-rules');
+        expect(handler({ kind: 'mcp' }, { sessionId: 's1' }).kind).toBe('reject');
       });
     });
 
@@ -692,7 +703,7 @@ describe('Permission Handler', () => {
           { kind: 'unknown-kind' as any },
           { sessionId: 'test-session' }
         );
-        expect(result.kind).toBe('denied-by-rules');
+        expect(result.kind).toBe('reject');
       });
     });
 
@@ -735,7 +746,7 @@ describe('Permission Handler', () => {
         const handler = createPermissionHandler(merged, '/workspace', mockLogger);
 
         // Even unknown commands approved with 'allow' policy
-        expect(handler({ kind: 'shell', command: 'sudo reboot' }, { sessionId: 's1' }).kind).toBe('approved');
+        expect(handler({ kind: 'shell', command: 'sudo reboot' }, { sessionId: 's1' }).kind).toBe('approve-once');
       });
 
       it('should support restricting to workingDir', () => {
@@ -745,14 +756,15 @@ describe('Permission Handler', () => {
           read: 'workingDir',
           url: 'deny',
           mcp: 'deny',
+          'custom-tool': 'allow',
         };
         const handler = createPermissionHandler(locked, '/workspace', mockLogger);
 
-        expect(handler({ kind: 'shell', command: 'git status' }, { sessionId: 's1' }).kind).toBe('approved');
-        expect(handler({ kind: 'write', path: '/workspace/file.ts' }, { sessionId: 's1' }).kind).toBe('approved');
-        expect(handler({ kind: 'write', path: '/etc/hosts' }, { sessionId: 's1' }).kind).toBe('denied-by-rules');
-        expect(handler({ kind: 'read', path: '/workspace/file.ts' }, { sessionId: 's1' }).kind).toBe('approved');
-        expect(handler({ kind: 'read', path: '/etc/hosts' }, { sessionId: 's1' }).kind).toBe('denied-by-rules');
+        expect(handler({ kind: 'shell', command: 'git status' }, { sessionId: 's1' }).kind).toBe('approve-once');
+        expect(handler({ kind: 'write', path: '/workspace/file.ts' }, { sessionId: 's1' }).kind).toBe('approve-once');
+        expect(handler({ kind: 'write', path: '/etc/hosts' }, { sessionId: 's1' }).kind).toBe('reject');
+        expect(handler({ kind: 'read', path: '/workspace/file.ts' }, { sessionId: 's1' }).kind).toBe('approve-once');
+        expect(handler({ kind: 'read', path: '/etc/hosts' }, { sessionId: 's1' }).kind).toBe('reject');
       });
     });
   });
@@ -767,14 +779,14 @@ describe('Permission Handler', () => {
         { kind: 'write', path: '/workspace/file.ts' },
         { sessionId: 'test-session' }
       );
-      expect(result.kind).toBe('denied-by-rules');
+      expect(result.kind).toBe('reject');
 
       // read should still be allowed (no override)
       const readResult = handler(
         { kind: 'read', path: '/workspace/file.ts' },
         { sessionId: 'test-session' }
       );
-      expect(readResult.kind).toBe('approved');
+      expect(readResult.kind).toBe('approve-once');
     });
 
     it('should allow writes when override is cleared', () => {
@@ -785,7 +797,7 @@ describe('Permission Handler', () => {
       expect(handler(
         { kind: 'write', path: '/workspace/file.ts' },
         { sessionId: 's1' }
-      ).kind).toBe('denied-by-rules');
+      ).kind).toBe('reject');
 
       // Clear override (simulates state exit)
       delete overrides.write;
@@ -794,7 +806,7 @@ describe('Permission Handler', () => {
       expect(handler(
         { kind: 'write', path: '/workspace/file.ts' },
         { sessionId: 's1' }
-      ).kind).toBe('approved');
+      ).kind).toBe('approve-once');
     });
 
     it('should override takes precedence over base config', () => {
@@ -806,7 +818,7 @@ describe('Permission Handler', () => {
       expect(handler(
         { kind: 'write', path: '/workspace/file.ts' },
         { sessionId: 's1' }
-      ).kind).toBe('approved');
+      ).kind).toBe('approve-once');
     });
 
     it('should support mutating overrides between requests', () => {
@@ -817,21 +829,21 @@ describe('Permission Handler', () => {
       expect(handler(
         { kind: 'write', path: '/workspace/file.ts' },
         { sessionId: 's1' }
-      ).kind).toBe('approved');
+      ).kind).toBe('approve-once');
 
       // Apply override (simulates state entry)
       overrides.write = 'deny';
       expect(handler(
         { kind: 'write', path: '/workspace/file.ts' },
         { sessionId: 's1' }
-      ).kind).toBe('denied-by-rules');
+      ).kind).toBe('reject');
 
       // Clear override (simulates state exit)
       delete overrides.write;
       expect(handler(
         { kind: 'write', path: '/workspace/file.ts' },
         { sessionId: 's1' }
-      ).kind).toBe('approved');
+      ).kind).toBe('approve-once');
     });
 
     it('should not affect shell allowlist behavior when no shell override', () => {
@@ -842,12 +854,12 @@ describe('Permission Handler', () => {
       expect(handler(
         { kind: 'shell', command: 'cargo test' },
         { sessionId: 's1' }
-      ).kind).toBe('approved');
+      ).kind).toBe('approve-once');
 
       expect(handler(
         { kind: 'shell', command: 'dangerous-command' },
         { sessionId: 's1' }
-      ).kind).toBe('denied-by-rules');
+      ).kind).toBe('reject');
     });
 
     it('should deny shell commands when shell override set to deny', () => {
@@ -857,7 +869,7 @@ describe('Permission Handler', () => {
       expect(handler(
         { kind: 'shell', command: 'cargo test' },
         { sessionId: 's1' }
-      ).kind).toBe('denied-by-rules');
+      ).kind).toBe('reject');
     });
   });
 });

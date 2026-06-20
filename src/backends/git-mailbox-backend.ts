@@ -102,6 +102,7 @@ export class GitMailboxBackend implements CommunicationBackend {
       );
       return { success: true, ref: filepath };
     } catch (error) {
+      this.logger.error({ error: String(error), to: to.hostname, role: to.role, subject: message.subject }, 'sendMessage failed');
       return { success: false, ref: '', message: String(error) };
     }
   }

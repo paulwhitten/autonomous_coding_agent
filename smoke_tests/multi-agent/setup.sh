@@ -29,6 +29,7 @@ echo "Copying source code to developer agent..."
 cp -r ../../src developer/agent/
 cp -r ../../templates developer/agent/
 cp ../../package.json developer/agent/
+cp ../../package-lock.json developer/agent/
 cp ../../tsconfig.json developer/agent/
 cp ../../roles.json developer/agent/
 
@@ -38,9 +39,9 @@ cp developer/agent/config.template.json developer/agent/config.json
 
 # Install dependencies
 echo "Installing dependencies..."
-cd developer/agent && npm install && cd ../..
+cd developer/agent && npm ci && cd ../..
 
-# CLI available after npm install
+# CLI available after npm ci
 CLI="npx --prefix developer/agent tsx ${HARNESS_ROOT}/scripts/smoke-test-cli.ts"
 
 # Create mailbox structure

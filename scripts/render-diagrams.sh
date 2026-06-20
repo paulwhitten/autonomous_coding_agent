@@ -42,7 +42,7 @@ for src in "$DIAGRAMS_DIR"/*.mmd; do
     # Mermaid computes foreignObject height ~3px too short per line,
     # so the last line of multi-line labels gets clipped. Adding
     # overflow="visible" lets the text paint outside the tight box.
-    sed -i 's/<foreignObject /<foreignObject overflow="visible" /g' "$svg"
+    sed -i '' 's/<foreignObject /<foreignObject overflow="visible" /g' "$svg"
 
     # --- PNG ---
     png="$DIAGRAMS_DIR/$name.png"

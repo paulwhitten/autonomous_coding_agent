@@ -19,7 +19,42 @@ export type OnMessageSentCallback = (info: {
   filepath: string;
 }) => void;
 
-export function createMailboxTools(mailbox: MailboxManager, onMessageSent?: OnMessageSentCallback) {
+/**
+ * Options controlling which mailbox tools are exposed to the LLM session.
+ */
+export interface CreateMailboxToolsOptions {
+  /**
+   * When true the agent is running in workflow-driven mode, where the
+   * workflow engine is the SOLE driver of the message lifecycle and routing.
+   * The message-lifecycle and routing tools (check_mailbox, read_message,
+   * archive_message, send_completion_report, escalate_issue, send_message,
+   * send_broadcast) are suppressed so the LLM cannot intercept, archive, or
+   * re-route workflow assignments and short-circuit the engine. Read-only
+   * discovery tools (roster/agent lookup) remain available.
+   */
+  workflowDriven?: boolean;
+}
+
+/**
+ * Tools suppressed in workflow-driven mode. These let the LLM act on the
+ * mailbox directly (intercepting/archiving assignments, sending routing
+ * messages), which would bypass the workflow engine's deterministic control.
+ */
+const WORKFLOW_SUPPRESSED_TOOLS = new Set([
+  'check_mailbox',
+  'read_message',
+  'archive_message',
+  'send_completion_report',
+  'escalate_issue',
+  'send_message',
+  'send_broadcast',
+]);
+
+export function createMailboxTools(
+  mailbox: MailboxManager,
+  onMessageSent?: OnMessageSentCallback,
+  options?: CreateMailboxToolsOptions,
+) {
   
   const checkMailbox = defineTool('check_mailbox', {
     description: 'Check the external mailbox for new task assignments or messages',
@@ -484,5 +519,5 @@ export function createMailboxTools(mailbox: MailboxManager, onMessageSent?: OnMe
     getAgentInfo,
     sendMessage,
     sendBroadcast
-  ];
+  ].filter(tool => !(options?.workflowDriven && WORKFLOW_SUPPRESSED_TOOLS.has(tool.name)));
 }

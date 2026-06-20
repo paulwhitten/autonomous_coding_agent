@@ -12,7 +12,7 @@ import pino from 'pino';
 
 /**
  * Permission configuration for each request kind.
- * 
+ *
  * - "allow":      Approve all requests of this kind
  * - "deny":       Deny all requests of this kind
  * - "workingDir": Allow only within the configured working directory (file ops)
@@ -32,6 +32,12 @@ export interface PermissionsConfig {
   url: PermissionPolicy;
   /** MCP server tool calls — "allow" | "deny" */
   mcp: PermissionPolicy;
+  /** Custom tool calls (registered mailbox/workflow tools) — "allow" | "deny" */
+  'custom-tool': PermissionPolicy;
+  /** Memory operations — "allow" | "deny" */
+  memory?: PermissionPolicy;
+  /** Hook operations — "allow" | "deny" */
+  hook?: PermissionPolicy;
   /** Additional shell commands to allow when shell policy is "allowlist" */
   shellAllowAdditional?: string[];
 }
@@ -40,20 +46,19 @@ export interface PermissionsConfig {
  * SDK PermissionRequest shape (matches @github/copilot-sdk types)
  */
 export interface PermissionRequest {
-  kind: 'shell' | 'write' | 'mcp' | 'read' | 'url';
+  kind: 'shell' | 'write' | 'mcp' | 'read' | 'url' | 'custom-tool' | 'memory' | 'hook';
   toolCallId?: string;
   [key: string]: unknown;
 }
 
 export interface PermissionRequestResult {
-  kind: 'approved' | 'denied-by-rules';
-  rules?: unknown[];
+  kind: 'approve-once' | 'reject';
 }
 
 /**
  * Common development commands that are safe for an autonomous coding agent.
  * These cover SCM, package managers, build tools, and language toolchains.
- * 
+ *
  * The allowlist matches the BASE EXECUTABLE name (first word of a command line,
  * with path stripped). For example "git", "npm", "/usr/bin/python3" all resolve
  * to their basename for matching.
@@ -142,6 +147,8 @@ export const DEFAULT_SHELL_ALLOWLIST: ReadonlySet<string> = new Set([
   'select',
   '[',              // test synonym
   '[[',             // extended test
+  'source',         // shell builtin — loads env (e.g. venv activate)
+  '.',              // POSIX equivalent of source
 
   'cat',
   'echo',
@@ -233,6 +240,9 @@ export const DEFAULT_PERMISSIONS: PermissionsConfig = {
   read: 'allow',
   url: 'deny',
   mcp: 'deny',
+  'custom-tool': 'allow',
+  memory: 'allow',
+  hook: 'allow',
 };
 
 /**
@@ -244,16 +254,16 @@ export const DEFAULT_PERMISSIONS: PermissionsConfig = {
  *
  * Keys mirror PermissionsConfig but only present keys are overridden.
  */
-export type PermissionOverrides = Partial<Pick<PermissionsConfig, 'write' | 'read' | 'shell' | 'url' | 'mcp'>>;
+export type PermissionOverrides = Partial<Pick<PermissionsConfig, 'write' | 'read' | 'shell' | 'url' | 'mcp' | 'custom-tool' | 'memory' | 'hook'>>;
 
 /**
  * Create a permission handler function compatible with the Copilot SDK.
- * 
+ *
  * The returned handler evaluates each PermissionRequest against the provided
  * config and returns approved/denied accordingly. ALL requests are logged at
  * info level as an audit trail for discovering new tools/commands that may need
  * to be added to the allowlist.
- * 
+ *
  * @param config - Permission policies per request kind
  * @param workingDirectory - Absolute path to the agent's working directory (for 'workingDir' policy)
  * @param logger - Logger instance for audit trail
@@ -304,7 +314,7 @@ export function createPermissionHandler(
         decision: 'denied',
         reason: 'unknown-kind',
       }, 'Permission denied: unknown kind');
-      return { kind: 'denied-by-rules' };
+      return { kind: 'reject' };
     }
 
     if (policy === 'deny') {
@@ -314,7 +324,7 @@ export function createPermissionHandler(
         decision: 'denied',
         reason: 'policy-deny',
       }, `Permission denied by policy: ${request.kind}`);
-      return { kind: 'denied-by-rules' };
+      return { kind: 'reject' };
     }
 
     if (policy === 'allow') {
@@ -324,7 +334,7 @@ export function createPermissionHandler(
         decision: 'approved',
         reason: 'policy-allow',
       }, `Permission approved: ${request.kind}`);
-      return { kind: 'approved' };
+      return { kind: 'approve-once' };
     }
 
     // policy === 'allowlist': Check if the command's base executable is allowed
@@ -339,7 +349,7 @@ export function createPermissionHandler(
 
     // Fallback (shouldn't reach here with TypeScript's exhaustive checks)
     logger.warn({ kind: request.kind, policy, decision: 'denied' }, 'Unhandled policy — denied');
-    return { kind: 'denied-by-rules' };
+    return { kind: 'reject' };
   };
 }
 
@@ -363,7 +373,7 @@ function evaluateAllowlist(
       decision: 'approved',
       reason: 'no-command-to-validate',
     }, 'Shell permission approved (no command to validate)');
-    return { kind: 'approved' };
+    return { kind: 'approve-once' };
   }
 
   const baseCommand = extractBaseCommand(command);
@@ -377,7 +387,7 @@ function evaluateAllowlist(
       decision: 'approved',
       reason: 'allowlisted',
     }, `Shell approved (allowlisted): ${baseCommand}`);
-    return { kind: 'approved' };
+    return { kind: 'approve-once' };
   }
 
   // Not in allowlist — deny and log prominently so operator can review
@@ -389,7 +399,7 @@ function evaluateAllowlist(
     decision: 'denied',
     reason: 'not-in-allowlist',
   }, `Shell DENIED (not in allowlist): ${baseCommand} — add to shellAllowAdditional config if needed`);
-  return { kind: 'denied-by-rules' };
+  return { kind: 'reject' };
 }
 
 /**
@@ -411,7 +421,7 @@ function evaluateWorkingDir(
       decision: 'approved',
       reason: 'no-path-to-validate',
     }, `Permission approved (workingDir policy, no path): ${request.kind}`);
-    return { kind: 'approved' };
+    return { kind: 'approve-once' };
   }
 
   if (isWithinDirectory(requestPath, workingDirectory)) {
@@ -422,7 +432,7 @@ function evaluateWorkingDir(
       decision: 'approved',
       reason: 'within-working-dir',
     }, `Permission approved (within working dir): ${request.kind}`);
-    return { kind: 'approved' };
+    return { kind: 'approve-once' };
   }
 
   logger.warn({
@@ -433,12 +443,12 @@ function evaluateWorkingDir(
     decision: 'denied',
     reason: 'outside-working-dir',
   }, `Permission denied (outside working dir): ${request.kind}`);
-  return { kind: 'denied-by-rules' };
+  return { kind: 'reject' };
 }
 
 /**
  * Extract a command string from a permission request.
- * 
+ *
  * The SDK sends shell command info in several possible shapes:
  * - { fullCommandText: "npm test" }                          — primary field
  * - { commands: [{ identifier: "npm test" }] }               — structured list
@@ -446,7 +456,7 @@ function evaluateWorkingDir(
  * - { shellCommand: "npm test" }                             — alt name
  * - { cmd: "npm test" }                                      — alt name
  * - { args: ["npm", "test"] }                                — array form
- * 
+ *
  * We check all of these, prioritizing the fields the SDK actually uses.
  */
 function extractCommand(request: PermissionRequest): string | undefined {
@@ -474,13 +484,13 @@ function extractCommand(request: PermissionRequest): string | undefined {
 
 /**
  * Extract the base executable name from a command string.
- * 
+ *
  * Handles:
  * - Simple commands: "git status" → "git"
  * - Absolute paths: "/usr/bin/python3 script.py" → "python3"
  * - Env prefix: "env FOO=bar npm test" → "npm"
  * - Chained commands: "cd /foo && npm test" → "cd" (first command)
- * 
+ *
  * @param command Full command string
  * @returns The base executable name (lowercase-preserved)
  */

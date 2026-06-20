@@ -1,0 +1,33 @@
+{
+  "agent": {
+    "hostname": "converter-wf-dev",
+    "role": "developer",
+    "checkIntervalMs": 5000,
+    "taskRetryCount": 2,
+    "workflowFile": "../workflow.json",
+    "validation": {
+      "mode": "none",
+      "reviewEveryNthItem": 99
+    }
+  },
+  "copilot": {
+    "model": "auto"
+  },
+  "mailbox": {
+    "repoPath": "../runtime_mailbox",
+    "autoCommit": false,
+    "supportBroadcast": false,
+    "supportAttachments": false
+  },
+  "manager": null,
+  "teamMembers": [
+    {
+      "hostname": "converter-wf-dev",
+      "role": "developer",
+      "responsibilities": "Build the converter module through the workflow states (self-loop routing)."
+    }
+  ],
+  "quota": {
+    "enabled": false
+  }
+}

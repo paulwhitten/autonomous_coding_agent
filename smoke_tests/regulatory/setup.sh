@@ -39,12 +39,14 @@ echo "Agents:    3 -- RA + Developer + QA (peer routing, no manager)"
 echo ""
 
 # ----------------------------------------------------------------
-# Kill leftover processes
+# Kill leftover processes from previous regulatory test runs only.
+# Use a narrow pattern that matches the smoke_tests/regulatory agent
+# paths to avoid killing unrelated agents (e.g. project team agents).
 # ----------------------------------------------------------------
-echo "Killing any leftover agent processes..."
-pkill -f "node.*dist/index.js.*config.json" 2>/dev/null || true
+echo "Killing any leftover regulatory test agent processes..."
+pkill -f "node.*smoke_tests/regulatory.*/dist/index.js" 2>/dev/null || true
 sleep 1
-pkill -9 -f "node.*dist/index.js.*config.json" 2>/dev/null || true
+pkill -9 -f "node.*smoke_tests/regulatory.*/dist/index.js" 2>/dev/null || true
 
 # ----------------------------------------------------------------
 # Clean previous artifacts
@@ -118,6 +120,7 @@ setup_agent() {
   cp -r ../../src ${AGENT_DIR}/agent/
   cp -r ../../templates ${AGENT_DIR}/agent/
   cp ../../package.json ${AGENT_DIR}/agent/
+  cp ../../package-lock.json ${AGENT_DIR}/agent/
   cp ../../tsconfig.json ${AGENT_DIR}/agent/
   cp ../../roles.json ${AGENT_DIR}/agent/
   cp ${AGENT_DIR}/agent/config.template.json ${AGENT_DIR}/agent/config.json
@@ -133,8 +136,8 @@ setup_agent() {
   echo "  Cloned origin.git -> ${AGENT_DIR}/agent/workspace/project/"
 
   echo "Installing ${AGENT_NAME} agent dependencies..."
-  ( cd ${AGENT_DIR}/agent && npm install --silent 2>&1 | tail -5 ) || {
-    echo "WARNING: npm install for ${AGENT_NAME} exited non-zero (continuing)"
+  ( cd ${AGENT_DIR}/agent && npm ci --silent 2>&1 | tail -5 ) || {
+    echo "WARNING: npm ci for ${AGENT_NAME} exited non-zero (continuing)"
   }
 }
 
@@ -142,7 +145,7 @@ setup_agent "RA (Requirements Analyst)" "ra"
 setup_agent "Developer" "developer"
 setup_agent "QA" "qa"
 
-# CLI available after npm install
+# CLI available after npm ci
 CLI="npx --prefix developer/agent tsx ${HARNESS_ROOT}/scripts/smoke-test-cli.ts"
 
 # ----------------------------------------------------------------

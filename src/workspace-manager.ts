@@ -123,6 +123,33 @@ export class WorkspaceManager {
     const items = await this.getAllWorkItems();
     return items.length;
   }
+
+  /**
+   * Get work items grouped by state (pending, completed, review, failed).
+   * Used by the A2A status endpoint to serve live work item data.
+   */
+  async getWorkItemsByState(): Promise<Record<string, string[]>> {
+    const result: Record<string, string[]> = { pending: [], completed: [], review: [], failed: [] };
+    const dirs: Record<string, string> = {
+      pending: this.workPath,
+      completed: this.completedPath,
+      review: this.reviewPath,
+      failed: this.failedPath,
+    };
+    for (const [state, dir] of Object.entries(dirs)) {
+      try {
+        const files = await readdir(dir);
+        result[state] = files
+          .filter(f => f.endsWith('.md'))
+          .sort()
+          .map(f => {
+            const parsed = this.parseWorkItemFilename(f, dir);
+            return parsed ? parsed.title : f;
+          });
+      } catch { /* folder may not exist */ }
+    }
+    return result;
+  }
   
   /**
    * Create work items from a list of tasks

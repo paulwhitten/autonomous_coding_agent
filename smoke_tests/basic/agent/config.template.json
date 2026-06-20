@@ -9,6 +9,9 @@
       "reviewEveryNthItem": 1
     }
   },
+  "copilot": {
+    "model": "auto"
+  },
   "mailbox": {
     "repoPath": "../runtime_mailbox",
     "autoCommit": false,
