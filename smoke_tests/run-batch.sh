@@ -141,10 +141,16 @@ for i in $(seq 1 "$N"); do
   [ -f "${TEST_DIR}/test.log" ] && cp "${TEST_DIR}/test.log" "${RUN_DIR}/test.log"
   [ -f "${TEST_DIR}/agent/logs/agent.log" ] && cp "${TEST_DIR}/agent/logs/agent.log" "${RUN_DIR}/agent.log"
 
-  # Grab the judge report produced by this run (newest in judge/).
-  JUDGE_SRC="$(ls -t "${TEST_DIR}/judge/"*.json 2>/dev/null | head -1)"
+  # Grab the judge report produced by THIS run only. The judge/ folder is
+  # shared across runs, so an ls -t | head -1 would silently copy the PREVIOUS
+  # run's report when this run's judge wrote nothing (for example a malformed
+  # judge response that exited before writing). Restrict to files modified at
+  # or after this run's START_EPOCH so a stale report can never be copied.
+  JUDGE_SRC="$(find "${TEST_DIR}/judge" -maxdepth 1 -name '*.json' -newermt "@${START_EPOCH}" -print 2>/dev/null | xargs -r ls -t 2>/dev/null | head -1)"
   if [ -n "$JUDGE_SRC" ] && [ -f "$JUDGE_SRC" ]; then
     cp "$JUDGE_SRC" "${RUN_DIR}/judge.json"
+  else
+    echo "WARN: no fresh judge report for ${RUN_ID} (none newer than START_EPOCH); judge.json omitted" | tee -a "${RUN_DIR}/console.log"
   fi
 
   # Commit count in the project repo (read now, before next setup wipes it).

@@ -154,7 +154,7 @@ wait_for_task_done() {
   return 1
 }
 
-# Helper: seed a workflow assignment into the developer mailbox at DEVELOP.
+# Helper: seed a workflow assignment into the developer mailbox at IMPLEMENT.
 # The taskPrompt carries the deliverable spec (the WHAT); the generic
 # workflow carries the process (the HOW).
 seed_task() {
@@ -162,17 +162,17 @@ seed_task() {
   local PROMPT=$2
   local SUBJECT=$3
   local FILENAME=$4
-  local COMMIT_MSG=$5
+  local CONTEXT_JSON=$5
   echo ""
   echo "  --- Seeding ${TASK_ID} ---"
   $CLI pack-workflow \
     --base runtime_mailbox --agent converter-wf-dev --role developer --queue normal \
     --workflow-id converter-workflow \
     --task-id "${TASK_ID}" \
-    --state DEVELOP \
+    --state IMPLEMENT \
     --target-role developer \
     --prompt "${PROMPT}" \
-    --context "{\"commitMessage\":\"${COMMIT_MSG}\"}" \
+    --context "${CONTEXT_JSON}" \
     --from converter-wf-dev_developer \
     --to converter-wf-dev_developer \
     --subject "${SUBJECT}" \
@@ -190,7 +190,7 @@ if wait_for_task_done "converter-01" "$REMAINING"; then
     "@assignments/02-add-kilograms.md" \
     "Workflow Assignment converter-02: add kilogramsToPounds" \
     "002_converter_02.md" \
-    "feat: add kilogramsToPounds converter"
+    '{"implPaths":"converter.ts","testPaths":"converter.test.ts","docPaths":"","implCommitMessage":"feat: add kilogramsToPounds converter","testCommitMessage":"test: add kilogramsToPounds tests","verifyCommitMessage":"docs: update test output with new tests","docsCommitMessage":""}'
 
   REMAINING=$((MAX_WAIT - ($(date +%s) - START_TIME)))
   if wait_for_task_done "converter-02" "$REMAINING"; then
@@ -199,7 +199,7 @@ if wait_for_task_done "converter-01" "$REMAINING"; then
       "@assignments/03-update-readme.md" \
       "Workflow Assignment converter-03: update README" \
       "003_converter_03.md" \
-      "docs: update README with converter usage"
+      '{"implPaths":"","testPaths":"","docPaths":"README.md","implCommitMessage":"","testCommitMessage":"","verifyCommitMessage":"","docsCommitMessage":"docs: update README with converter usage"}'
 
     REMAINING=$((MAX_WAIT - ($(date +%s) - START_TIME)))
     if wait_for_task_done "converter-03" "$REMAINING"; then

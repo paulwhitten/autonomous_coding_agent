@@ -773,17 +773,33 @@ async function main(): Promise<void> {
   // Build judge prompt
   const prompt = buildJudgePrompt(testName, artifacts, config.weights);
 
-  // Call LLM
-  console.log('Calling LLM judge...');
-  const rawResponse = await callJudge(prompt, judgeModel, logger);
-
-  if (!rawResponse.trim()) {
-    process.stderr.write('error: LLM returned an empty response\n');
-    process.exit(1);
+  // Call LLM, with retries. A single judge call can fail transiently by
+  // returning an empty response or malformed/truncated JSON. Without a retry
+  // the run produces no report file at all, which silently drops one data
+  // point from the batch. Retrying re-generates the verdict from scratch.
+  const MAX_JUDGE_ATTEMPTS = 3;
+  let rawResponse = '';
+  let verdict: JudgeVerdict | undefined;
+  let lastError: unknown;
+  for (let attempt = 1; attempt <= MAX_JUDGE_ATTEMPTS; attempt++) {
+    console.log(`Calling LLM judge (attempt ${attempt}/${MAX_JUDGE_ATTEMPTS})...`);
+    try {
+      rawResponse = await callJudge(prompt, judgeModel, logger);
+      if (!rawResponse.trim()) {
+        throw new Error('LLM returned an empty response');
+      }
+      verdict = extractVerdict(rawResponse);
+      break;
+    } catch (e) {
+      lastError = e;
+      console.log(`  judge attempt ${attempt} failed: ${e instanceof Error ? e.message.split('\n')[0] : String(e)}`);
+    }
   }
 
-  // Parse verdict
-  const verdict = extractVerdict(rawResponse);
+  if (!verdict) {
+    process.stderr.write(`error: judge failed after ${MAX_JUDGE_ATTEMPTS} attempts: ${lastError instanceof Error ? lastError.message : String(lastError)}\n`);
+    process.exit(1);
+  }
 
   // Recompute overall with our weights (don't trust LLM arithmetic)
   verdict.overall.score = computeWeightedScore(verdict.scores, config.weights);

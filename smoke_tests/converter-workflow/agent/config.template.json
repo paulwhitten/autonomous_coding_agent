@@ -4,8 +4,8 @@
     "role": "developer",
     "checkIntervalMs": 10000,
     "taskRetryCount": 2,
-    "minWorkItems": 4,
-    "maxWorkItems": 8,
+    "minWorkItems": 1,
+    "maxWorkItems": 3,
     "workflowFile": "../workflow.json",
     "validation": {
       "mode": "none",

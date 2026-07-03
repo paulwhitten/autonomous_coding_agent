@@ -152,7 +152,7 @@ $CLI init-mailbox --base runtime_mailbox --agent converter-wf-dev --role develop
 
 # ----------------------------------------------------------------
 # Seed the FIRST workflow assignment (converter-01) at the initial
-# DEVELOP state. The taskPrompt carries the deliverable spec (the WHAT);
+# IMPLEMENT state. The taskPrompt carries the deliverable spec (the WHAT);
 # the generic workflow carries the process (the HOW). run-test.sh seeds
 # converter-02 and converter-03 serially after each prior task reaches a
 # terminal state.
@@ -163,10 +163,10 @@ $CLI pack-workflow \
   --base runtime_mailbox --agent converter-wf-dev --role developer --queue normal \
   --workflow-id converter-workflow \
   --task-id converter-01 \
-  --state DEVELOP \
+  --state IMPLEMENT \
   --target-role developer \
   --prompt "@assignments/01-create-module.md" \
-  --context '{"commitMessage":"feat: add unit converter module"}' \
+  --context '{"implPaths":"converter.ts","testPaths":"converter.test.ts","docPaths":"","implCommitMessage":"feat: add unit converter module","testCommitMessage":"test: add converter unit tests","verifyCommitMessage":"docs: capture test output","docsCommitMessage":""}' \
   --from converter-wf-dev_developer \
   --to converter-wf-dev_developer \
   --subject "Workflow Assignment converter-01: create converter module" \
