@@ -2,14 +2,23 @@
 # Setup script for converter-workflow smoke test
 #
 # Workflow-driven counterpart to converter-ad-hoc. A single developer
-# agent is driven through a deterministic state machine (workflow.json)
-# that builds the SAME unit converter module. The LLM only writes source
-# and test code; the workflow engine performs every git commit and Jest
-# run via onExitCommands.
+# agent is driven through a GENERIC, deliverable-agnostic state machine
+# (workflow.json: DEVELOP -> TEST -> FINALIZE -> DONE). The LLM only writes
+# source, test, and doc files in DEVELOP; the workflow engine runs Jest and
+# performs every git commit plus working-tree hygiene via onExitCommands.
 #
-# Seeds ONE WorkflowAssignment at the initial state (CREATE_MODULE) using
-# the harness pack-workflow CLI. All subsequent states are reached by the
-# engine re-queuing self-loop assignments — no further mailbox seeding.
+# The three deliverables (build module, add kilogramsToPounds, write README)
+# are three SEPARATE assignments, each with its own taskId, carrying the
+# WHAT in taskPrompt (assignments/*.md). This mirrors converter-ad-hoc's
+# three mailbox messages; the only intended difference is who runs the
+# deterministic steps (engine here, LLM in ad-hoc).
+#
+# Assignments are seeded SERIALLY, one at a time, to avoid mailbox interleave
+# on a single agent: setup.sh seeds only assignment 1 (converter-01) here;
+# run-test.sh waits for each assignment to reach a terminal state, then seeds
+# the next (regulatory-workflow pattern). Serial seeding guarantees only one
+# task is ever in the mailbox, so a DEVELOP rework self-loop cannot clobber a
+# later assignment's not-yet-committed work.
 
 set -eE
 trap 'echo "FATAL: setup.sh failed at line $LINENO (exit $?)" >&2' ERR
@@ -97,13 +106,36 @@ TSC_EOF
 # Ignore the .github/ directory the agent runtime generates at startup
 # (role-based copilot-instructions.md); it is framework scaffolding, not an
 # agent deliverable, so it must not dirty the project working tree.
+# Also ignore transpiled TypeScript output (e.g. a compiled converter.js from
+# running tsc): it is a build artifact, not a deliverable, and must not be left
+# untracked or committed.
 cat > .gitignore <<'GITIGNORE_EOF'
 .github/
+node_modules/
+coverage/
+dist/
+
+# Transpiled TypeScript output (build artifacts, not deliverables).
+# Ignore ALL transpiled JS (converter.js AND converter.test.js etc.) so a
+# stray `npx tsc` run by the LLM cannot leave untracked files that dirty the
+# working tree. Source is .ts and the Jest config is .cjs, so *.js is safe.
+*.js
+*.js.map
+*.d.ts
 GITIGNORE_EOF
 echo "# Converter Workflow Project" > README.md
 git add -A
 git commit -m "chore: initial project setup"
 cd "$SCRIPT_DIR"
+
+# Stage the deterministic hygiene finalize script one level ABOVE the project
+# git repo (agent/workspace/). The UPDATE_README state invokes it as
+# `bash ../finalize-clean-tree.sh` with cwd = agent/workspace/project, so it
+# operates on the project repo while living outside it (never dirtying the
+# tree it cleans). Mirrors the scripts/auto-rebase.sh pattern.
+echo "Installing finalize-clean-tree hygiene script..."
+cp scripts/finalize-clean-tree.sh agent/workspace/finalize-clean-tree.sh
+chmod +x agent/workspace/finalize-clean-tree.sh
 
 # Install dependencies
 echo "Installing dependencies..."
@@ -119,26 +151,25 @@ echo "Creating mailbox structure..."
 $CLI init-mailbox --base runtime_mailbox --agent converter-wf-dev --role developer
 
 # ----------------------------------------------------------------
-# Seed the initial WorkflowAssignment (CREATE_MODULE state)
-#
-# Only ONE message is seeded. The workflow engine drives every
-# subsequent state by re-queuing self-loop assignments to the same
-# agent. The per-state prompts in workflow.json carry the specific
-# instructions; this taskPrompt is just high-level context.
+# Seed the FIRST workflow assignment (converter-01) at the initial
+# DEVELOP state. The taskPrompt carries the deliverable spec (the WHAT);
+# the generic workflow carries the process (the HOW). run-test.sh seeds
+# converter-02 and converter-03 serially after each prior task reaches a
+# terminal state.
 # ----------------------------------------------------------------
 
-echo "Seeding initial workflow assignment..."
+echo "Seeding workflow assignment 1 of 3 (converter-01)..."
 $CLI pack-workflow \
   --base runtime_mailbox --agent converter-wf-dev --role developer --queue normal \
   --workflow-id converter-workflow \
-  --task-id converter-build-001 \
-  --state CREATE_MODULE \
+  --task-id converter-01 \
+  --state DEVELOP \
   --target-role developer \
-  --prompt "Build a TypeScript unit converter module incrementally. Follow the instructions for the current workflow state. The workflow engine performs all git commits and test runs for you — you only write source and test code." \
+  --prompt "@assignments/01-create-module.md" \
   --from converter-wf-dev_developer \
   --to converter-wf-dev_developer \
-  --subject "Workflow Assignment: CREATE_MODULE" \
-  --filename "001_converter_build.md"
+  --subject "Workflow Assignment converter-01: create converter module" \
+  --filename "001_converter_01.md"
 
 echo ""
 echo "converter-workflow smoke test setup complete!"

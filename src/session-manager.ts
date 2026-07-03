@@ -772,7 +772,7 @@ export class SessionManager {
       const seedPrompt = seedParts.join('\n');
 
       try {
-        await this.sendPromptAndWait(seedPrompt, 30_000);
+        await this.sendPromptAndWait(seedPrompt, 60_000);
         this.logger.info(
           { seedLen: seedPrompt.length },
           'Session seeded with compressed context',

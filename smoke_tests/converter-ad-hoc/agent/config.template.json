@@ -2,7 +2,7 @@
   "agent": {
     "hostname": "adhoc-test-agent",
     "role": "developer",
-    "checkIntervalMs": 5000,
+    "checkIntervalMs": 10000,
     "taskRetryCount": 2,
     "validation": {
       "mode": "always",
@@ -10,7 +10,7 @@
     }
   },
   "copilot": {
-    "model": "auto"
+    "model": "gpt-5-mini"
   },
   "mailbox": {
     "repoPath": "../runtime_mailbox",

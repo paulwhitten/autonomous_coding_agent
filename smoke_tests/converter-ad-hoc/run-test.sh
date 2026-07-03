@@ -48,6 +48,10 @@ echo ""
 # Step 3: Start agent
 # ----------------------------------------------------------------
 echo "Step 3: Starting agent..."
+# Route the agent under test to the BYOK (lesser) model. The judge is
+# unaffected: byok_disable is called after the agent stops, before judging.
+source "$SCRIPT_DIR/../byok-provider.sh"
+byok_enable
 pushd agent > /dev/null
 nohup node dist/index.js config.json > "${SCRIPT_DIR}/test.log" 2>&1 &
 AGENT_PID=$!
@@ -69,10 +73,10 @@ trap cleanup EXIT
 # ----------------------------------------------------------------
 # Step 4: Monitor progress
 # ----------------------------------------------------------------
-echo "Step 4: Waiting for agent to complete (max 10 minutes)..."
+echo "Step 4: Waiting for agent to complete (max 25 minutes)..."
 echo ""
 
-MAX_WAIT=600
+MAX_WAIT=1500
 START_TIME=$(date +%s)
 COMPLETED=false
 
@@ -84,33 +88,29 @@ while [ $(($(date +%s) - START_TIME)) -lt $MAX_WAIT ]; do
   fi
 
   if [ -f test.log ]; then
-    # Check if the agent has processed both messages and gone idle
-    MSG_COMPLETE=$(grep -c "Message.*completed\|processed message\|ad-hoc message handled" test.log 2>/dev/null || echo "0")
-    WORK_ITEMS=$(grep -c "Work item completed" test.log 2>/dev/null || echo "0")
-    IDLE_COUNT=$(grep -c "No new messages in mailbox" test.log 2>/dev/null || echo "0")
+    # `grep -c` prints a count and exits non-zero on no match, so `head -1`
+    # plus a `:-0` default keeps the value a clean single integer.
+    WORK_ITEMS=$(grep -c "Work item completed" test.log 2>/dev/null | head -1)
+    WORK_ITEMS=${WORK_ITEMS:-0}
+    # The ad-hoc agent logs this once when it has drained the mailbox.
+    IDLE_COUNT=$(grep -c "No new messages in mailbox" test.log 2>/dev/null | head -1)
+    IDLE_COUNT=${IDLE_COUNT:-0}
 
-    # Show progress
     COMMIT_COUNT=0
     if [ -d "agent/workspace/project/.git" ]; then
       COMMIT_COUNT=$(cd agent/workspace/project && git log --oneline 2>/dev/null | wc -l | tr -d ' ')
     fi
+
     ELAPSED=$(($(date +%s) - START_TIME))
-    echo "  [${ELAPSED}s] Work items: $WORK_ITEMS | Commits: $COMMIT_COUNT | Idle checks: $IDLE_COUNT"
+    echo "  [${ELAPSED}s] Work items: $WORK_ITEMS | Commits: $COMMIT_COUNT | Idle: $IDLE_COUNT"
 
-    # Consider complete if agent has done meaningful work and is now idle
-    if [ "$IDLE_COUNT" -ge 2 ] && [ "$WORK_ITEMS" -ge 2 ]; then
+    # Complete when the agent has done its work and drained the mailbox
+    if [ "$IDLE_COUNT" -ge 1 ] && [ "$WORK_ITEMS" -ge 2 ]; then
       COMPLETED=true
       break
     fi
-
-    # Also consider complete if we see enough git commits
-    if [ "$COMMIT_COUNT" -ge 7 ] && [ "$IDLE_COUNT" -ge 1 ]; then
-      COMPLETED=true
-      break
-    fi
-
-    # Fallback: if agent processed messages and has been idle for a while
-    if [ "$IDLE_COUNT" -ge 4 ] && [ "$COMMIT_COUNT" -ge 3 ]; then
+    # Fallback: all expected commits present (1 setup + 6 work commits)
+    if [ "$COMMIT_COUNT" -ge 7 ]; then
       COMPLETED=true
       break
     fi
@@ -126,6 +126,9 @@ else
   echo "Timeout reached — validating what was completed"
 fi
 
+# Give the agent a moment to flush logs
+sleep 3
+
 # Stop agent
 if ps -p $AGENT_PID > /dev/null 2>&1; then
   kill $AGENT_PID 2>/dev/null || true
@@ -133,6 +136,10 @@ if ps -p $AGENT_PID > /dev/null 2>&1; then
   kill -9 $AGENT_PID 2>/dev/null || true
   echo "Agent stopped"
 fi
+
+# Clear BYOK provider env so the LLM judge runs on its strong default model,
+# not the lesser assessed model.
+byok_disable
 
 echo ""
 
@@ -144,8 +151,11 @@ echo "VALIDATION"
 echo "================================================================"
 echo ""
 
-./validate.sh
-RESULT=$?
+# Capture validate.sh's exit code without letting `set -e` abort the script.
+# A non-zero result is a test FAIL, not a runner error: we still want to run
+# the judge and report below.
+RESULT=0
+./validate.sh || RESULT=$?
 
 echo ""
 echo "================================================================"

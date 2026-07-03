@@ -2865,16 +2865,14 @@ ${message.content}
           const hasMoreWork = await this.workspace.hasWorkItems();
           if (!hasMoreWork) {
             await this.handleWorkflowTransition();
-          } else {
-            // More work items remain in this phase.  Reset the session
-            // now to prevent conversation history accumulation that
-            // causes stuttering (repeated token fragments in deltas).
-            // The compressed summary preserves context from prior items.
-            await this.resetSessionWithContext(
-              `Completed work item "${workItem.title}" for workflow task ` +
-              `${this.activeWorkflowTaskId}.  More work items remain.`,
-            );
           }
+          // If more work items remain in this phase we intentionally do NOT
+          // reset the session here.  The session is reset once per assignment
+          // (at the phase handoff in handleWorkflowTransition() and at the
+          // terminal state), not after every work item.  Resetting per work
+          // item incurred a compress + destroy + seed round-trip on each item,
+          // which dominated wall-clock time with slower models while shedding
+          // very little accumulated history.
         }
 
         // Record quota usage

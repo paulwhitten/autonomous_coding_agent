@@ -25,9 +25,9 @@ Exports exactly these four functions:
 - `milesToKilometers(m: number): number` — returns `m * 1.60934`
 - `kilogramsToPounds(kg: number): number` — returns `kg * 2.20462`
 
-The first three come from the early workflow states; `kilogramsToPounds` is
-added later. The agent must **extend** the existing module without overwriting
-the original three functions.
+The first three functions are added first; `kilogramsToPounds` is added later.
+The agent must **extend** the existing module without overwriting the original
+three functions.
 
 ### Tests — `converter.test.ts`
 
@@ -42,8 +42,7 @@ At least **11 test cases** total covering all four functions, including:
 ### Verification — `test_output.txt`
 
 Contains the **actual** `npx jest` console output, demonstrating all tests pass
-(exit code 0). The workflow engine runs the tests and captures the output; the
-output must be genuine, not fabricated.
+(exit code 0). The output must be genuine, not fabricated.
 
 ### Documentation — `README.md`
 
@@ -62,6 +61,10 @@ import and call each of the four functions, including `kilogramsToPounds`.
   workflow engine.
 - **Clean working tree:** everything committed at the end (no uncommitted
   changes).
+- **Code hygiene:** no stray build artifacts left in the working tree.
+  Transpiled output (for example a compiled `converter.js` produced by running
+  the TypeScript compiler) must not be left behind. Either avoid generating it,
+  add it to `.gitignore`, or remove it before finishing.
 - **No overwriting:** the later states must preserve the earlier states'
   functions and tests.
 

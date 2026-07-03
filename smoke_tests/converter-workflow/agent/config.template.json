@@ -2,8 +2,10 @@
   "agent": {
     "hostname": "converter-wf-dev",
     "role": "developer",
-    "checkIntervalMs": 5000,
+    "checkIntervalMs": 10000,
     "taskRetryCount": 2,
+    "minWorkItems": 4,
+    "maxWorkItems": 8,
     "workflowFile": "../workflow.json",
     "validation": {
       "mode": "none",
@@ -11,7 +13,7 @@
     }
   },
   "copilot": {
-    "model": "auto"
+    "model": "gpt-5-mini"
   },
   "mailbox": {
     "repoPath": "../runtime_mailbox",
