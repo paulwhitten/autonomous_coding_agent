@@ -162,6 +162,7 @@ seed_task() {
   local PROMPT=$2
   local SUBJECT=$3
   local FILENAME=$4
+  local COMMIT_MSG=$5
   echo ""
   echo "  --- Seeding ${TASK_ID} ---"
   $CLI pack-workflow \
@@ -171,6 +172,7 @@ seed_task() {
     --state DEVELOP \
     --target-role developer \
     --prompt "${PROMPT}" \
+    --context "{\"commitMessage\":\"${COMMIT_MSG}\"}" \
     --from converter-wf-dev_developer \
     --to converter-wf-dev_developer \
     --subject "${SUBJECT}" \
@@ -187,7 +189,8 @@ if wait_for_task_done "converter-01" "$REMAINING"; then
   seed_task "converter-02" \
     "@assignments/02-add-kilograms.md" \
     "Workflow Assignment converter-02: add kilogramsToPounds" \
-    "002_converter_02.md"
+    "002_converter_02.md" \
+    "feat: add kilogramsToPounds converter"
 
   REMAINING=$((MAX_WAIT - ($(date +%s) - START_TIME)))
   if wait_for_task_done "converter-02" "$REMAINING"; then
@@ -195,7 +198,8 @@ if wait_for_task_done "converter-01" "$REMAINING"; then
     seed_task "converter-03" \
       "@assignments/03-update-readme.md" \
       "Workflow Assignment converter-03: update README" \
-      "003_converter_03.md"
+      "003_converter_03.md" \
+      "docs: update README with converter usage"
 
     REMAINING=$((MAX_WAIT - ($(date +%s) - START_TIME)))
     if wait_for_task_done "converter-03" "$REMAINING"; then

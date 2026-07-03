@@ -166,6 +166,7 @@ $CLI pack-workflow \
   --state DEVELOP \
   --target-role developer \
   --prompt "@assignments/01-create-module.md" \
+  --context '{"commitMessage":"feat: add unit converter module"}' \
   --from converter-wf-dev_developer \
   --to converter-wf-dev_developer \
   --subject "Workflow Assignment converter-01: create converter module" \
