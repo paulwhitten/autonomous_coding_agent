@@ -104,13 +104,26 @@ while [ $(($(date +%s) - START_TIME)) -lt $MAX_WAIT ]; do
     ELAPSED=$(($(date +%s) - START_TIME))
     echo "  [${ELAPSED}s] Work items: $WORK_ITEMS | Commits: $COMMIT_COUNT | Idle: $IDLE_COUNT"
 
-    # Complete when the agent has done its work and drained the mailbox
-    if [ "$IDLE_COUNT" -ge 1 ] && [ "$WORK_ITEMS" -ge 2 ]; then
+    # Require a clean working tree before declaring completion. The three
+    # assignment messages are seeded together, so an idle mailbox means all
+    # three were read, but the run must not be called complete while changes
+    # remain uncommitted (for example a modified test_output.txt or an
+    # unfinished README update). A clean tree is the completion signal.
+    TREE_CLEAN=false
+    if [ -d "agent/workspace/project/.git" ]; then
+      if [ -z "$(cd agent/workspace/project && git status --porcelain 2>/dev/null)" ]; then
+        TREE_CLEAN=true
+      fi
+    fi
+
+    # Complete when the agent has drained the mailbox and left a clean tree.
+    if [ "$IDLE_COUNT" -ge 1 ] && [ "$WORK_ITEMS" -ge 2 ] && [ "$TREE_CLEAN" = true ]; then
       COMPLETED=true
       break
     fi
-    # Fallback: all expected commits present (1 setup + 6 work commits)
-    if [ "$COMMIT_COUNT" -ge 7 ]; then
+    # Fallback: all expected commits present (1 setup + 6 work commits) and the
+    # tree is clean, so the final verification did not leave uncommitted work.
+    if [ "$COMMIT_COUNT" -ge 7 ] && [ "$TREE_CLEAN" = true ]; then
       COMPLETED=true
       break
     fi
