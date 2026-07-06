@@ -101,8 +101,19 @@ while [ $(($(date +%s) - START_TIME)) -lt $MAX_WAIT ]; do
       COMMIT_COUNT=$(cd agent/workspace/project && git log --oneline 2>/dev/null | wc -l | tr -d ' ')
     fi
 
+    # The README update (assignment 3) is the final deliverable, so detect it
+    # directly. Without this guard the earlier commit-count fallback declared
+    # completion at 7 commits (1 setup + 3 for msg 1 + 3 for msg 2) and the
+    # harness killed the agent before it ever polled for and processed the
+    # third message, leaving README.md at its seeded stub.
+    README_DONE=false
+    if [ -f "agent/workspace/project/README.md" ] && \
+       grep -qi "converter\|celsius\|fahrenheit\|miles\|kilometer" "agent/workspace/project/README.md" 2>/dev/null; then
+      README_DONE=true
+    fi
+
     ELAPSED=$(($(date +%s) - START_TIME))
-    echo "  [${ELAPSED}s] Work items: $WORK_ITEMS | Commits: $COMMIT_COUNT | Idle: $IDLE_COUNT"
+    echo "  [${ELAPSED}s] Work items: $WORK_ITEMS | Commits: $COMMIT_COUNT | Idle: $IDLE_COUNT | README: $README_DONE"
 
     # Require a clean working tree before declaring completion. The three
     # assignment messages are seeded together, so an idle mailbox means all
@@ -116,14 +127,16 @@ while [ $(($(date +%s) - START_TIME)) -lt $MAX_WAIT ]; do
       fi
     fi
 
-    # Complete when the agent has drained the mailbox and left a clean tree.
-    if [ "$IDLE_COUNT" -ge 1 ] && [ "$WORK_ITEMS" -ge 2 ] && [ "$TREE_CLEAN" = true ]; then
+    # Complete when the agent has drained the mailbox (all three messages
+    # read), documented the module (assignment 3), and left a clean tree.
+    if [ "$IDLE_COUNT" -ge 1 ] && [ "$README_DONE" = true ] && [ "$TREE_CLEAN" = true ]; then
       COMPLETED=true
       break
     fi
-    # Fallback: all expected commits present (1 setup + 6 work commits) and the
-    # tree is clean, so the final verification did not leave uncommitted work.
-    if [ "$COMMIT_COUNT" -ge 7 ] && [ "$TREE_CLEAN" = true ]; then
+    # Fallback: all expected commits present for the three-message task
+    # (1 setup + 3 for msg 1 + 3 for msg 2 + 1 README for msg 3 = 8), with the
+    # README documented and a clean tree, so no assignment was left unfinished.
+    if [ "$COMMIT_COUNT" -ge 8 ] && [ "$README_DONE" = true ] && [ "$TREE_CLEAN" = true ]; then
       COMPLETED=true
       break
     fi
