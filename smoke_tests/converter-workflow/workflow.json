@@ -1,127 +1,139 @@
 {
   "$schema": "../../workflows/workflow.schema.json",
   "id": "converter-workflow",
-  "name": "Converter Build Workflow",
-  "description": "Deterministic single-developer workflow that builds the SAME unit converter module as the converter-ad-hoc smoke test. The LLM only writes source/test code; the workflow engine performs all git commits and Jest runs deterministically via onExitCommands. This is the workflow-driven counterpart to converter-ad-hoc (LLM-driven) for A/B comparison.",
-  "version": "1.0.0",
-  "initialState": "CREATE_MODULE",
-  "terminalStates": ["DONE"],
+  "name": "Generic Implement / Test / Verify / Document Workflow",
+  "description": "Deliverable-agnostic single-developer process workflow with type-segregated commits and a test-driven rework loop. The LLM writes production source in IMPLEMENT, tests in TEST, and documentation in DOCUMENT. The engine performs every git commit deterministically as an exit side effect of each work state, using per-type commit messages taken from each assignment's seed context. VERIFY is a mechanical gate: it runs the full Jest suite on entry and, on failure, routes back to IMPLEMENT with the captured test output as feedback. The WHAT comes entirely from each assignment's taskPrompt and the per-assignment file paths and commit messages carried in context, so this same workflow drives every assignment without deliverable-specific states. This is the staged counterpart to the single-commit converter-workflow. The only intended change is that the engine owns the full per-type commit sequence and the test-driven rework loop, so instruction adherence to a per-type commit convention does not depend on the LLM.",
+  "version": "3.0.0-staged",
+  "initialState": "IMPLEMENT",
+  "terminalStates": ["DONE", "ESCALATED"],
   "globalContext": {
-    "projectPath": "workspace/project"
+    "projectPath": "workspace/project",
+    "rejectionReason": "None. This is the first implementation attempt."
   },
   "states": {
-    "CREATE_MODULE": {
-      "name": "Create Converter Module",
+    "IMPLEMENT": {
+      "name": "Implement",
       "role": "developer",
-      "description": "Developer creates converter.ts with three conversion functions. The engine commits the file deterministically on exit.",
-      "prompt": "You are building a TypeScript unit converter module. The project is at {{projectPath}} and already has a Jest + TypeScript setup (package.json, jest.config.cjs, tsconfig.json) — do NOT create or modify those.\n\nYour ONLY task in this step:\n\nCreate a file named `converter.ts` in {{projectPath}} that exports exactly these three functions:\n  - `celsiusToFahrenheit(c: number): number` — returns (c * 9/5) + 32\n  - `fahrenheitToCelsius(f: number): number` — returns (f - 32) * 5/9\n  - `milesToKilometers(m: number): number` — returns m * 1.60934\n\nUse `export function` declarations. Do not add any other functions yet.\n\nIMPORTANT — the workflow engine handles process steps for you:\n  - Do NOT run git or make commits.\n  - Do NOT run jest or any tests.\n  - Do NOT create test files yet.\nJust write converter.ts and report what you created.",
-      "allowedTools": ["terminal", "file_ops"],
+      "description": "The developer writes ONLY the production source the assignment requires. The engine commits those source files on exit with the assignment's implementation commit message. Also the rework landing state: when VERIFY's test gate fails, the engine routes back here and sets {{rejectionReason}} to the captured Jest output plus adds it as an agent note, so the developer sees the exact failing tests.",
+      "prompt": "You are working in the project at {{projectPath}}, a git repository that already has a Jest + TypeScript setup in place (package.json, jest.config.cjs, tsconfig.json). Do NOT create or modify that harness configuration.\n\nWrite ONLY the production source the assignment requires (see 'Task prompt' below). Write or edit source files in {{projectPath}}. Do NOT write test files and do NOT write documentation. Later stages add tests and update documentation. If the assignment requires no source change, make none.\n\nVerification feedback, read this first.\n{{rejectionReason}}\n\nIf the feedback above reports a failing test run, the failing Jest output is also in the 'Agent notes' and 'Prior workflow history' sections above. Address EACH failing test by correcting the source. If the feedback says this is the first attempt, implement the assignment from scratch.\n\nWhat NOT to do.\n  - Do NOT run git or make any commits. The engine commits your source on exit.\n  - Do NOT run jest or any tests. The engine runs the full suite next and routes this work back to you if any test fails.\n  - Do NOT run tsc or other build tools.\n  - Do NOT edit test files to make a failing test pass. Fix the source, not the test.\n\nWhen you finish, briefly summarize what you changed and why. Your summary is captured as a note and carried into the later stages.",
+      "allowedTools": ["file_ops"],
       "transitions": {
-        "onSuccess": "WRITE_TESTS",
-        "onFailure": "CREATE_MODULE"
+        "onSuccess": "TEST",
+        "onFailure": "IMPLEMENT"
+      },
+      "maxRetries": 1,
+      "maxCycleVisits": 3,
+      "timeoutMs": 300000,
+      "onExitCommands": [
+        { "command": "PATHS='{{implPaths}}'; MSG='{{implCommitMessage}}'; case \"$PATHS\" in *'{{'*) PATHS='';; esac; case \"$MSG\" in ''|*'{{'*) MSG='chore: commit implementation for {{taskId}}';; esac; if [ -n \"$PATHS\" ]; then git add -- $PATHS 2>/dev/null || true; git diff --cached --quiet || git commit -m \"$MSG\"; fi", "reason": "Stage and commit ONLY the implementation files for this assignment (implPaths from context) with the assignment's implCommitMessage. Type-segregated: staging an explicit path list keeps the source commit separate from the test and doc commits, so the emitted history matches a feat/test/docs convention without the LLM running git. Skips cleanly when implPaths is empty or unsubstituted (for example a docs-only assignment). The git diff --cached --quiet guard makes it a no-op when nothing changed, so retries and no-op assignments are safe.", "failOnError": true },
+        { "command": "git checkout -- . 2>/dev/null || true", "reason": "Deterministic per-state scope enforcement. After the typed implementation commit above, discard any remaining tracked-file modifications this state did not own, for example an early README edit that belongs to the later documentation assignment. git checkout only reverts tracked modifications and never deletes untracked new files, so a mis-pathed owned file still surfaces at the VERIFY test gate rather than being silently removed. This keeps each type-segregated commit limited to its owning state and stops cross-state or cross-assignment documentation leakage from being swept into the FINALIZE chore commit, so the dedicated documentation assignment produces the README under its specified docs commit message.", "failOnError": false }
+      ],
+      "exitActions": [
+        { "type": "log", "params": { "message": "IMPLEMENT complete for task {{taskId}} -- handing to TEST", "level": "info" } }
+      ]
+    },
+
+    "TEST": {
+      "name": "Test",
+      "role": "developer",
+      "description": "The developer writes ONLY the test files that exercise the implementation from IMPLEMENT. The engine commits those test files on exit with the assignment's test commit message. No Jest run here: VERIFY runs the suite next.",
+      "prompt": "You are working in the project at {{projectPath}}, a git repository that already has a Jest + TypeScript setup in place (package.json, jest.config.cjs, tsconfig.json). Do NOT create or modify that harness configuration.\n\nYour single responsibility in this stage is test code. Write ONLY Jest test files (for example the *.test.ts files named under 'Task prompt' below) that exercise the implementation completed in the previous stage. Do NOT modify source files, and do NOT create or modify documentation, README files, usage examples, draft files, or note files.\n\nIf the assignment is documentation only, or otherwise involves no testable code change, then there is nothing to do in this stage: produce no work items and create no files. Say so in your summary and stop.\n\nThe implementation you are testing was written and committed in the previous stage. Its summary is in the 'Agent notes' section above. Import from the source module and assert the behavior the assignment specifies.\n\nKeep the breakdown coarse. Create at most one work item per test file, or per cohesive group of related assertions. Do NOT create separate work items for planning, drafting, note taking, reviewing, or committing.\n\nWhat NOT to do.\n  - Do NOT create or edit README.md, other .md files, usage examples, draft files, or note files. Those belong to the DOCUMENT stage.\n  - Do NOT run git or make any commits. The engine commits your tests on exit.\n  - Do NOT run jest. The engine runs the full suite next and routes work back to Implement if any test fails.\n  - Do NOT run tsc or other build tools.\n  - Do NOT modify the source to make a test convenient. If the source looks wrong, note it in your summary and write the correct test. The verify stage will route back to Implement.\n\nWhen you finish, briefly summarize which behaviors you covered. Your summary is captured as a note.",
+      "allowedTools": ["file_ops"],
+      "transitions": {
+        "onSuccess": "VERIFY",
+        "onFailure": "TEST"
       },
       "maxRetries": 1,
       "timeoutMs": 300000,
       "onExitCommands": [
-        { "command": "test -f converter.ts", "reason": "Gate: the developer must have created converter.ts before we can proceed.", "failOnError": true },
-        { "command": "git add converter.ts && git commit -m 'feat: add unit converter module'", "reason": "Deterministic incremental commit of the new module.", "failOnError": true }
+        { "command": "PATHS='{{testPaths}}'; MSG='{{testCommitMessage}}'; case \"$PATHS\" in *'{{'*) PATHS='';; esac; case \"$MSG\" in ''|*'{{'*) MSG='test: commit tests for {{taskId}}';; esac; if [ -n \"$PATHS\" ]; then git add -- $PATHS 2>/dev/null || true; git diff --cached --quiet || git commit -m \"$MSG\"; fi", "reason": "Stage and commit ONLY the test files for this assignment (testPaths from context) with the assignment's testCommitMessage. Kept separate from the source commit so the history shows a distinct test commit. Skips cleanly when testPaths is empty or unsubstituted (for example a docs-only assignment). The git diff --cached --quiet guard makes it a no-op when nothing changed.", "failOnError": true },
+        { "command": "git checkout -- . 2>/dev/null || true", "reason": "Deterministic per-state scope enforcement. After the typed test commit above, discard any remaining tracked-file modifications this state did not own, for example an early README edit that belongs to the later documentation assignment. git checkout only reverts tracked modifications and never deletes untracked new files, so a mis-pathed owned file still surfaces at the VERIFY test gate rather than being silently removed. This keeps each type-segregated commit limited to its owning state and stops cross-state or cross-assignment documentation leakage from being swept into the FINALIZE chore commit.", "failOnError": false }
       ],
       "exitActions": [
-        { "type": "log", "params": { "message": "converter.ts created and committed for task {{taskId}}", "level": "info" } }
+        { "type": "log", "params": { "message": "TEST complete for task {{taskId}} -- handing to VERIFY", "level": "info" } }
       ]
     },
 
-    "WRITE_TESTS": {
-      "name": "Write Unit Tests",
+    "VERIFY": {
+      "name": "Verify",
       "role": "developer",
-      "description": "Developer writes converter.test.ts. The engine runs Jest (gating success), captures output, and commits deterministically.",
-      "prompt": "Continue building the converter module in {{projectPath}}. `converter.ts` already exists with celsiusToFahrenheit, fahrenheitToCelsius, and milesToKilometers.\n\nYour ONLY task in this step:\n\nCreate a file named `converter.test.ts` in {{projectPath}} with Jest tests for the three existing functions. Include at least these 8 cases:\n  - celsiusToFahrenheit(0) === 32\n  - celsiusToFahrenheit(100) === 212\n  - celsiusToFahrenheit(-40) === -40\n  - fahrenheitToCelsius(32) === 0\n  - fahrenheitToCelsius(212) === 100\n  - fahrenheitToCelsius(-40) === -40\n  - milesToKilometers(1) ≈ 1.60934 (use toBeCloseTo)\n  - milesToKilometers(0) === 0\n\nImport from './converter'. Use standard Jest `describe`/`it`/`expect`.\n\nIMPORTANT — the workflow engine handles process steps for you:\n  - Do NOT run git or make commits.\n  - Do NOT run jest yourself — the engine runs the tests and will fail this step if they do not pass.\nJust write converter.test.ts and report what you created.",
-      "allowedTools": ["terminal", "file_ops"],
+      "description": "Engine-only gate (empty prompt: no LLM turn). Runs the full Jest suite on entry and captures its console output to test_output.txt. Routing is deterministic: the engine decides pass or fail from the Jest exit code, not the LLM. A failing suite forces the failure transition to IMPLEMENT (rework); the engine sets {{rejectionReason}} to the captured Jest output (truncated) and adds it as an agent note, so the failing tests are carried forward into the IMPLEMENT prompt and every later prompt. On a passing suite the engine commits the captured test output with the assignment's verify commit message and hands to DOCUMENT. This is the mechanical-gate pattern from dev-qa-merge (build/test/lint as failOnError commands), preferred over an LLM exitEvaluation because a Jest exit code is an exact deterministic signal.",
+      "prompt": "",
+      "allowedTools": [],
       "transitions": {
-        "onSuccess": "ADD_KG",
-        "onFailure": "WRITE_TESTS"
+        "onSuccess": "DOCUMENT",
+        "onFailure": "IMPLEMENT"
+      },
+      "maxRetries": 0,
+      "timeoutMs": 300000,
+      "onEntryCommands": [
+        { "command": "npx jest --passWithNoTests > test_output.txt 2>&1", "reason": "Deterministic test gate. Runs the full Jest suite and captures its console output to test_output.txt. A non-zero exit (a failing test) forces the failure transition to IMPLEMENT for rework, and the engine surfaces the captured output to the developer via rejectionReason and a note. --passWithNoTests keeps the gate deliverable-agnostic: an assignment that ships no new tests (for example a docs-only assignment) still passes on the existing committed suite. Run on ENTRY so a failure short-circuits before any commit occurs, which means a failing test output is never committed.", "failOnError": true }
+      ],
+      "onExitCommands": [
+        { "command": "MSG='{{verifyCommitMessage}}'; case \"$MSG\" in ''|*'{{'*) MSG='docs: capture test output for {{taskId}}';; esac; git add -- test_output.txt 2>/dev/null || true; git diff --cached --quiet || git commit -m \"$MSG\"", "reason": "Commit the captured test output with the assignment's verifyCommitMessage. Runs only after the entry gate passed (entry-command failure skips exit commands), so test_output.txt always reflects a passing suite when committed. The git diff --cached --quiet guard makes it a no-op when the captured output is unchanged.", "failOnError": true }
+      ],
+      "exitActions": [
+        { "type": "log", "params": { "message": "VERIFY gate passed for task {{taskId}} -- handing to DOCUMENT", "level": "info" } }
+      ]
+    },
+
+    "DOCUMENT": {
+      "name": "Document",
+      "role": "developer",
+      "description": "The developer updates ONLY the documentation the assignment requires (for example README.md). The engine commits those documentation files on exit with the assignment's docs commit message.",
+      "prompt": "You are working in the project at {{projectPath}}, a git repository that already has a Jest + TypeScript setup in place (package.json, jest.config.cjs, tsconfig.json). Do NOT create or modify that harness configuration.\n\nUpdate ONLY the documentation described under 'Task prompt' below (for example README.md). Do NOT modify source files and do NOT modify test files. If the assignment requires no documentation change, make none.\n\nThe implementation and tests are complete and committed. Their summaries are in the 'Agent notes' section above, and the passing test run is in 'Prior workflow history'. Document the behavior that actually shipped.\n\nWhat NOT to do.\n  - Do NOT run git or make any commits. The engine commits your documentation on exit.\n  - Do NOT run jest or tsc.\n  - Do NOT change source or test files. This stage is documentation only.\n\nWhen you finish, briefly summarize what you documented. Your summary is captured as a note.",
+      "allowedTools": ["file_ops"],
+      "transitions": {
+        "onSuccess": "FINALIZE",
+        "onFailure": "DOCUMENT"
       },
       "maxRetries": 1,
       "timeoutMs": 300000,
       "onExitCommands": [
-        { "command": "test -f converter.test.ts", "reason": "Gate: the developer must have created converter.test.ts.", "failOnError": true },
-        { "command": "npx jest > test_output.txt 2>&1", "reason": "Run Jest deterministically: gates success (non-zero exit blocks the transition) AND captures the console output to test_output.txt.", "failOnError": true },
-        { "command": "git add converter.test.ts && git commit -m 'test: add converter unit tests'", "reason": "Deterministic incremental commit of the test file.", "failOnError": true },
-        { "command": "git add test_output.txt && git commit -m 'docs: capture test output'", "reason": "Deterministic commit of the captured Jest output.", "failOnError": true }
+        { "command": "PATHS='{{docPaths}}'; MSG='{{docsCommitMessage}}'; case \"$PATHS\" in *'{{'*) PATHS='';; esac; case \"$MSG\" in ''|*'{{'*) MSG='docs: update documentation for {{taskId}}';; esac; if [ -n \"$PATHS\" ]; then git add -- $PATHS 2>/dev/null || true; git diff --cached --quiet || git commit -m \"$MSG\"; fi", "reason": "Stage and commit ONLY the documentation files for this assignment (docPaths from context) with the assignment's docsCommitMessage. Skips cleanly when docPaths is empty or unsubstituted (for example an assignment that adds no docs). The git diff --cached --quiet guard makes it a no-op when nothing changed.", "failOnError": true }
       ],
       "exitActions": [
-        { "type": "log", "params": { "message": "Tests written, Jest passed, output captured for task {{taskId}}", "level": "info" } }
+        { "type": "log", "params": { "message": "DOCUMENT complete for task {{taskId}} -- handing to FINALIZE", "level": "info" } }
       ]
     },
 
-    "UPDATE_README": {
-      "name": "Update README",
+    "FINALIZE": {
+      "name": "Finalize",
       "role": "developer",
-      "description": "Developer documents the converter in README.md. Runs after the module is complete so all four functions are documented. The engine commits deterministically.",
-      "prompt": "The converter module in {{projectPath}} is now complete: `converter.ts` exports all four functions (celsiusToFahrenheit, fahrenheitToCelsius, milesToKilometers, kilogramsToPounds) and the tests pass.\n\nYour ONLY task in this step:\n\nUpdate `README.md` in {{projectPath}} to describe the unit converter module. Include a short description and a usage example showing how to import and call EACH of the four functions, including kilogramsToPounds.\n\nIMPORTANT — the workflow engine handles process steps for you:\n  - Do NOT run git or make commits.\n  - Do NOT run jest.\nJust update README.md and report what you changed.",
-      "allowedTools": ["terminal", "file_ops"],
+      "description": "Engine-only step (empty prompt: no LLM turn). Safety-net commit of anything the per-state commits did not capture, then working-tree hygiene, gating on a clean tree. On success the assignment is DONE. On failure the tree could not be made clean deterministically, which re-running IMPLEMENT cannot fix, so the assignment escalates to ESCALATED for human review rather than looping.",
+      "prompt": "",
+      "allowedTools": [],
       "transitions": {
         "onSuccess": "DONE",
-        "onFailure": "UPDATE_README"
+        "onFailure": "ESCALATED"
       },
-      "maxRetries": 1,
+      "maxRetries": 0,
       "timeoutMs": 300000,
       "onExitCommands": [
-        { "command": "git add README.md && (git diff --cached --quiet || git commit -m 'docs: update README with converter usage')", "reason": "Deterministic commit of README changes, if any.", "failOnError": false }
+        { "command": "git add -A && (git diff --cached --quiet || git commit -m \"chore: finalize deliverables for {{taskId}}\")", "reason": "Safety net: the per-state exit commits already committed source, tests, test output, and docs with their typed messages. This catches any straggler tracked change before hygiene runs, so the tree is clean. Idempotent: a no-op when nothing is left. Ordering is essential: finalize-clean-tree.sh runs git clean -fdx first, so any still-untracked deliverable would be deleted if it were not committed here.", "failOnError": true },
+        { "command": "bash ../finalize-clean-tree.sh", "reason": "Deterministic working-tree hygiene (scripts/finalize-clean-tree.sh, copied to agent/workspace/ by setup.sh): git clean -fdx of untracked non-deliverable noise, an idempotent commit of any leftover tracked changes, then a porcelain gate. Lives one level above the repo so it never dirties the tree it cleans. Reused verbatim for every assignment; no deliverable-specific logic.", "failOnError": true }
       ],
       "exitActions": [
-        { "type": "log", "params": { "message": "README updated for task {{taskId}}", "level": "info" } }
-      ]
-    },
-
-    "ADD_KG": {
-      "name": "Add kilogramsToPounds",
-      "role": "developer",
-      "description": "Developer extends converter.ts with a fourth function WITHOUT removing the existing three. The engine gates and commits deterministically.",
-      "prompt": "Extend the existing converter module in {{projectPath}}. `converter.ts` already exports celsiusToFahrenheit, fahrenheitToCelsius, and milesToKilometers — you MUST keep all three.\n\nYour ONLY task in this step:\n\nAdd one new exported function to `converter.ts`:\n  - `kilogramsToPounds(kg: number): number` — returns kg * 2.20462\n\nDo NOT remove or rename the existing functions. Do NOT modify the test file in this step.\n\nIMPORTANT — the workflow engine handles process steps for you:\n  - Do NOT run git or make commits.\n  - Do NOT run jest.\nJust edit converter.ts and report what you added.",
-      "allowedTools": ["terminal", "file_ops"],
-      "transitions": {
-        "onSuccess": "ADD_KG_TESTS",
-        "onFailure": "ADD_KG"
-      },
-      "maxRetries": 1,
-      "timeoutMs": 300000,
-      "onExitCommands": [
-        { "command": "grep -q 'kilogramsToPounds' converter.ts", "reason": "Gate: converter.ts must now contain kilogramsToPounds.", "failOnError": true },
-        { "command": "grep -q 'celsiusToFahrenheit' converter.ts && grep -q 'fahrenheitToCelsius' converter.ts && grep -q 'milesToKilometers' converter.ts", "reason": "Gate: the original three functions must still be present (no overwrite).", "failOnError": true },
-        { "command": "git add converter.ts && (git diff --cached --quiet || git commit -m 'feat: add kilogramsToPounds converter')", "reason": "Deterministic commit of the extended module.", "failOnError": true }
-      ],
-      "exitActions": [
-        { "type": "log", "params": { "message": "kilogramsToPounds added for task {{taskId}}", "level": "info" } }
-      ]
-    },
-
-    "ADD_KG_TESTS": {
-      "name": "Test kilogramsToPounds",
-      "role": "developer",
-      "description": "Developer adds tests for the fourth function. The engine re-runs Jest (gating success), recaptures output, and commits deterministically.",
-      "prompt": "Finish the converter module in {{projectPath}}. converter.ts now has four functions including kilogramsToPounds.\n\nYour ONLY task in this step:\n\nAdd at least 3 new Jest test cases for kilogramsToPounds to the existing `converter.test.ts` (keep all existing tests). Include:\n  - kilogramsToPounds(1) ≈ 2.20462 (use toBeCloseTo)\n  - kilogramsToPounds(0) === 0\n  - kilogramsToPounds(100) ≈ 220.462 (use toBeCloseTo)\n\nThe file must end up with at least 11 test cases total.\n\nIMPORTANT — the workflow engine handles process steps for you:\n  - Do NOT run git or make commits.\n  - Do NOT run jest yourself — the engine runs the full test suite and will fail this step if any test does not pass.\nJust edit converter.test.ts and report what you added.",
-      "allowedTools": ["terminal", "file_ops"],
-      "transitions": {
-        "onSuccess": "UPDATE_README",
-        "onFailure": "ADD_KG_TESTS"
-      },
-      "maxRetries": 1,
-      "timeoutMs": 300000,
-      "onExitCommands": [
-        { "command": "npx jest > test_output.txt 2>&1", "reason": "Re-run the full Jest suite deterministically: gates success AND recaptures the updated output.", "failOnError": true },
-        { "command": "git add converter.test.ts && (git diff --cached --quiet || git commit -m 'test: add kilogramsToPounds tests')", "reason": "Deterministic commit of the new tests.", "failOnError": false },
-        { "command": "git add test_output.txt && (git diff --cached --quiet || git commit -m 'docs: update test output with new tests')", "reason": "Deterministic commit of the refreshed Jest output.", "failOnError": false }
-      ],
-      "exitActions": [
-        { "type": "log", "params": { "message": "kilogramsToPounds tests added, full suite passed for task {{taskId}}", "level": "info" } }
+        { "type": "log", "params": { "message": "FINALIZE complete for task {{taskId}} -- working tree clean", "level": "info" } }
       ]
     },
 
     "DONE": {
       "name": "Complete",
       "role": "developer",
-      "description": "Terminal state. The converter module is built, tested, documented, and committed incrementally.",
+      "description": "Terminal state. The assignment is implemented, tested, verified, documented, committed per type, and the working tree is clean.",
+      "prompt": "",
+      "allowedTools": [],
+      "transitions": {
+        "onSuccess": null,
+        "onFailure": null
+      }
+    },
+
+    "ESCALATED": {
+      "name": "Escalated",
+      "role": "developer",
+      "description": "Terminal state for an assignment that could not be completed deterministically, left for human review. Reached three ways: (1) explicitly, when FINALIZE fails its clean-tree gate (onFailure points here); (2) when IMPLEMENT, TEST, or DOCUMENT exhaust their maxRetries budget on a self-loop, which the engine routes to the escalation terminal state; (3) when the VERIFY to IMPLEMENT rework loop exceeds IMPLEMENT's maxCycleVisits, which the engine also routes here. The explicit FINALIZE edge keeps ESCALATED statically reachable, matching the convention used by the reference workflows in this engine.",
       "prompt": "",
       "allowedTools": [],
       "transitions": {

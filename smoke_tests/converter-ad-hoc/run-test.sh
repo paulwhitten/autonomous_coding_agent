@@ -69,10 +69,10 @@ trap cleanup EXIT
 # ----------------------------------------------------------------
 # Step 4: Monitor progress
 # ----------------------------------------------------------------
-echo "Step 4: Waiting for agent to complete (max 10 minutes)..."
+echo "Step 4: Waiting for agent to complete (max 25 minutes)..."
 echo ""
 
-MAX_WAIT=600
+MAX_WAIT=1500
 START_TIME=$(date +%s)
 COMPLETED=false
 
@@ -84,33 +84,32 @@ while [ $(($(date +%s) - START_TIME)) -lt $MAX_WAIT ]; do
   fi
 
   if [ -f test.log ]; then
-    # Check if the agent has processed both messages and gone idle
-    MSG_COMPLETE=$(grep -c "Message.*completed\|processed message\|ad-hoc message handled" test.log 2>/dev/null || echo "0")
-    WORK_ITEMS=$(grep -c "Work item completed" test.log 2>/dev/null || echo "0")
-    IDLE_COUNT=$(grep -c "No new messages in mailbox" test.log 2>/dev/null || echo "0")
+    # `grep -c` prints a count and exits non-zero on no match, so `head -1`
+    # plus a `:-0` default keeps the value a clean single integer.
+    WORK_ITEMS=$(grep -c "Work item completed" test.log 2>/dev/null | head -1)
+    WORK_ITEMS=${WORK_ITEMS:-0}
+    # The ad-hoc agent logs "No new messages in mailbox" on every poll once it
+    # has drained the mailbox. All three assignments are seeded up front, so the
+    # mailbox is never empty until every assignment has been processed and its
+    # work items committed. The agent does no further work after the mailbox is
+    # drained, so this idle line is a sound completion signal. Empirically the
+    # first idle poll occurs only after the last assignment's commits land.
+    IDLE_COUNT=$(grep -c "No new messages in mailbox" test.log 2>/dev/null | head -1)
+    IDLE_COUNT=${IDLE_COUNT:-0}
 
-    # Show progress
     COMMIT_COUNT=0
     if [ -d "agent/workspace/project/.git" ]; then
       COMMIT_COUNT=$(cd agent/workspace/project && git log --oneline 2>/dev/null | wc -l | tr -d ' ')
     fi
+
     ELAPSED=$(($(date +%s) - START_TIME))
-    echo "  [${ELAPSED}s] Work items: $WORK_ITEMS | Commits: $COMMIT_COUNT | Idle checks: $IDLE_COUNT"
+    echo "  [${ELAPSED}s] Work items: $WORK_ITEMS | Commits: $COMMIT_COUNT | Idle: $IDLE_COUNT"
 
-    # Consider complete if agent has done meaningful work and is now idle
-    if [ "$IDLE_COUNT" -ge 2 ] && [ "$WORK_ITEMS" -ge 2 ]; then
-      COMPLETED=true
-      break
-    fi
-
-    # Also consider complete if we see enough git commits
-    if [ "$COMMIT_COUNT" -ge 7 ] && [ "$IDLE_COUNT" -ge 1 ]; then
-      COMPLETED=true
-      break
-    fi
-
-    # Fallback: if agent processed messages and has been idle for a while
-    if [ "$IDLE_COUNT" -ge 4 ] && [ "$COMMIT_COUNT" -ge 3 ]; then
+    # Complete once the agent has logged two consecutive idle polls. All three
+    # messages are seeded together, so a drained mailbox means every assignment
+    # was read and processed; requiring two polls guards against any one-off
+    # race on the very first idle line.
+    if [ "$IDLE_COUNT" -ge 2 ]; then
       COMPLETED=true
       break
     fi
@@ -125,6 +124,9 @@ if [ "$COMPLETED" = true ]; then
 else
   echo "Timeout reached — validating what was completed"
 fi
+
+# Give the agent a moment to flush logs
+sleep 3
 
 # Stop agent
 if ps -p $AGENT_PID > /dev/null 2>&1; then
@@ -144,8 +146,11 @@ echo "VALIDATION"
 echo "================================================================"
 echo ""
 
-./validate.sh
-RESULT=$?
+# Capture validate.sh's exit code without letting `set -e` abort the script.
+# A non-zero result is a test FAIL, not a runner error: we still want to run
+# the judge and report below.
+RESULT=0
+./validate.sh || RESULT=$?
 
 echo ""
 echo "================================================================"

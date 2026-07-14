@@ -19,7 +19,7 @@ Exports exactly these four functions:
 - `milesToKilometers(m: number): number` — returns `m * 1.60934`
 - `kilogramsToPounds(kg: number): number` — returns `kg * 2.20462`
 
-The first three come from message 1; `kilogramsToPounds` is added by message 2.
+The first three functions are added first; `kilogramsToPounds` is added later.
 The agent must **extend** the existing module without overwriting the original
 three functions.
 
@@ -36,7 +36,7 @@ At least **11 test cases** total covering all four functions, including:
 ### Verification — `test_output.txt`
 
 Contains the **actual** `npx jest` console output, demonstrating all tests pass
-(exit code 0). The agent must run the tests, not fabricate the output.
+(exit code 0). The output must be genuine, not fabricated.
 
 ### Documentation — `README.md`
 
@@ -45,21 +45,22 @@ import and call each of the four functions, including `kilogramsToPounds`.
 
 ## Process Requirements
 
-- **Incremental commits:** a separate git commit for each step, with the
-  specified messages (`feat: add unit converter module`,
-  `test: add converter unit tests`, `docs: capture test output`,
-  `feat: add kilogramsToPounds converter`, `test: add kilogramsToPounds tests`,
-  `docs: update test output with new tests`,
-  `docs: update README with converter usage`). At least **5 commits** beyond the
-  initial setup commit.
+- **Incremental commits:** each logical step (source, tests, captured test
+  output, documentation) is its own git commit, following conventional-commit
+  format (for example `feat:`, `test:`, `docs:`). At least **5 commits** beyond
+  the initial setup commit.
 - **Clean working tree:** everything committed at the end (no uncommitted
   changes).
-- **No overwriting:** message 2's work must preserve message 1's functions and
+- **Code hygiene:** no stray build artifacts left in the working tree.
+  Transpiled output (for example a compiled `converter.js` produced by running
+  the TypeScript compiler) must not be left behind. Either avoid generating it,
+  add it to `.gitignore`, or remove it before finishing.
+- **No overwriting:** later work must preserve the earlier functions and
   tests.
 
 ## What "Good" Looks Like
 
 A high-scoring run produces all four files with correct implementations,
 ≥11 passing tests, captured Jest output, a documented README, and a clean git
-history of small, well-messaged commits — all accomplished autonomously from the
-two ad-hoc messages with no workflow scaffolding.
+history of small, incremental, conventional-format commits — all accomplished
+autonomously from the two ad-hoc messages with no workflow scaffolding.

@@ -97,56 +97,118 @@ fi
 echo ""
 
 # ----------------------------------------------------------------
-# Step 5: Monitor progress through the state machine
+# Step 5: Serial task execution -- monitor the agent log, seed next task
+#
+# The three deliverables are three SEPARATE workflow assignments, seeded
+# ONE AT A TIME to avoid mailbox interleave on the single developer agent.
+# setup.sh already seeded converter-01. We wait for each assignment to
+# reach a terminal state (DONE or ESCALATED), then seed the next.
+# Serial seeding guarantees only one task is ever in the mailbox, so a
+# DEVELOP rework self-loop cannot clobber a later assignment's
+# not-yet-committed work.
+#
+# Task sequence:
+#   converter-01 (seeded by setup.sh)         -- create module + tests
+#   converter-02 (seeded after 01 terminal)   -- add kilogramsToPounds
+#   converter-03 (seeded after 02 terminal)   -- update README
 # ----------------------------------------------------------------
-echo "Step 5: Waiting for workflow to reach terminal state (max 12 minutes)..."
+echo "Step 5: Serial task execution (max 48 minutes)..."
 echo ""
 
-MAX_WAIT=720
+MAX_WAIT=2900
 START_TIME=$(date +%s)
-COMPLETED=false
 
-while [ $(($(date +%s) - START_TIME)) -lt $MAX_WAIT ]; do
-  # Check for crash
-  if ! ps -p $AGENT_PID > /dev/null 2>&1; then
-    echo "  WARNING: Agent process stopped"
-    break
-  fi
-
-  if [ -f test.log ]; then
-    TRANSITIONS=$(grep -c "Workflow state transition" test.log 2>/dev/null | head -1)
-    TRANSITIONS=${TRANSITIONS:-0}
-    TERMINAL=$(grep -c "Workflow task reached terminal state" test.log 2>/dev/null | head -1)
-    TERMINAL=${TERMINAL:-0}
-
-    COMMIT_COUNT=0
+# Helper: wait for a taskId to reach a terminal state in the agent log.
+# Uses the pino ndjson file log (agent/logs/agent.log) -- test.log is
+# pretty-printed and does not carry taskId on the message line.
+wait_for_task_done() {
+  local TASK_ID=$1
+  local TIMEOUT=$2
+  local WAIT_START=$(date +%s)
+  local JSON_LOG="agent/logs/agent.log"
+  echo "  Waiting for ${TASK_ID} to reach terminal state..."
+  while [ $(($(date +%s) - WAIT_START)) -lt $TIMEOUT ]; do
+    if ! ps -p $AGENT_PID > /dev/null 2>&1; then
+      echo "  WARNING: Agent stopped while waiting for ${TASK_ID}"
+      return 1
+    fi
+    if grep -q "\"taskId\":\"${TASK_ID}\".*Workflow task reached terminal state" "$JSON_LOG" 2>/dev/null || \
+       grep -q "Workflow task reached terminal state.*\"taskId\":\"${TASK_ID}\"" "$JSON_LOG" 2>/dev/null; then
+      local ELAPSED=$(($(date +%s) - WAIT_START))
+      echo "  ${TASK_ID} reached terminal state (${ELAPSED}s)"
+      return 0
+    fi
+    local COMMIT_COUNT=0
     if [ -d "agent/workspace/project/.git" ]; then
       COMMIT_COUNT=$(cd agent/workspace/project && git log --oneline 2>/dev/null | wc -l | tr -d ' ')
     fi
+    local TE=$(($(date +%s) - START_TIME))
+    echo "  [${TE}s] waiting on ${TASK_ID} | commits: ${COMMIT_COUNT}"
+    sleep 10
+  done
+  echo "  TIMEOUT waiting for ${TASK_ID} after ${TIMEOUT}s"
+  return 1
+}
 
-    ELAPSED=$(($(date +%s) - START_TIME))
-    echo "  [${ELAPSED}s] Transitions: $TRANSITIONS | Commits: $COMMIT_COUNT | Terminal: $TERMINAL"
+# Helper: seed a workflow assignment into the developer mailbox at IMPLEMENT.
+# The taskPrompt carries the deliverable spec (the WHAT); the generic
+# workflow carries the process (the HOW).
+seed_task() {
+  local TASK_ID=$1
+  local PROMPT=$2
+  local SUBJECT=$3
+  local FILENAME=$4
+  local CONTEXT_JSON=$5
+  echo ""
+  echo "  --- Seeding ${TASK_ID} ---"
+  $CLI pack-workflow \
+    --base runtime_mailbox --agent converter-wf-dev --role developer --queue normal \
+    --workflow-id converter-workflow \
+    --task-id "${TASK_ID}" \
+    --state IMPLEMENT \
+    --target-role developer \
+    --prompt "${PROMPT}" \
+    --context "${CONTEXT_JSON}" \
+    --from converter-wf-dev_developer \
+    --to converter-wf-dev_developer \
+    --subject "${SUBJECT}" \
+    --filename "${FILENAME}"
+  echo "  Seeded ${TASK_ID} into developer mailbox"
+}
 
-    # Complete when the workflow reaches a terminal state
-    if [ "$TERMINAL" -ge 1 ]; then
+COMPLETED=false
+
+# --- Assignment 1: converter-01 (already seeded by setup.sh) ---
+REMAINING=$((MAX_WAIT - ($(date +%s) - START_TIME)))
+if wait_for_task_done "converter-01" "$REMAINING"; then
+  # --- Assignment 2: converter-02 ---
+  seed_task "converter-02" \
+    "@assignments/02-add-kilograms.md" \
+    "Workflow Assignment converter-02: add kilogramsToPounds" \
+    "002_converter_02.md" \
+    '{"implPaths":"converter.ts","testPaths":"converter.test.ts","docPaths":"","implCommitMessage":"feat: add kilogramsToPounds converter","testCommitMessage":"test: add kilogramsToPounds tests","verifyCommitMessage":"docs: update test output with new tests","docsCommitMessage":""}'
+
+  REMAINING=$((MAX_WAIT - ($(date +%s) - START_TIME)))
+  if wait_for_task_done "converter-02" "$REMAINING"; then
+    # --- Assignment 3: converter-03 ---
+    seed_task "converter-03" \
+      "@assignments/03-update-readme.md" \
+      "Workflow Assignment converter-03: update README" \
+      "003_converter_03.md" \
+      '{"implPaths":"","testPaths":"","docPaths":"README.md","implCommitMessage":"","testCommitMessage":"","verifyCommitMessage":"","docsCommitMessage":"docs: update README with converter usage"}'
+
+    REMAINING=$((MAX_WAIT - ($(date +%s) - START_TIME)))
+    if wait_for_task_done "converter-03" "$REMAINING"; then
       COMPLETED=true
-      break
-    fi
-    # Fallback: all expected commits present (1 setup + 7 work commits)
-    if [ "$COMMIT_COUNT" -ge 8 ]; then
-      COMPLETED=true
-      break
     fi
   fi
-
-  sleep 10
-done
+fi
 
 echo ""
 if [ "$COMPLETED" = true ]; then
-  echo "Workflow reached terminal state"
+  echo "All three assignments reached terminal state"
 else
-  echo "Timeout reached — validating what was completed"
+  echo "Timeout or early stop -- validating what was completed"
 fi
 
 # Give the agent a moment to flush logs
@@ -170,8 +232,11 @@ echo "VALIDATION"
 echo "================================================================"
 echo ""
 
-./validate.sh
-RESULT=$?
+# Capture validate.sh's exit code without letting `set -e` abort the script.
+# A non-zero result is a test FAIL, not a runner error: we still want to run
+# the judge and report below.
+RESULT=0
+./validate.sh || RESULT=$?
 
 echo ""
 echo "================================================================"

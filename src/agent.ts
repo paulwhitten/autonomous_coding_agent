@@ -2762,7 +2762,55 @@ ${message.content}
       // Parse the JSON response
       this.logger.info('Parsing task breakdown');
 
-      const workItems = parseBreakdownResponse(responseText);
+      // A well-formed empty JSON array is a legitimate "no work" signal.
+      // Some phases (for example a documentation-only TEST phase) have
+      // nothing to decompose, and an instruction-faithful model returns
+      // []. Treat that as valid rather than a fatal parse failure that
+      // retries forever. The raw output is still logged so no-work and
+      // future malformed cases remain diagnosable.
+      if (isEmptyBreakdownArray(responseText)) {
+        this.logger.info(
+          {
+            responseLength: responseText.length,
+            rawResponse: responseText,
+            activeWorkflowTaskId: this.activeWorkflowTaskId,
+          },
+          'Breakdown returned an empty array -- no work indicated for this round',
+        );
+
+        // Account for the LLM turn we just spent.
+        await this.quotaManager.recordTaskCompletion(quotaCheck.model, priority);
+
+        // If this breakdown belongs to an active workflow phase, advance
+        // the state machine deterministically (mirrors the mechanical
+        // empty-prompt path) so a no-work phase does not stall in a retry
+        // loop. handleWorkflowTransition self-guards when no workflow task
+        // is active, so this is a no-op in the legacy path.
+        await this.handleWorkflowTransition();
+        return;
+      }
+
+      let workItems: Array<{ title: string; content: string }>;
+      try {
+        workItems = parseBreakdownResponse(responseText);
+      } catch (parseError) {
+        // Capture the raw LLM output that breakdown rejected so a stuck
+        // breakdown loop can be diagnosed. A legitimate empty array is
+        // handled earlier as a no-work signal, so this fires only for
+        // genuinely malformed output: a JSON syntax error, or valid JSON
+        // that is not an array (for example a wrapper object like
+        // { "work_items": [ ... ] }). The response is small, so log it in
+        // full alongside its length.
+        this.logger.error(
+          {
+            parseError: String(parseError),
+            responseLength: responseText.length,
+            rawResponse: responseText,
+          },
+          'Breakdown response rejected: not a non-empty work item array',
+        );
+        throw parseError;
+      }
 
       this.logger.info(`Created ${workItems.length} work items`);
 
@@ -2865,16 +2913,14 @@ ${message.content}
           const hasMoreWork = await this.workspace.hasWorkItems();
           if (!hasMoreWork) {
             await this.handleWorkflowTransition();
-          } else {
-            // More work items remain in this phase.  Reset the session
-            // now to prevent conversation history accumulation that
-            // causes stuttering (repeated token fragments in deltas).
-            // The compressed summary preserves context from prior items.
-            await this.resetSessionWithContext(
-              `Completed work item "${workItem.title}" for workflow task ` +
-              `${this.activeWorkflowTaskId}.  More work items remain.`,
-            );
           }
+          // If more work items remain in this phase we intentionally do NOT
+          // reset the session here.  The session is reset once per assignment
+          // (at the phase handoff in handleWorkflowTransition() and at the
+          // terminal state), not after every work item.  Resetting per work
+          // item incurred a compress + destroy + seed round-trip on each item,
+          // which dominated wall-clock time with slower models while shedding
+          // very little accumulated history.
         }
 
         // Record quota usage
@@ -3261,6 +3307,28 @@ export function parseBreakdownResponse(
   }
 
   return workItems;
+}
+
+/**
+ * Detect a legitimate "no work" breakdown response.
+ *
+ * Strips markdown code fences and returns true only when the response is a
+ * well-formed empty JSON array (`[]`). Malformed output and non-array JSON
+ * return false so they still flow through the strict parser and its
+ * diagnostic logging.
+ */
+export function isEmptyBreakdownArray(responseText: string): boolean {
+  let cleaned = responseText.trim();
+  cleaned = cleaned.replace(/```json\n?/g, '');
+  cleaned = cleaned.replace(/```\n?/g, '');
+  cleaned = cleaned.trim();
+
+  try {
+    const parsed = JSON.parse(cleaned);
+    return Array.isArray(parsed) && parsed.length === 0;
+  } catch {
+    return false;
+  }
 }
 
 /**

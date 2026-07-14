@@ -87,12 +87,12 @@ else
   ((FAILED++))
 fi
 
-# Check 7: converter.ts exports kilogramsToPounds (extension state)
+# Check 7: converter.ts exports kilogramsToPounds (assignment 2 deliverable)
 if grep -q "kilogramsToPounds" "$PROJECT_DIR/converter.ts" 2>/dev/null; then
   echo "PASS: converter.ts contains kilogramsToPounds"
   ((PASSED++))
 else
-  echo "FAIL: converter.ts missing kilogramsToPounds (ADD_KG state not reached?)"
+  echo "FAIL: converter.ts missing kilogramsToPounds (assignment converter-02 not completed?)"
   ((FAILED++))
 fi
 
@@ -166,15 +166,17 @@ if [ -d "$PROJECT_DIR/.git" ]; then
 
   COMMIT_COUNT=$(cd "$PROJECT_DIR" && git log --oneline 2>/dev/null | wc -l | tr -d ' ')
 
-  # Expect >= 5 commits: 1 setup + 7 workflow commits = 8; be lenient
-  if [ "$COMMIT_COUNT" -ge 5 ]; then
-    echo "PASS: Git has $COMMIT_COUNT commits (expected >= 5: 1 setup + workflow commits)"
+  # The generic workflow commits ONCE per assignment at FINALIZE (plus an
+  # optional hygiene finalize commit), not per fine-grained step. Expect
+  # >= 4 commits: 1 setup + 3 assignment deliverable commits. Be lenient.
+  if [ "$COMMIT_COUNT" -ge 4 ]; then
+    echo "PASS: Git has $COMMIT_COUNT commits (expected >= 4: 1 setup + 3 assignment commits)"
     ((PASSED++))
   elif [ "$COMMIT_COUNT" -ge 3 ]; then
-    echo "WARN: Git has $COMMIT_COUNT commits (expected >= 5, but shows incremental work)"
+    echo "WARN: Git has $COMMIT_COUNT commits (expected >= 4, but shows multi-assignment work)"
     ((PASSED++))
   else
-    echo "FAIL: Git has $COMMIT_COUNT commits (expected >= 5 — not incremental)"
+    echo "FAIL: Git has $COMMIT_COUNT commits (expected >= 4 — assignments did not all finalize)"
     ((FAILED++))
   fi
 

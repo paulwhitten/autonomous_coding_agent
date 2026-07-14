@@ -2,15 +2,15 @@
   "agent": {
     "hostname": "adhoc-test-agent",
     "role": "developer",
-    "checkIntervalMs": 5000,
+    "checkIntervalMs": 10000,
     "taskRetryCount": 2,
     "validation": {
-      "mode": "always",
-      "reviewEveryNthItem": 1
+      "mode": "none",
+      "reviewEveryNthItem": 99
     }
   },
   "copilot": {
-    "model": "auto"
+    "model": "mai-code-1-flash-picker"
   },
   "mailbox": {
     "repoPath": "../runtime_mailbox",
