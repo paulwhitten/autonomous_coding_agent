@@ -10,7 +10,7 @@
     }
   },
   "copilot": {
-    "model": "gpt-5-mini"
+    "model": "mai-code-1-flash-picker"
   },
   "mailbox": {
     "repoPath": "../runtime_mailbox",

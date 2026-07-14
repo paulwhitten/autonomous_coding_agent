@@ -50,10 +50,6 @@ echo ""
 # Step 3: Start agent
 # ----------------------------------------------------------------
 echo "Step 3: Starting agent..."
-# Route the agent under test to the BYOK (lesser) model. The judge is
-# unaffected: byok_disable is called after the agent stops, before judging.
-source "$SCRIPT_DIR/../byok-provider.sh"
-byok_enable
 pushd agent > /dev/null
 nohup node dist/index.js config.json > "${SCRIPT_DIR}/test.log" 2>&1 &
 AGENT_PID=$!
@@ -225,10 +221,6 @@ if ps -p $AGENT_PID > /dev/null 2>&1; then
   kill -9 $AGENT_PID 2>/dev/null || true
   echo "Agent stopped"
 fi
-
-# Clear BYOK provider env so the LLM judge runs on its strong default model,
-# not the lesser assessed model.
-byok_disable
 
 echo ""
 

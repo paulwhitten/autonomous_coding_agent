@@ -1,0 +1,38 @@
+{
+  "agent": {
+    "hostname": "smoke-regwf-qa",
+    "role": "qa",
+    "checkIntervalMs": 5000,
+    "taskRetryCount": 2,
+    "workflowFile": "../../workflow.json",
+    "validation": {
+      "mode": "none",
+      "reviewEveryNthItem": 99
+    }
+  },
+  "copilot": {
+    "model": "gpt-5-mini"
+  },
+  "mailbox": {
+    "repoPath": "../../runtime_mailbox",
+    "autoCommit": false,
+    "supportBroadcast": false,
+    "supportAttachments": false
+  },
+  "manager": null,
+  "teamMembers": [
+    {
+      "hostname": "smoke-regwf-ra",
+      "role": "requirements-analyst",
+      "responsibilities": "Define requirements (REQUIREMENTS_DEFINITION) and validate final delivery (ACCEPTANCE)"
+    },
+    {
+      "hostname": "smoke-regwf-dev",
+      "role": "developer",
+      "responsibilities": "Implement code against requirements (IMPLEMENTING) and fix rework (REWORK)"
+    }
+  ],
+  "quota": {
+    "enabled": false
+  }
+}
