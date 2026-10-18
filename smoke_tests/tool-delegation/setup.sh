@@ -101,7 +101,7 @@ cat > manager/agent/config.json <<EOF
     "teamRosterFile": "../../team.json"
   },
   "copilot": {
-    "model": "gpt-4.1",
+    "model": "claude-haiku-5.5",
     "temperature": 0.7,
     "streaming": false
   },

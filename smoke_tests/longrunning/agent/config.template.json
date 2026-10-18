@@ -8,6 +8,9 @@
       "reviewEveryNthItem": 99
     }
   },
+  "copilot": {
+    "model": "claude-haiku-5.5"
+  },
   "mailbox": {
     "repoPath": "../runtime_mailbox",
     "autoCommit": false,

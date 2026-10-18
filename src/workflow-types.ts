@@ -333,10 +333,12 @@ export interface StateDefinition {
   /**
    * Tools explicitly blocked in this state (deny-list).
    *
-   * Unlike allowedTools (advisory), restrictedTools is enforced:
-   * the engine will refuse calls to tools on this list.  Use this
-   * sparingly for safety boundaries, e.g. preventing QA from running
-   * `git push`, or preventing a developer from sending broadcasts.
+   * Unlike allowedTools (advisory), restrictedTools is enforced: the
+   * agent denies calls to these tools through its SDK pre-tool-use hook
+   * and permission handler.  Restriction is per tool, not per command:
+   * restricting the terminal tool blocks all shell use, and there is no
+   * way to block only `git push`.  Use this sparingly for safety
+   * boundaries, e.g. preventing a developer from sending broadcasts.
    *
    * Accepts individual tool names or group names from TOOL_GROUPS.
    */
@@ -374,7 +376,11 @@ export interface StateDefinition {
    */
   maxCycleVisits?: number;
 
-  /** Hard time limit for this state in milliseconds */
+  /**
+   * Intended hard time limit for this state in milliseconds.
+   * NOT currently enforced: work items use the adaptive timeout manager
+   * (agent.sdkTimeoutMs / timeoutStrategy) instead.
+   */
   timeoutMs?: number;
 
   /**

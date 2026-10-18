@@ -161,7 +161,11 @@ $CLI init-mailbox --base runtime_mailbox --agent smoke-regwf-qa  --role qa
 # Seed RA: Only vmodel-001 initially
 #
 # Each REQ flows through the full V-model:
-#   RA(REQUIREMENTS) -> Dev(IMPLEMENTING) -> QA(VERIFICATION) -> RA(ACCEPTANCE) -> DONE
+#   RA(REQUIREMENTS) -> Dev(IMPLEMENTING) -> QA(VERIFICATION) -> RA(ACCEPTANCE) -> MERGING -> DONE
+#
+# Each requirement is developed on its own branch, feature/<requirementId>
+# (e.g. feature/REQ-HCDP-001), created from main in REQUIREMENTS_DEFINITION.
+# The engine merges it into main (--no-ff) only after RA acceptance.
 #
 # Only vmodel-001 is seeded here. The run-test.sh script monitors
 # the RA log for "Workflow task reached terminal state" and seeds
@@ -178,7 +182,8 @@ $CLI pack-workflow \
   --task-id vmodel-001 \
   --state REQUIREMENTS_DEFINITION \
   --target-role requirements-analyst \
-  --prompt "REQ-HCDP-001: Create a CLI application called hcdp-validate. The CLI shall run via npx ts-node src/cli.ts and exit 0 when called with no arguments. Write a requirements spec (docs/requirements-specification.md) covering REQ-HCDP-001 and an acceptance criteria checklist (docs/acceptance-criteria-checklist.md). Requirement traceability shall be maintained in the acceptance verdict, traceability matrix, and verification reports -- not in source code comments. Push to origin and report completion." \
+  --context '{"requirementId":"REQ-HCDP-001"}' \
+  --prompt "REQ-HCDP-001: Create a CLI application called hcdp-validate. The CLI shall run via npx ts-node src/cli.ts and exit 0 when called with no arguments." \
   --from smoke-regwf-ra_requirements-analyst \
   --to smoke-regwf-ra_requirements-analyst \
   --subject "V-Model: REQUIREMENTS_DEFINITION -- REQ-HCDP-001 Bare CLI"

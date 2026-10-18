@@ -16,8 +16,8 @@ export const mockSessionInstance = {
   sendAndWait: () => Promise.resolve(undefined),
   on: () => () => {},
   abort: () => Promise.resolve(undefined),
-  getMessages: () => Promise.resolve([]),
-  destroy: () => Promise.resolve(undefined),
+  getEvents: () => Promise.resolve([]),
+  disconnect: () => Promise.resolve(undefined),
 };
 
 export class CopilotSession {
@@ -35,10 +35,6 @@ export class CopilotClient {
     return { ...mockSessionInstance };
   }
 
-  getState(): string {
-    return 'connected';
-  }
-
   async ping(_message?: string): Promise<{ message: string; timestamp: number }> {
     return { message: _message ?? 'pong', timestamp: Date.now() };
   }
@@ -49,3 +45,9 @@ export class CopilotClient {
 }
 
 export const approveAll = () => {};
+
+export const RuntimeConnection = {
+  forStdio: (opts?: any) => ({ kind: 'stdio', ...opts }),
+  forTcp: (opts?: any) => ({ kind: 'tcp', ...opts }),
+  forUri: (url: string, opts?: any) => ({ kind: 'uri', url, ...opts }),
+};

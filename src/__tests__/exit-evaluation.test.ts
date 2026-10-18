@@ -186,6 +186,19 @@ describe('parseEvaluationResponse — boolean', () => {
     });
   });
 
+  describe('negation', () => {
+    it.each([
+      'not true',
+      'It is not true that all tests passed',
+      "That isn't true",
+      'Not yes',
+    ])('negated affirmative %j falls back to default', (response) => {
+      const r = parseEvaluationResponse(response, boolEval);
+      expect(r.parsedValue).toBeNull();
+      expect(r.outcome).toBe('failure');
+    });
+  });
+
   describe('empty / unparseable', () => {
     it('empty string falls back to default', () => {
       const r = parseEvaluationResponse('', boolEval);
@@ -465,6 +478,40 @@ describe('parseEvaluationResponse — streaming repetition (integration)', () =>
     const r = parseEvaluationResponse('fail'.repeat(8), enumEval);
     expect(r.parsed).toBe(true);
     expect(r.parsedValue).toBe('fail');
+    expect(r.outcome).toBe('failure');
+  });
+});
+
+describe('parseEvaluationResponse — enum ambiguity and negation', () => {
+  const acceptEval: ExitEvaluation = {
+    prompt: 'Accept?',
+    responseFormat: 'enum',
+    choices: ['accepted', 'rejected', 'partial_pass', 'pass'],
+    mapping: { accepted: 'success', pass: 'success', partial_pass: 'failure', rejected: 'failure' },
+    defaultOutcome: 'failure',
+  };
+
+  it.each([
+    'not accepted',
+    'The work is not fully accepted',
+    "It isn't accepted",
+    'accepted, not rejected',
+    'Partly accepted, partly rejected',
+  ])('%j falls back to default', (response) => {
+    const r = parseEvaluationResponse(response, acceptEval);
+    expect(r.parsedValue).toBeNull();
+    expect(r.outcome).toBe('failure');
+  });
+
+  it('accepts a single un-negated choice in verbose text', () => {
+    const r = parseEvaluationResponse('After review, the result is accepted.', acceptEval);
+    expect(r.parsedValue).toBe('accepted');
+    expect(r.outcome).toBe('success');
+  });
+
+  it('does not count a shorter choice inside a longer one', () => {
+    const r = parseEvaluationResponse('Result: partial_pass', acceptEval);
+    expect(r.parsedValue).toBe('partial_pass');
     expect(r.outcome).toBe('failure');
   });
 });

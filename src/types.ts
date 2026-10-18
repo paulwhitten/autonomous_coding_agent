@@ -57,6 +57,8 @@ export interface AgentConfig {
       tier4_adaptiveWindow?: number;
       tier4_adaptiveThreshold?: number;
     };
+    /** Which completed work items pass through the review/ folder.  This is
+     *  a log only: items are auto-approved immediately; no review gates them. */
     validation?: {
       mode: 'none' | 'spot_check' | 'milestone' | 'always';
       reviewEveryNthItem: number;

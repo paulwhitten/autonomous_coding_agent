@@ -106,8 +106,8 @@ recording the final verdict.
 The validate.sh script checks:
 
 1. **RA workspace** -- requirements spec, acceptance checklist, all 3 REQ IDs present
-2. **Developer workspace** -- source files, test files with REQ references, evidence document
-3. **QA workspace** -- traceability matrix, verification report, integration tests with REQ cross-references
+2. **Developer workspace** -- source and test files, evidence document
+3. **QA workspace** -- traceability matrix, verification report, integration tests
 4. **Cross-agent traceability** -- each REQ ID appears in at least 2 agent workspaces
 5. **Agent activity** -- RA, Developer, QA logs show handoff and work activity
 

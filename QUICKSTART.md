@@ -47,7 +47,7 @@ Everything else has sensible defaults (see `src/config-defaults.ts`).
 
 The mailbox is a plain folder. No git repository is required.
 The agent auto-detects your hostname, polls the mailbox every
-60 seconds, uses `gpt-4.1`, and configures all workspace
+60 seconds, uses `"model": "auto"` (Copilot picks the model), and configures all workspace
 folders with sensible defaults. The full effective configuration (defaults
 merged with your overrides) is logged on every startup and hot-reload.
 

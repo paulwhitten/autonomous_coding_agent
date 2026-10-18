@@ -154,9 +154,8 @@ wait_for_task_done() {
   local TASK_ID=$1
   local TIMEOUT=$2
   local WAIT_START=$(date +%s)
-  # Use the JSON file log (pino ndjson) -- ra-test.log is pretty-printed
-  # and does not have taskId on the same line as the message text.
-  local JSON_LOG="ra/agent/logs/agent.log"
+  # Uses the JSON file logs (pino ndjson) -- the *-test.log files are
+  # pretty-printed and do not have taskId on the same line as the message.
   echo "  Waiting for ${TASK_ID} to reach terminal state..."
   while [ $(($(date +%s) - WAIT_START)) -lt $TIMEOUT ]; do
     # Check RA is still alive
@@ -164,12 +163,20 @@ wait_for_task_done() {
       echo "  WARNING: RA agent stopped while waiting for ${TASK_ID}"
       return 1
     fi
-    # Grep pino JSON log for terminal state message with this taskId
-    if grep -q "\"taskId\":\"${TASK_ID}\".*Workflow task reached terminal state" "$JSON_LOG" 2>/dev/null || \
-       grep -q "Workflow task reached terminal state.*\"taskId\":\"${TASK_ID}\"" "$JSON_LOG" 2>/dev/null; then
-      local ELAPSED=$(($(date +%s) - WAIT_START))
+    # Find the transition into a terminal state for this task.  Any agent
+    # can escalate (e.g. the developer in REWORK), so check all three logs,
+    # and tell DONE (accepted and merged) apart from ESCALATED.
+    local TERMINAL
+    TERMINAL=$(grep -h "\"taskId\":\"${TASK_ID}\",\"newState\":\"\(DONE\|ESCALATED\)\"" \
+      ra/agent/logs/agent.log developer/agent/logs/agent.log qa/agent/logs/agent.log 2>/dev/null \
+      | grep -o '"newState":"[A-Z]*"' | head -1 | cut -d'"' -f4)
+    local ELAPSED=$(($(date +%s) - WAIT_START))
+    if [ "$TERMINAL" = "DONE" ]; then
       echo "  ${TASK_ID} reached DONE (${ELAPSED}s)"
       return 0
+    elif [ "$TERMINAL" = "ESCALATED" ]; then
+      echo "  ${TASK_ID} ESCALATED (${ELAPSED}s) -- not seeding later tasks (they build on its merged work)"
+      return 1
     fi
     sleep 10
   done
@@ -182,6 +189,7 @@ seed_task() {
   local TASK_ID=$1
   local PROMPT=$2
   local SUBJECT=$3
+  local REQUIREMENT_ID=$4
   echo ""
   echo "  --- Seeding ${TASK_ID} ---"
   $CLI pack-workflow \
@@ -190,6 +198,7 @@ seed_task() {
     --task-id "${TASK_ID}" \
     --state REQUIREMENTS_DEFINITION \
     --target-role requirements-analyst \
+    --context "{\"requirementId\":\"${REQUIREMENT_ID}\"}" \
     --prompt "${PROMPT}" \
     --from smoke-reg-ra_requirements-analyst \
     --to smoke-reg-ra_requirements-analyst \
@@ -202,15 +211,17 @@ REMAINING=$((MAX_WAIT - ($(date +%s) - START_TIME)))
 if wait_for_task_done "vmodel-001" "$REMAINING"; then
   # --- Task 2: vmodel-002 ---
   seed_task "vmodel-002" \
-    "REQ-HCDP-002: Extend the hcdp-validate CLI (already in the repo from a prior task). Add the ability to accept a filename argument, read a JSONL file (one JSON object per line) of medical records, and validate that each record's recordType field is one of patient, procedure, or diagnosis. Exit non-zero and log line numbers on failure. Update the requirements spec and checklist. Requirement traceability shall be maintained in the acceptance verdict, traceability matrix, and verification reports -- not in source code comments. Push to origin and report completion." \
-    "V-Model: REQUIREMENTS_DEFINITION -- REQ-HCDP-002 JSONL Validation"
+    "REQ-HCDP-002: Extend the hcdp-validate CLI (already in the repo from a prior task). Add the ability to accept a filename argument, read a JSONL file (one JSON object per line) of medical records, and validate that each record's recordType field is one of patient, procedure, or diagnosis. Exit non-zero and log line numbers on failure." \
+    "V-Model: REQUIREMENTS_DEFINITION -- REQ-HCDP-002 JSONL Validation" \
+    "REQ-HCDP-002"
 
   REMAINING=$((MAX_WAIT - ($(date +%s) - START_TIME)))
   if wait_for_task_done "vmodel-002" "$REMAINING"; then
     # --- Task 3: vmodel-003 ---
     seed_task "vmodel-003" \
-      "REQ-HCDP-003: Extend the hcdp-validate CLI (already in the repo). Add referential integrity checking: every procedure and diagnosis record must have a patientId field matching an actual patient record's id in the same file. Exit non-zero and log line numbers for orphaned references. Update the requirements spec and checklist. Requirement traceability shall be maintained in the acceptance verdict, traceability matrix, and verification reports -- not in source code comments. Push to origin and report completion." \
-      "V-Model: REQUIREMENTS_DEFINITION -- REQ-HCDP-003 Referential Integrity"
+      "REQ-HCDP-003: Extend the hcdp-validate CLI (already in the repo). Add referential integrity checking: every procedure and diagnosis record must have a patientId field matching an actual patient record's id in the same file. Exit non-zero and log line numbers for orphaned references." \
+      "V-Model: REQUIREMENTS_DEFINITION -- REQ-HCDP-003 Referential Integrity" \
+    "REQ-HCDP-003"
 
     REMAINING=$((MAX_WAIT - ($(date +%s) - START_TIME)))
     wait_for_task_done "vmodel-003" "$REMAINING" || true

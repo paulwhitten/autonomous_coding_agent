@@ -56,6 +56,12 @@ describe('captureCommandOutput', () => {
     expect(result.error).toBeDefined();
   });
 
+  it('should include stdout in the error when a failing command reports on stdout', () => {
+    const result = captureCommandOutput('echo "2 tests failed" && exit 1', process.cwd());
+    expect(result.success).toBe(false);
+    expect(result.error).toContain('2 tests failed');
+  });
+
   it('should execute in the specified working directory', () => {
     const result = captureCommandOutput('pwd', testDir);
     expect(result.success).toBe(true);

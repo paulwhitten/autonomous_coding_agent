@@ -1527,7 +1527,7 @@ describe('AutonomousAgent', () => {
       expect(result).toBe(false);
     });
 
-    it('returns null when promptLLM throws', async () => {
+    it('fails closed (defaultOutcome failure) when promptLLM throws', async () => {
       (evalAgent2 as any).promptLLM = jest.fn<any>().mockRejectedValue(new Error('LLM unavailable'));
       const exitEval = {
         prompt: 'Did all tests pass?',
@@ -1536,7 +1536,20 @@ describe('AutonomousAgent', () => {
       };
       const task = { currentState: 'IMPLEMENT', context: {} as Record<string, string> };
       const result = await (evalAgent2 as any).evaluateExitCondition(exitEval, 'task-1', task);
-      expect(result).toBeNull();
+      expect(result).toBe(false);
+    });
+
+    it('honours defaultOutcome success when promptLLM throws', async () => {
+      (evalAgent2 as any).promptLLM = jest.fn<any>().mockRejectedValue(new Error('LLM unavailable'));
+      const exitEval = {
+        prompt: 'Did all tests pass?',
+        responseFormat: 'boolean' as const,
+        mapping: { 'true': 'success' as const, 'false': 'failure' as const },
+        defaultOutcome: 'success' as const,
+      };
+      const task = { currentState: 'IMPLEMENT', context: {} as Record<string, string> };
+      const result = await (evalAgent2 as any).evaluateExitCondition(exitEval, 'task-1', task);
+      expect(result).toBe(true);
     });
 
     it('extractRejectionSummary returns trimmed text from promptLLM', async () => {
@@ -2674,7 +2687,12 @@ describe('AutonomousAgent', () => {
 
       // Simulate exit command failure with no captured values
       (capAgent as any).executeStateCommands = jest.fn<any>()
-        .mockResolvedValue({ success: false, captured: {} });
+        .mockResolvedValue({
+          success: false,
+          captured: {},
+          failedCommand: 'git push origin main',
+          failedError: 'remote: Permission denied',
+        });
 
       const transitionSpy = jest.spyOn(engine, 'transition');
       const addNoteSpy = jest.spyOn(engine, 'addNote');
@@ -2687,6 +2705,9 @@ describe('AutonomousAgent', () => {
       const transitionResult = transitionSpy.mock.calls[0][1] as any;
       expect(transitionResult.success).toBe(false);
       expect(transitionResult.error).toMatch(/exit commands failed/i);
+      // The failing command and its output reach the next state's prompt
+      expect(transitionResult.outputs.rejectionReason).toContain('git push origin main');
+      expect(transitionResult.outputs.rejectionReason).toContain('remote: Permission denied');
 
       // A failure note should be recorded for the retrying agent
       expect(addNoteSpy).toHaveBeenCalledWith(
@@ -2697,6 +2718,180 @@ describe('AutonomousAgent', () => {
 
       transitionSpy.mockRestore();
       addNoteSpy.mockRestore();
+    });
+
+    // Activate a task in IMPLEMENT with one completed work item and the
+    // LLM-dependent methods mocked.  Returns the transition spy.
+    async function activateTask(taskId: string, description: string) {
+      const engine = (capAgent as any).workflowEngine;
+      engine.loadWorkflow(captureWorkflow);
+      engine.createTask('cap-wf', taskId, {});
+      await (capAgent as any).classifyAndProcessMessage({
+        filename: `${taskId}.md`,
+        from: 'mgr_host_manager',
+        subject: `[Workflow] IMPLEMENT: ${taskId}`,
+        content: '',
+        messageType: 'workflow',
+        payload: {
+          type: 'workflow',
+          workflowId: 'cap-wf',
+          taskId,
+          targetRole: 'developer',
+          targetState: 'IMPLEMENT',
+          taskPrompt: 'Implement',
+          workItems: [{ title: 'Build', content: 'Build it' }],
+          taskState: {
+            taskId,
+            workflowId: 'cap-wf',
+            currentState: 'IMPLEMENT',
+            context: {},
+            retryCount: 0,
+            history: [],
+            createdAt: new Date().toISOString(),
+            updatedAt: new Date().toISOString(),
+          },
+          currentState: 'IMPLEMENT',
+          context: {},
+        },
+      });
+      const workItem = await (capAgent as any).workspace.getNextWorkItem();
+      await (capAgent as any).workspace.completeWorkItem(workItem);
+      (capAgent as any).context.currentTask = {
+        messageId: `${taskId}.md`,
+        subject: `[Workflow] IMPLEMENT: ${taskId}`,
+        description,
+        acceptanceCriteria: [],
+        priority: 'NORMAL',
+      };
+      (capAgent as any).evaluateExitCondition = jest.fn<any>().mockResolvedValue(true);
+      (capAgent as any).extractStateSummary = jest.fn<any>().mockResolvedValue(null);
+      (capAgent as any).resetSessionWithContext = jest.fn<any>().mockResolvedValue(undefined);
+      (capAgent as any).executeStateCommands = jest.fn<any>()
+        .mockResolvedValue({ success: true, captured: {} });
+      return jest.spyOn(engine, 'transition');
+    }
+
+    it('entry-command failure forces failure and skips exit gate, summary and exit commands', async () => {
+      const transitionSpy = await activateTask('cap-task-entry', 'Implement');
+      (capAgent as any).entryCommandsFailed = true;
+      // An exit gate that would say "success" must not be consulted
+      const getExitEval = jest.spyOn((capAgent as any).workflowEngine, 'getExitEvaluation')
+        .mockReturnValue({ prompt: 'ok?', responseFormat: 'boolean', mapping: { true: 'success', false: 'failure' } });
+
+      await (capAgent as any).handleWorkflowTransition();
+
+      const result = transitionSpy.mock.calls[0][1] as any;
+      expect(result.success).toBe(false);
+      expect(result.error).toMatch(/entry commands failed/i);
+      expect((capAgent as any).evaluateExitCondition).not.toHaveBeenCalled();
+      expect((capAgent as any).extractStateSummary).not.toHaveBeenCalled();
+      expect((capAgent as any).executeStateCommands).not.toHaveBeenCalled();
+      transitionSpy.mockRestore();
+      getExitEval.mockRestore();
+    });
+
+    it('a permanently failed work item forces a failure transition', async () => {
+      const transitionSpy = await activateTask('cap-task-failed-item', 'Implement');
+      (capAgent as any).workflowPhaseFailedItems = ['Build'];
+
+      await (capAgent as any).handleWorkflowTransition();
+
+      const result = transitionSpy.mock.calls[0][1] as any;
+      expect(result.success).toBe(false);
+      expect(result.error).toMatch(/1 work item\(s\) failed.*Build/);
+      expect((capAgent as any).evaluateExitCondition).not.toHaveBeenCalled();
+      transitionSpy.mockRestore();
+    });
+
+    it('runs the gate even when the task description is empty', async () => {
+      const transitionSpy = await activateTask('cap-task-nodesc', '');
+      (capAgent as any).workflowPhaseResponseText = 'Verdict: FAIL';
+
+      await (capAgent as any).handleWorkflowTransition();
+
+      const result = transitionSpy.mock.calls[0][1] as any;
+      expect(result.success).toBe(false);
+      transitionSpy.mockRestore();
+    });
+
+    it('makes entry-command captures available to the same state prompt', async () => {
+      const engine = (capAgent as any).workflowEngine;
+      engine.loadWorkflow({
+        ...captureWorkflow,
+        id: 'cap-wf-entry',
+        states: {
+          ...captureWorkflow.states,
+          IMPLEMENT: {
+            ...captureWorkflow.states.IMPLEMENT,
+            prompt: 'Commits so far: {{reqCommits}}',
+            onEntryCommands: [
+              { command: 'git log --oneline', reason: 'capture', captureAs: 'reqCommits' },
+            ],
+          },
+        },
+      });
+      engine.createTask('cap-wf-entry', 'cap-task-entry-prompt', {});
+      (capAgent as any).executeStateCommands = jest.fn<any>()
+        .mockResolvedValue({ success: true, captured: { reqCommits: 'abc123 REQ-1: first' } });
+      const breakdown = jest.fn<any>().mockResolvedValue(undefined);
+      (capAgent as any).breakDownIntoWorkItems = breakdown;
+
+      await (capAgent as any).classifyAndProcessMessage({
+        filename: 'entry-prompt.md',
+        from: 'mgr_host_manager',
+        subject: '[Workflow] IMPLEMENT: cap-task-entry-prompt',
+        content: '',
+        messageType: 'workflow',
+        payload: {
+          type: 'workflow',
+          workflowId: 'cap-wf-entry',
+          taskId: 'cap-task-entry-prompt',
+          targetRole: 'developer',
+          targetState: 'IMPLEMENT',
+          taskPrompt: 'Implement',
+          taskState: {
+            taskId: 'cap-task-entry-prompt',
+            workflowId: 'cap-wf-entry',
+            currentState: 'IMPLEMENT',
+            context: {},
+            retryCount: 0,
+            history: [],
+            createdAt: new Date().toISOString(),
+            updatedAt: new Date().toISOString(),
+          },
+        },
+      });
+
+      const prefix: string = (capAgent as any).workItemExecutor.config.workflowPromptPrefix;
+      expect(prefix).toContain('Commits so far: abc123 REQ-1: first');
+      expect(prefix).not.toContain('{{reqCommits}}');
+      const sent = breakdown.mock.calls[0][0] as { content: string };
+      expect(sent.content).toContain('abc123 REQ-1: first');
+    });
+
+    it('never scrapes branch or commitSha from message text', async () => {
+      const transitionSpy = await activateTask(
+        'cap-task-prose',
+        'QA rejected: raise branch coverage above 80%. The branch is stale; see commit deadbeef1234.',
+      );
+
+      await (capAgent as any).handleWorkflowTransition();
+
+      const result = transitionSpy.mock.calls[0][1] as any;
+      expect(result.outputs.branch).toBeUndefined();
+      expect(result.outputs.commitSha).toBeUndefined();
+      transitionSpy.mockRestore();
+    });
+
+    it('merges entry-command captures into the transition outputs', async () => {
+      const transitionSpy = await activateTask('cap-task-entrycap', 'Implement');
+      (capAgent as any).workflowPhaseEntryCaptures = { validatedSha: 'feedface' };
+
+      await (capAgent as any).handleWorkflowTransition();
+
+      const result = transitionSpy.mock.calls[0][1] as any;
+      expect(result.outputs.validatedSha).toBe('feedface');
+      transitionSpy.mockRestore();
     });
   });
 });

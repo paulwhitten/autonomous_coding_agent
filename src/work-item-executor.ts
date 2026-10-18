@@ -30,8 +30,9 @@ export interface WorkItemExecutorConfig {
    */
   workflowPromptPrefix?: string;
   /**
-   * Tools that the workflow state explicitly restricts.  Injected as a
-   * warning into each work item prompt so the LLM avoids them.
+   * Tools that the workflow state explicitly restricts.  Rendered into the
+   * prompt as a warning, and enforced by the agent's permission handler
+   * and pre-tool-use hook via isToolRestricted().
    */
   workflowRestrictedTools?: string[];
 }
@@ -77,6 +78,13 @@ export class WorkItemExecutor {
       { restrictedTools: restrictedTools.length },
       'Workflow context injected into executor'
     );
+  }
+
+  /**
+   * True if the active workflow state restricts this tool name.
+   */
+  isToolRestricted(toolName: string): boolean {
+    return this.config.workflowRestrictedTools?.includes(toolName) ?? false;
   }
 
   /**

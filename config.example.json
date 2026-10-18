@@ -75,7 +75,7 @@
 
   // All copilot fields have defaults -- omit the entire block to use them
   // "copilot": {
-  //   "model": "gpt-4.1",                // Default: "gpt-4.1"
+  //   "model": "auto",                   // Default: "auto" (Copilot picks the model)
   //   "allowedTools": ["all"],            // Default: ["all"]
   //   "permissions": {
   //     "shell": "allowlist",             // Default: "allowlist"

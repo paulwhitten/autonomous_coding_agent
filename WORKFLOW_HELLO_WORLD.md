@@ -357,12 +357,16 @@ For each state, the engine:
 
 **During execution:**
 - Sends prompt to LLM
-- Monitors for timeout (`timeoutMs`)
-- Collects outputs for `requiredOutputs`
+- Applies the agent's adaptive work-item timeout (the per-state
+  `timeoutMs` field is not currently enforced)
 
 **After execution:**
-- Runs `onExitCommands` (if defined)
-- Evaluates `exitEvaluation` question (if defined)
+- Fails the state outright if an entry command failed or a work item
+  exhausted its retries
+- Otherwise evaluates the `exitEvaluation` question (if defined)
+- Runs `onExitCommands` (if defined; skipped when entry commands failed)
+- Runs `exitActions`, then checks `requiredOutputs` against the outputs
+  this state produced
 - Checks retries against `maxRetries`
 - Adds transition record to task history
 - Determines next state via `transitions`
@@ -529,7 +533,6 @@ code workflows/regulatory.workflow.json
 - How `exitEvaluation` gates transitions (pass/fail checks)
 - How `requiredOutputs` ensures necessary context is captured
 - How retry logic (`maxRetries`) handles intermittent failures
-- How timeouts (`timeoutMs`) prevent infinite hangs
 
 ### 2. Run the Smoke Tests
 

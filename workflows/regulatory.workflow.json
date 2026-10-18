@@ -28,10 +28,6 @@
         "team",
         "mailbox:read"
       ],
-      "requiredOutputs": [
-        "assignedTo",
-        "requirementIds"
-      ],
       "transitions": {
         "onSuccess": "IMPLEMENTING",
         "onFailure": "ESCALATED"
@@ -41,7 +37,7 @@
       "name": "Implementation",
       "role": "developer",
       "description": "Developer implements on a feature branch with safety-critical coding standards.",
-      "prompt": "Implement the assigned task.\n\n**Requirement IDs:** {{requirementIds}}\n\nYou are ALREADY on branch reg/{{taskId}} -- the entry commands created it from main. Do NOT create branches or run git checkout.\n\n**Procedure:**\n1. cd {{projectPath}}\n2. Implement the required changes following deterministic coding practices\n3. Minimize unsafe blocks, document any that are required\n4. Add requirement ID(s) {{requirementIds}} in code comments\n\nQuality gates (build, test, lint) run automatically as exit commands -- fix any errors the gates surface before the state can transition.\n\nDo NOT run git commands (checkout, add, commit, push) -- the entry and exit commands handle all git operations mechanically.\nDo NOT call send_completion_report() -- the workflow engine handles state transitions and routing automatically.",
+      "prompt": "Implement the assigned task.\n\n**Requirement IDs:** see the Task Details below\n\nYou are ALREADY on branch reg/{{taskId}} -- the entry commands created it from main. Do NOT create branches or run git checkout.\n\n**Procedure:**\n1. cd {{projectPath}}\n2. Implement the required changes following deterministic coding practices\n3. Minimize unsafe blocks, document any that are required\n4. Add the requirement IDs listed in the Task Details below in code comments\n\nQuality gates (build, test, lint) run automatically as exit commands -- fix any errors the gates surface before the state can transition.\n\nDo NOT run git commands (checkout, add, commit, push) -- the entry and exit commands handle all git operations mechanically.\nDo NOT call send_completion_report() -- the workflow engine handles state transitions and routing automatically.",
       "allowedTools": [
         "terminal",
         "file_ops",
@@ -156,10 +152,6 @@
         "reporting",
         "mailbox:read"
       ],
-      "requiredOutputs": [
-        "staticAnalysisResults",
-        "verdict"
-      ],
       "transitions": {
         "onSuccess": "UNIT_TESTING",
         "onFailure": "REWORK_STATIC"
@@ -223,7 +215,7 @@
       "name": "Rework (Static Analysis)",
       "role": "developer",
       "description": "Developer fixes static analysis issues.",
-      "prompt": "Fix static analysis issues on branch reg/{{taskId}}. The entry commands have checked it out.\n\n**Issues:** {{staticAnalysisResults}}\n\n**Procedure:**\n1. cd {{projectPath}}\n2. Address each issue reported by static analysis\n3. Run: {{staticAnalysisCommand}} -- verify clean\n\nDo NOT run git commands (checkout, add, commit, push) -- the entry and exit commands handle all git operations mechanically.\nDo NOT call send_completion_report() -- the workflow engine handles state transitions and routing automatically.",
+      "prompt": "Fix static analysis issues on branch reg/{{taskId}}. The entry commands have checked it out.\n\n**Issues found by QA:** {{rejectionReason}}\n(Full findings are in the agent notes in the workflow history above.)\n\n**Procedure:**\n1. cd {{projectPath}}\n2. Address each issue reported by static analysis\n3. Run: {{staticAnalysisCommand}} -- verify clean\n\nDo NOT run git commands (checkout, add, commit, push) -- the entry and exit commands handle all git operations mechanically.\nDo NOT call send_completion_report() -- the workflow engine handles state transitions and routing automatically.",
       "allowedTools": [
         "terminal",
         "file_ops",
@@ -304,11 +296,6 @@
         "reporting",
         "mailbox:read"
       ],
-      "requiredOutputs": [
-        "testResults",
-        "coveragePercent",
-        "verdict"
-      ],
       "transitions": {
         "onSuccess": "CODE_REVIEW",
         "onFailure": "REWORK_TESTS"
@@ -372,7 +359,7 @@
       "name": "Rework (Test Coverage)",
       "role": "developer",
       "description": "Developer adds tests to meet coverage threshold.",
-      "prompt": "Improve test coverage on branch reg/{{taskId}}. The entry commands have checked it out.\n\n**Current coverage:** {{coveragePercent}}%\n**Required:** {{coverageThreshold}}%\n**Test Results:** {{testResults}}\n\n**Procedure:**\n1. cd {{projectPath}}\n2. Add missing unit tests for uncovered code paths\n3. Fix any failing tests\n4. Run: {{testCommand}} -- verify improvement\n\nDo NOT run git commands (checkout, add, commit, push) -- the entry and exit commands handle all git operations mechanically.\nDo NOT call send_completion_report() -- the workflow engine handles state transitions and routing automatically.",
+      "prompt": "Improve test coverage on branch reg/{{taskId}}. The entry commands have checked it out.\n\n**Required coverage:** >= {{coverageThreshold}}%\n**Required:** {{coverageThreshold}}%\n**Issues found by QA:** {{rejectionReason}}\n(Full findings are in the agent notes in the workflow history above.)\n\n**Procedure:**\n1. cd {{projectPath}}\n2. Add missing unit tests for uncovered code paths\n3. Fix any failing tests\n4. Run: {{testCommand}} -- verify improvement\n\nDo NOT run git commands (checkout, add, commit, push) -- the entry and exit commands handle all git operations mechanically.\nDo NOT call send_completion_report() -- the workflow engine handles state transitions and routing automatically.",
       "allowedTools": [
         "terminal",
         "file_ops",
@@ -446,16 +433,12 @@
       "name": "Code Review",
       "role": "qa",
       "description": "QA performs detailed code review against coding standards.",
-      "prompt": "Review code changes on branch reg/{{taskId}} against main. The entry commands have already checked out and synced this branch.\n\n**Procedure:**\n1. cd {{projectPath}}\n2. git diff main...reg/{{taskId}} -- '*.rs' '*.toml'\n3. Review each changed file for:\n   - Rust idioms: ownership, lifetimes, Result<T,E> error handling\n   - Safety: unsafe blocks documented, minimal scope\n   - Defensive coding practices\n   - Coding standards compliance\n   - Requirement IDs in comments: {{requirementIds}}\n4. Check commit messages reference requirement IDs\n\n**Pass criteria:**\n- Follows coding standards\n- Safety-critical sections documented\n- Requirement traceability present\n\nDo NOT run git commands (checkout, add, commit, push) -- the entry and exit commands handle all git operations mechanically.\nDo NOT call send_completion_report() -- the workflow engine handles state transitions and routing automatically.",
+      "prompt": "Review code changes on branch reg/{{taskId}} against main. The entry commands have already checked out and synced this branch.\n\n**Procedure:**\n1. cd {{projectPath}}\n2. git diff main...reg/{{taskId}} -- '*.rs' '*.toml'\n3. Review each changed file for:\n   - Rust idioms: ownership, lifetimes, Result<T,E> error handling\n   - Safety: unsafe blocks documented, minimal scope\n   - Defensive coding practices\n   - Coding standards compliance\n   - Requirement IDs in comments (the requirement IDs listed in the Task Details below)\n4. Check commit messages reference requirement IDs\n\n**Pass criteria:**\n- Follows coding standards\n- Safety-critical sections documented\n- Requirement traceability present\n\nDo NOT run git commands (checkout, add, commit, push) -- the entry and exit commands handle all git operations mechanically.\nDo NOT call send_completion_report() -- the workflow engine handles state transitions and routing automatically.",
       "allowedTools": [
         "terminal",
         "file_ops",
         "reporting",
         "mailbox:read"
-      ],
-      "requiredOutputs": [
-        "reviewFindings",
-        "verdict"
       ],
       "transitions": {
         "onSuccess": "REQUIREMENT_TRACE",
@@ -519,7 +502,7 @@
       "name": "Rework (Code Review)",
       "role": "developer",
       "description": "Developer addresses code review findings.",
-      "prompt": "Address code review findings on branch reg/{{taskId}}. The entry commands have checked it out.\n\n**Review Findings:** {{reviewFindings}}\n\n**Procedure:**\n1. cd {{projectPath}}\n2. Address each finding from the code review\n\nQuality gates (build, test, lint) run automatically as exit commands.\n\nDo NOT run git commands (checkout, add, commit, push) -- the entry and exit commands handle all git operations mechanically.\nDo NOT call send_completion_report() -- the workflow engine handles state transitions and routing automatically.",
+      "prompt": "Address code review findings on branch reg/{{taskId}}. The entry commands have checked it out.\n\n**Review Findings:** {{rejectionReason}}\n(Full findings are in the agent notes in the workflow history above.)\n\n**Procedure:**\n1. cd {{projectPath}}\n2. Address each finding from the code review\n\nQuality gates (build, test, lint) run automatically as exit commands.\n\nDo NOT run git commands (checkout, add, commit, push) -- the entry and exit commands handle all git operations mechanically.\nDo NOT call send_completion_report() -- the workflow engine handles state transitions and routing automatically.",
       "allowedTools": [
         "terminal",
         "file_ops",
@@ -593,16 +576,12 @@
       "name": "Requirement Traceability",
       "role": "qa",
       "description": "QA verifies requirement IDs are traced through code, tests, and commits.",
-      "prompt": "Verify requirement traceability for {{requirementIds}} on branch reg/{{taskId}}. The entry commands have already checked out and synced this branch.\n\n**Procedure:**\n1. cd {{projectPath}}\n2. Search for each requirement ID in source code: grep -rn 'REQ-ID' crates/\n3. Search for each requirement ID in test code: grep -rn 'REQ-ID' tests/\n4. Search commit messages: git log main..reg/{{taskId}} --oneline\n5. Build traceability matrix: Requirement -> Source file -> Test file -> Commit\n\n**Pass criteria:**\n- Each requirement ID appears in at least one source file\n- Each requirement ID appears in at least one test\n- At least one commit message references requirements\n\nDo NOT run git commands (checkout, add, commit, push) -- the entry and exit commands handle all git operations mechanically.\nDo NOT call send_completion_report() -- the workflow engine handles state transitions and routing automatically.",
+      "prompt": "Verify requirement traceability for the requirement IDs listed in the Task Details below on branch reg/{{taskId}}. The entry commands have already checked out and synced this branch.\n\n**Procedure:**\n1. cd {{projectPath}}\n2. Search for each requirement ID in source code: grep -rn 'REQ-ID' crates/\n3. Search for each requirement ID in test code: grep -rn 'REQ-ID' tests/\n4. Search commit messages: git log main..reg/{{taskId}} --oneline\n5. Build traceability matrix: Requirement -> Source file -> Test file -> Commit\n\n**Pass criteria:**\n- Each requirement ID appears in at least one source file\n- Each requirement ID appears in at least one test\n- At least one commit message references requirements\n\nDo NOT run git commands (checkout, add, commit, push) -- the entry and exit commands handle all git operations mechanically.\nDo NOT call send_completion_report() -- the workflow engine handles state transitions and routing automatically.",
       "allowedTools": [
         "terminal",
         "file_ops",
         "reporting",
         "mailbox:read"
-      ],
-      "requiredOutputs": [
-        "traceabilityMatrix",
-        "verdict"
       ],
       "transitions": {
         "onSuccess": "REGULATORY_SIGNOFF",
@@ -666,7 +645,7 @@
       "name": "Rework (Traceability)",
       "role": "developer",
       "description": "Developer adds missing requirement traceability annotations.",
-      "prompt": "Add missing requirement traceability on branch reg/{{taskId}}. The entry commands have checked it out.\n\n**Missing traceability:** {{traceabilityMatrix}}\n**Requirement IDs:** {{requirementIds}}\n\n**Procedure:**\n1. cd {{projectPath}}\n2. Add requirement ID comments to source files that implement each requirement\n3. Add requirement ID comments to test files that validate each requirement\n4. Ensure test names reference the requirement being tested\n\nDo NOT run git commands (checkout, add, commit, push) -- the entry and exit commands handle all git operations mechanically.\nDo NOT call send_completion_report() -- the workflow engine handles state transitions and routing automatically.",
+      "prompt": "Add missing requirement traceability on branch reg/{{taskId}}. The entry commands have checked it out.\n\n**Missing traceability:** {{rejectionReason}}\n(Full findings are in the agent notes in the workflow history above.)\n**Requirement IDs:** see the Task Details below\n\n**Procedure:**\n1. cd {{projectPath}}\n2. Add requirement ID comments to source files that implement each requirement\n3. Add requirement ID comments to test files that validate each requirement\n4. Ensure test names reference the requirement being tested\n\nDo NOT run git commands (checkout, add, commit, push) -- the entry and exit commands handle all git operations mechanically.\nDo NOT call send_completion_report() -- the workflow engine handles state transitions and routing automatically.",
       "allowedTools": [
         "terminal",
         "file_ops",
@@ -725,15 +704,12 @@
       "name": "Regulatory Sign-Off",
       "role": "manager",
       "description": "Manager reviews the full evidence package and signs off for regulatory compliance.",
-      "prompt": "Review the full evidence package for regulatory sign-off.\n\n**Required evidence:**\n- Static analysis: clean (pedantic mode)\n- Test coverage: >= {{coverageThreshold}}%\n- Code review: passed\n- Requirement traceability: complete for {{requirementIds}}\n\n**Procedure:**\n1. Review all QA reports for this task\n2. Verify all gates passed without waivers\n3. Approve the merge by sending to QA for final merge\n\nIf any evidence is missing or inadequate, escalate.\n\nDo NOT call send_completion_report() -- the workflow engine handles routing.",
+      "prompt": "Review the full evidence package for regulatory sign-off.\n\n**Required evidence:**\n- Static analysis: clean (pedantic mode)\n- Test coverage: >= {{coverageThreshold}}%\n- Code review: passed\n- Requirement traceability: complete for the requirement IDs listed in the Task Details below\n\n**Procedure:**\n1. Review all QA reports for this task\n2. Verify all gates passed without waivers\n3. Approve the merge by sending to QA for final merge\n\nIf any evidence is missing or inadequate, escalate.\n\nDo NOT call send_completion_report() -- the workflow engine handles routing.",
       "allowedTools": [
         "mailbox:send",
         "mailbox:read",
         "team",
         "reporting"
-      ],
-      "requiredOutputs": [
-        "signoffVerdict"
       ],
       "transitions": {
         "onSuccess": "MERGING",

@@ -19,10 +19,10 @@
 //   --workspace <dir>      Explicit path to agent workspace/ directory
 //   --instructions <file>  Override path to copilot-instructions.md
 //   --test-name <name>     Label for the report (defaults to smoke-test dir basename)
-//   --model <model>        Model for judging (default from config.yml, fallback: gpt-5.4)
+//   --model <model>        Model for judging (default from config.yml, fallback: auto)
 //   --output <file>        Output JSON path (default: <smoke-test>/judge/<timestamp>.json)
 
-import { CopilotClient } from '@github/copilot-sdk';
+import { CopilotClient, RuntimeConnection } from '@github/copilot-sdk';
 import { SessionManager } from '../../src/session-manager.js';
 import fs from 'fs/promises';
 import { realpathSync } from 'node:fs';
@@ -114,7 +114,7 @@ interface WorkspaceArtifacts {
 // ---------------------------------------------------------------------------
 
 const DEFAULT_CONFIG: JudgeConfig = {
-  model: 'gpt-5.4',
+  model: 'auto',
   runs: 1,
   weights: {
     task_completion: 0.20,
@@ -557,7 +557,9 @@ async function callJudge(
   logger: pino.Logger,
 ): Promise<string> {
   const cliUrl = process.env.COPILOT_CLI_URL;
-  const client = new CopilotClient(cliUrl ? { cliUrl } : undefined);
+  const client = new CopilotClient(
+    cliUrl ? { connection: RuntimeConnection.forUri(cliUrl) } : undefined,
+  );
   const sessionManager = new SessionManager(client, logger);
 
   await sessionManager.initializeSession(undefined, {

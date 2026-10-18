@@ -51,6 +51,39 @@ what you did.
 
 Address this now. Use any tools necessary.`;
 
+/**
+ * Output keys the agent produces for any state without workflow
+ * configuration.  None: outputs come only from captureAs and set_context.
+ */
+const AGENT_BUILTIN_OUTPUTS: string[] = [];
+
+/**
+ * Return, per state, the requiredOutputs keys that nothing can produce.
+ *
+ * A key is producible if it is captured by one of the state's entry or
+ * exit commands (`captureAs`), set by one of its `set_context`
+ * exitActions, or is one of the agent's built-in outputs.  A state with
+ * an unproducible required output can never take its success transition.
+ */
+export function findUnproducibleRequiredOutputs(
+  def: WorkflowDefinition,
+): Record<string, string[]> {
+  const result: Record<string, string[]> = {};
+  for (const [name, state] of Object.entries(def.states)) {
+    if (!state.requiredOutputs || state.requiredOutputs.length === 0) continue;
+    const producible = new Set<string>(AGENT_BUILTIN_OUTPUTS);
+    for (const cmd of [...(state.onEntryCommands ?? []), ...(state.onExitCommands ?? [])]) {
+      if (cmd.captureAs) producible.add(cmd.captureAs);
+    }
+    for (const action of state.exitActions ?? []) {
+      if (action.type === 'set_context' && action.params?.key) producible.add(action.params.key);
+    }
+    const missing = state.requiredOutputs.filter((k) => !producible.has(k));
+    if (missing.length > 0) result[name] = missing;
+  }
+  return result;
+}
+
 // Tools available for OOB messages (broad access)
 const OOB_TOOLS = [
   'terminal', 'file_ops', 'git', 'mailbox:read', 'mailbox:send', 'reporting', 'team',
@@ -808,21 +841,6 @@ export class WorkflowEngine {
     const { task, state, workflow } = this.getStateInfo(taskId);
     const fromState = task.currentState;
 
-    // On success: validate required outputs are present
-    if (result.success && state.requiredOutputs) {
-      const missing = state.requiredOutputs.filter(
-        (key) => !(key in result.outputs),
-      );
-      if (missing.length > 0) {
-        this.logger.warn(
-          { taskId, state: fromState, missing },
-          'Required outputs missing -- treating as failure',
-        );
-        result.success = false;
-        result.error = `Missing required outputs: ${missing.join(', ')}`;
-      }
-    }
-
     // Merge outputs into task context
     if (result.outputs) {
       Object.assign(task.context, result.outputs);
@@ -832,6 +850,8 @@ export class WorkflowEngine {
     // These run deterministically within the engine (no LLM involvement).
     // set_context actions apply AFTER outputs merge, so they can override
     // regex-extracted values with workflow-author-defined values.
+    // Keys set here count toward requiredOutputs (checked below).
+    const producedKeys = new Set(Object.keys(result.outputs ?? {}));
     if (state.exitActions && state.exitActions.length > 0) {
       for (const action of state.exitActions) {
         switch (action.type) {
@@ -846,6 +866,7 @@ export class WorkflowEngine {
               state: fromState,
             });
             task.context[key] = value;
+            producedKeys.add(key);
             this.logger.info(
               { taskId, action: 'set_context', key, value },
               'State action: set_context',
@@ -875,6 +896,23 @@ export class WorkflowEngine {
               'Unknown exitAction type -- skipping',
             );
         }
+      }
+    }
+
+    // On success: validate required outputs were produced by this state
+    // (result outputs or this state's set_context exitActions).  Values
+    // left in the context by earlier states do not count.
+    if (result.success && state.requiredOutputs) {
+      const missing = state.requiredOutputs.filter(
+        (key) => !producedKeys.has(key),
+      );
+      if (missing.length > 0) {
+        this.logger.warn(
+          { taskId, state: fromState, missing },
+          'Required outputs missing -- treating as failure',
+        );
+        result.success = false;
+        result.error = `Missing required outputs: ${missing.join(', ')}`;
       }
     }
 
@@ -956,6 +994,14 @@ export class WorkflowEngine {
       }
     }
 
+    // retryCount counts consecutive failures in the *current* state.  A
+    // move to a different state starts that state's count from zero, so a
+    // failure in VERIFICATION does not use up REWORK's retry budget.
+    // Cross-state loops are bounded by maxCycleVisits, not retryCount.
+    if (newState !== fromState) {
+      task.retryCount = 0;
+    }
+
     // Record the transition
     const record: StateTransitionRecord = {
       fromState,
@@ -990,6 +1036,7 @@ export class WorkflowEngine {
               state: newState,
             });
             task.context[key] = value;
+            producedKeys.add(key);
             this.logger.info(
               { taskId, action: 'set_context', key, value },
               'State action: set_context',
@@ -1248,8 +1295,10 @@ export class WorkflowEngine {
     const startIdx = content.indexOf(MSG_MARKER_START);
     if (startIdx === -1) return content;
 
-    const endIdx = content.indexOf(MSG_MARKER_END);
-    if (endIdx === -1) return content;
+    // lastIndexOf, matching unpackMessage: a nested envelope's end marker
+    // must not terminate the outer envelope.
+    const endIdx = content.lastIndexOf(MSG_MARKER_END);
+    if (endIdx === -1 || endIdx < startIdx) return content;
 
     const before = content.substring(0, startIdx).trimEnd();
     const after = content.substring(endIdx + MSG_MARKER_END.length).trimStart();
@@ -1514,6 +1563,14 @@ export class WorkflowEngine {
       if (!state.prompt && state.prompt !== '') {
         throw new WorkflowValidationError(id, `State '${name}' is missing prompt`);
       }
+      if (!state.transitions?.onSuccess) {
+        // A null onSuccess on a non-terminal state would leave the task
+        // in the same state forever on success.
+        throw new WorkflowValidationError(
+          id,
+          `State '${name}' is not terminal but has no onSuccess transition (add it to terminalStates or set onSuccess)`,
+        );
+      }
       if (
         state.transitions.onSuccess &&
         !stateNames.has(state.transitions.onSuccess)
@@ -1532,6 +1589,16 @@ export class WorkflowEngine {
           `State '${name}' onFailure references unknown state '${state.transitions.onFailure}'`,
         );
       }
+    }
+
+    // Warn about required outputs that no mechanism can produce: such a
+    // state can never succeed.  (Warn rather than throw so hand-built
+    // definitions that supply outputs programmatically still load.)
+    for (const [state, missing] of Object.entries(findUnproducibleRequiredOutputs(def))) {
+      this.logger.warn(
+        { workflowId: id, state, missing },
+        'requiredOutputs cannot be produced by captureAs, set_context, or built-in outputs -- state can never succeed',
+      );
     }
 
     // Validate reachability: every non-terminal state should be reachable
@@ -1816,8 +1883,21 @@ export class WorkflowEngine {
    * Called when a task reaches ESCALATED terminal state.
    */
   markTaskEscalated(taskId: string): void {
+    // The escalated task is blocked until a human acts (unblockTask).
+    // It must not get a blockedSince timestamp: the periodic recheck
+    // unblocks any timed-out task whose dependencies are met, which would
+    // silently re-dispatch an escalation (a root task has no dependencies).
     this.manifestTaskStatus.set(taskId, 'blocked');
-    this.blockedSince.set(taskId, Date.now());
+    this.blockedSince.delete(taskId);
+    this.blockDependents(taskId);
+  }
+
+  /**
+   * Block tasks downstream of an escalated (or cascade-blocked) task.
+   * They stay blocked until the upstream task reaches DONE (markTaskDone
+   * re-evaluates them) or a human unblocks them; no timed recheck.
+   */
+  private blockDependents(taskId: string): void {
 
     // Block downstream tasks that have blockOnFailure (default true)
     for (const manifest of this.manifests.values()) {
@@ -1828,13 +1908,12 @@ export class WorkflowEngine {
             const currentStatus = this.manifestTaskStatus.get(entry.taskId);
             if (currentStatus === 'pending' || currentStatus === 'ready') {
               this.manifestTaskStatus.set(entry.taskId, 'blocked');
-              this.blockedSince.set(entry.taskId, Date.now());
               this.logger.warn(
                 { taskId: entry.taskId, blockedBy: taskId },
                 'Task blocked due to dependency escalation',
               );
               // Cascade: block tasks that depend on this now-blocked task
-              this.markTaskEscalated(entry.taskId);
+              this.blockDependents(entry.taskId);
             }
           }
         }

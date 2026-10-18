@@ -6,7 +6,10 @@
 // - Handle session errors and recovery
 // - Track session state
 
-import { CopilotClient, CopilotSession } from '@github/copilot-sdk';
+import { CopilotClient, CopilotSession, type SessionConfig as SdkSessionConfig } from '@github/copilot-sdk';
+
+/** SDK session hooks (not exported by name from the SDK). */
+export type SessionHooks = NonNullable<SdkSessionConfig['hooks']>;
 import pino from 'pino';
 
 export interface SessionConfig {
@@ -16,6 +19,8 @@ export interface SessionConfig {
   availableTools?: string[];  // CAUTION: Acts as whitelist — disables all tools NOT listed.
                               // Omit to keep all built-in tools (file I/O, terminal, etc.) enabled.
   onPermissionRequest?: (request: any, invocation: { sessionId: string }) => any;
+  /** SDK session hooks (e.g. onPreToolUse to enforce restrictedTools). */
+  hooks?: SessionHooks;
   workingDirectory?: string;
 }
 
@@ -181,6 +186,7 @@ export class SessionManager {
           tools: config.tools,
           streaming: config.streaming,
           onPermissionRequest: config.onPermissionRequest ?? defaultPermissionHandler,
+          hooks: config.hooks,
           workingDirectory: config.workingDirectory,
         });
         this.sessionState = {
@@ -208,6 +214,7 @@ export class SessionManager {
       tools: config.tools,
       availableTools: config.availableTools,  // Pass through availableTools
       onPermissionRequest: config.onPermissionRequest ?? defaultPermissionHandler,
+      hooks: config.hooks,
       workingDirectory: config.workingDirectory,
     });
 
@@ -302,41 +309,35 @@ export class SessionManager {
   async ensureSession(): Promise<void> {
     // Fast path: session object exists and is marked active
     if (this.session && this.sessionState.isActive) {
-      // Client connectivity check (synchronous, negligible cost)
-      const clientState = this.client.getState();
-      if (clientState === 'connected') {
-        // For sessions idle > 2 min, verify the server still knows them
-        const lastActivity = this.sessionState.lastActivity;
-        const idleMs = lastActivity
-          ? Date.now() - lastActivity.getTime()
-          : Infinity;
-        if (idleMs < 120_000) {
-          return; // Recently active — trust it
+      // The SDK has no synchronous connection-state check; a disconnected
+      // client surfaces as a listSessions() failure below, or as a send
+      // failure that the caller's session-expiry handling renews.
+      // For sessions idle > 2 min, verify the server still knows them
+      const lastActivity = this.sessionState.lastActivity;
+      const idleMs = lastActivity
+        ? Date.now() - lastActivity.getTime()
+        : Infinity;
+      if (idleMs < 120_000) {
+        return; // Recently active — trust it
+      }
+      // Stale session — verify it still exists server-side
+      try {
+        const sessions = await this.client.listSessions();
+        const exists = sessions.some(
+          s => s.sessionId === this.sessionState.sessionId,
+        );
+        if (exists) {
+          this.logger.debug('ensureSession: stale session verified via listSessions');
+          return;
         }
-        // Stale session — verify it still exists server-side
-        try {
-          const sessions = await this.client.listSessions();
-          const exists = sessions.some(
-            s => s.sessionId === this.sessionState.sessionId,
-          );
-          if (exists) {
-            this.logger.debug('ensureSession: stale session verified via listSessions');
-            return;
-          }
-          this.logger.warn(
-            { sessionId: this.sessionState.sessionId },
-            'ensureSession: session no longer exists server-side — renewing',
-          );
-        } catch (error) {
-          this.logger.warn(
-            { error: String(error) },
-            'ensureSession: listSessions check failed — renewing defensively',
-          );
-        }
-      } else {
         this.logger.warn(
-          { clientState },
-          'ensureSession: client not connected — renewing session',
+          { sessionId: this.sessionState.sessionId },
+          'ensureSession: session no longer exists server-side — renewing',
+        );
+      } catch (error) {
+        this.logger.warn(
+          { error: String(error) },
+          'ensureSession: listSessions check failed — renewing defensively',
         );
       }
     } else {
@@ -576,7 +577,7 @@ export class SessionManager {
     }
 
     try {
-      return await this.session.getMessages();
+      return await this.session.getEvents();
     } catch (error) {
       this.logger.warn(
         { error: String(error) },
@@ -627,7 +628,7 @@ export class SessionManager {
     }
 
     try {
-      const messages = await this.session.getMessages();
+      const messages = await this.session.getEvents();
       if (!messages || messages.length === 0) {
         return null;
       }
@@ -729,7 +730,7 @@ export class SessionManager {
     this.cleanupEventListeners();
     if (this.session) {
       try {
-        await this.session.destroy();
+        await this.session.disconnect();
         this.logger.info('Old session destroyed');
       } catch (error) {
         this.logger.warn(
@@ -764,25 +765,40 @@ export class SessionManager {
         seedParts.push('### Prior Conversation Summary', '', historySummary, '');
       }
 
+      // Ask for a short, non-empty reply.  "Acknowledge silently" made some
+      // models (e.g. gpt-5.4-mini) return an empty message, which the Copilot
+      // runtime reports as an error ("No response was returned").
       seedParts.push(
         '---',
-        'Acknowledge this context silently and wait for the next task.',
+        'Reply with exactly: OK -- then wait for the next task.',
       );
 
       const seedPrompt = seedParts.join('\n');
 
-      try {
-        await this.sendPromptAndWait(seedPrompt, 60_000);
-        this.logger.info(
-          { seedLen: seedPrompt.length },
-          'Session seeded with compressed context',
-        );
-      } catch (error) {
-        // Non-fatal: the session is still usable, just without context
-        this.logger.warn(
-          { error: String(error) },
-          'Failed to seed new session with context -- proceeding without it',
-        );
+      // Two attempts: the runtime can report "No response was returned"
+      // transiently and asks the caller to send the message again.
+      for (let attempt = 1; attempt <= 2; attempt++) {
+        try {
+          await this.sendPromptAndWait(seedPrompt, 60_000);
+          this.logger.info(
+            { seedLen: seedPrompt.length, attempt },
+            'Session seeded with compressed context',
+          );
+          break;
+        } catch (error) {
+          if (attempt < 2) {
+            this.logger.info(
+              { error: String(error) },
+              'Seeding new session failed -- retrying once',
+            );
+            continue;
+          }
+          // Non-fatal: the session is still usable, just without context
+          this.logger.warn(
+            { error: String(error) },
+            'Failed to seed new session with context -- proceeding without it',
+          );
+        }
       }
     }
 

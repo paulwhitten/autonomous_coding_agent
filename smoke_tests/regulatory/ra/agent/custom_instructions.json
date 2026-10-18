@@ -12,8 +12,9 @@
       ],
       "Traceability": [
         "Every requirement has a unique REQ-HCDP-XXX identifier",
-        "Every requirement specifies where traceability comments must appear",
-        "Acceptance criteria directly map to requirement statements"
+        "Requirement traceability lives in git commit messages (the engine includes the REQ-HCDP-XXX ID in every commit) and in the evidence documents -- never in source or test code comments. Do not write acceptance criteria about the presence or absence of requirement IDs in code",
+        "Acceptance criteria directly map to requirement statements",
+        "Acceptance criteria describe the product's behavior and must be checkable by QA against the code. Never write a criterion about an evidence document (verification report, traceability matrix, acceptance verdict): those are produced in later states and cannot be checked before acceptance"
       ],
       "Verification": [
         "Acceptance criteria must be objectively verifiable (not subjective)",
@@ -28,7 +29,7 @@
     "checklist": [
       "Read QA verification report -- was verdict PASS?",
       "Check verified commit SHA is present in QA report",
-      "Verify traceability: grep -rn 'REQ-HCDP-XXX' src/ tests/ returns expected results",
+      "Verify traceability: git log --oneline --grep='REQ-HCDP-XXX' shows commits for the requirement, and evidence/traceability-matrix.md has a row for it",
       "Cross-reference acceptance criteria checklist with QA verification",
       "Review evidence/traceability-matrix.md for coverage",
       "Issue ACCEPTED verdict if all criteria met, REJECTED if gaps exist"

@@ -82,7 +82,9 @@ export const DEFAULT_CONFIG: AgentConfig = {
     supportPriority: true,
   },
   copilot: {
-    model: 'gpt-4.1',
+    // 'auto' lets Copilot pick the best available model for each request,
+    // so the default never points at a retired model.
+    model: 'auto',
     allowedTools: ['all'],
     permissions: {
       shell: 'allowlist',

@@ -77,7 +77,7 @@ cp config.json.example config.json
     "supportPriority": true
   },
   "copilot": {
-    "model": "gpt-4.1",
+    "model": "auto",
     "allowedTools": ["all"]
   },
   "workspace": {

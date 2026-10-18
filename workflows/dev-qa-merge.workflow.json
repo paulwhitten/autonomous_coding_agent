@@ -10,7 +10,9 @@
     "projectPath": "workspace/project",
     "buildCommand": "cargo build",
     "testCommand": "cargo test",
-    "lintCommand": "cargo clippy -- -D warnings"
+    "lintCommand": "cargo clippy -- -D warnings",
+    "formatCommand": "cargo fmt",
+    "formatCheckCommand": "cargo fmt --check"
   },
   "states": {
     "ASSIGN": {
@@ -56,7 +58,7 @@
       "onExitCommands": [
         { "command": "rm -f .git/index.lock .git/HEAD.lock 2>/dev/null; git merge --abort 2>/dev/null; git rebase --abort 2>/dev/null; git cherry-pick --abort 2>/dev/null; true", "reason": "Remove stale lock files and abort any stuck merge/rebase/cherry-pick the LLM may have triggered.", "failOnError": false },
         { "command": "git stash pop 2>/dev/null; true", "reason": "Recover any changes the LLM may have stashed.", "failOnError": false },
-        { "command": "cargo fmt 2>/dev/null; true", "reason": "Auto-format code before commit. Failure must not block push.", "failOnError": false },
+        { "command": "{{formatCommand}} 2>/dev/null; true", "reason": "Auto-format code before commit. Failure must not block push.", "failOnError": false },
         { "command": "git add -A", "reason": "Stage all new and modified files.", "failOnError": false },
         { "command": "git diff --cached --quiet || git commit -m '{{role}}: {{state}} for {{taskId}}'", "reason": "Commit staged changes if any exist.", "failOnError": false },
         { "command": "git push origin HEAD:dev/{{taskId}}", "reason": "Push current HEAD to origin dev/{{taskId}}. This MUST run so QA can see the code.", "failOnError": false },
@@ -91,7 +93,7 @@
         { "command": "git checkout dev/{{taskId}} || git checkout -b dev/{{taskId}} origin/dev/{{taskId}}", "reason": "Switch to the feature branch. Create from origin if it does not exist locally.", "failOnError": true },
         { "command": "git reset --hard origin/dev/{{taskId}}", "reason": "Force-sync to origin/dev/{{taskId}} so you are validating exactly what the developer pushed.", "failOnError": true },
         { "command": "git rev-parse HEAD", "reason": "Record the exact commit SHA being validated.", "captureAs": "validatedSha" },
-        { "command": "cargo fmt --check", "reason": "Mechanical fast-fail: reject immediately if pushed code is unformatted. Saves LLM invocation.", "failOnError": true },
+        { "command": "{{formatCheckCommand}}", "reason": "Mechanical fast-fail: reject immediately if pushed code is unformatted. Saves LLM invocation.", "failOnError": true },
         { "command": "{{buildCommand}}", "reason": "Mechanical fast-fail: reject immediately if pushed code does not build.", "failOnError": true },
         { "command": "{{testCommand}}", "reason": "Mechanical fast-fail: reject immediately if pushed code fails tests.", "failOnError": true },
         { "command": "{{lintCommand}}", "reason": "Mechanical fast-fail: reject immediately if pushed code has lint warnings.", "failOnError": true }
@@ -109,7 +111,7 @@
       "name": "Rework",
       "role": "developer",
       "description": "Developer fixes QA-reported issues on the same feature branch.",
-      "prompt": "Fix the issues found by QA. You are ALREADY on branch dev/{{taskId}} -- the entry commands checked it out. Do NOT create branches, switch branches, or run git checkout.\n\n**QA Rejection Reason:**\n{{rejectionReason}}\n\nThe 'Agent notes' section in the prior workflow history above contains QA's detailed findings.\n\n**Evaluate the findings first.** If you believe QA's rejection is incorrect or based on a misunderstanding:\n- Run the quality gates yourself to confirm the code is correct\n- Do NOT make unnecessary changes -- your summary note (captured automatically when this phase ends) will explain your reasoning to QA\n- QA will see your note in the next validation cycle\n\nIf the findings are valid, address EACH specific issue.\n\n**Procedure:**\n1. cd {{projectPath}}\n2. Address each valid issue from the QA findings (or confirm no changes needed)\n3. Run: cargo fmt\n4. Run: {{buildCommand}}\n5. Run: {{testCommand}}\n6. Run: {{lintCommand}}\n7. Fix ALL errors -- do not proceed with failures\n\nDo NOT call send_completion_report() or send_message() -- the workflow engine handles state transitions and routing automatically.\n\nIMPORTANT: Do NOT create a new branch. Do NOT run git checkout. The exit commands will commit and push dev/{{taskId}} automatically.",
+      "prompt": "Fix the issues found by QA. You are ALREADY on branch dev/{{taskId}} -- the entry commands checked it out. Do NOT create branches, switch branches, or run git checkout.\n\n**QA Rejection Reason:**\n{{rejectionReason}}\n\nThe 'Agent notes' section in the prior workflow history above contains QA's detailed findings.\n\n**Evaluate the findings first.** If you believe QA's rejection is incorrect or based on a misunderstanding:\n- Run the quality gates yourself to confirm the code is correct\n- Do NOT make unnecessary changes -- your summary note (captured automatically when this phase ends) will explain your reasoning to QA\n- QA will see your note in the next validation cycle\n\nIf the findings are valid, address EACH specific issue.\n\n**Procedure:**\n1. cd {{projectPath}}\n2. Address each valid issue from the QA findings (or confirm no changes needed)\n3. Run: {{formatCommand}}\n4. Run: {{buildCommand}}\n5. Run: {{testCommand}}\n6. Run: {{lintCommand}}\n7. Fix ALL errors -- do not proceed with failures\n\nDo NOT call send_completion_report() or send_message() -- the workflow engine handles state transitions and routing automatically.\n\nIMPORTANT: Do NOT create a new branch. Do NOT run git checkout. The exit commands will commit and push dev/{{taskId}} automatically.",
       "allowedTools": ["terminal", "file_ops", "reporting", "mailbox:read"],
       "requiredOutputs": ["commitSha"],
       "transitions": {
@@ -128,7 +130,7 @@
       "onExitCommands": [
         { "command": "rm -f .git/index.lock .git/HEAD.lock 2>/dev/null; git merge --abort 2>/dev/null; git rebase --abort 2>/dev/null; git cherry-pick --abort 2>/dev/null; true", "reason": "Remove stale lock files and abort any stuck merge/rebase/cherry-pick the LLM may have triggered.", "failOnError": false },
         { "command": "git stash pop 2>/dev/null; true", "reason": "Recover any changes the LLM may have stashed.", "failOnError": false },
-        { "command": "cargo fmt 2>/dev/null; true", "reason": "Auto-format rework code before commit. Failure must not block push.", "failOnError": false },
+        { "command": "{{formatCommand}} 2>/dev/null; true", "reason": "Auto-format rework code before commit. Failure must not block push.", "failOnError": false },
         { "command": "git add -A", "reason": "Stage all rework changes.", "failOnError": false },
         { "command": "git diff --cached --quiet || git commit -m '{{role}}: {{state}} fix for {{taskId}}'", "reason": "Commit rework fixes if any staged changes exist.", "failOnError": false },
         { "command": "git push origin HEAD:dev/{{taskId}}", "reason": "Push rework fixes to origin dev/{{taskId}}. This MUST run so QA can see the fixes.", "failOnError": false },

@@ -198,7 +198,7 @@ export function createWorkflowRouter(projectRoot: string): Router {
             supportPriority: true,
           },
           copilot: {
-            model: 'gpt-4.1',
+            model: 'auto',
             allowedTools: ['all'],
             permissions: {
               shell: 'allowlist',

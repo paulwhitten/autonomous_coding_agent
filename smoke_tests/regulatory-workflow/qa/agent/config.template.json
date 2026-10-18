@@ -11,7 +11,7 @@
     }
   },
   "copilot": {
-    "model": "gpt-5-mini"
+    "model": "claude-haiku-5.5"
   },
   "mailbox": {
     "repoPath": "../../runtime_mailbox",

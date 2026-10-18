@@ -40,7 +40,7 @@
   "testStandards": {
     "description": "Minimum test quality for regulatory compliance.",
     "structure": [
-      "One describe() block per requirement (REQ-HCDP-XXX)",
+      "Group tests in describe() blocks by behavior; do not put requirement IDs in code comments",
       "Import and test validation functions directly -- not only via CLI spawn",
       "Use test fixtures in tests/fixtures/ for data-driven tests"
     ],
@@ -72,7 +72,6 @@
       "Fewer than 3 test cases per requirement",
       "Tests only spawn CLI process -- must also have unit tests that import validation functions directly",
       "No TypeScript interfaces defined for data structures",
-      "Missing REQ-HCDP-XXX traceability comments in tests/",
       "Acceptance criteria from the task not fully implemented"
     ]
   },
@@ -81,6 +80,6 @@
     "HIPAA Security Rule (45 CFR 164) compliance required",
     "Medical records validation CLI for healthcare data pipeline",
     "JSONL format: one JSON object per line",
-    "REQ-HCDP-XXX traceability mandatory in all test files"
+    "Requirement traceability lives in git commit messages (the engine includes the REQ-HCDP-XXX ID in every commit) and in the evidence documents -- never in source or test code comments"
   ]
 }

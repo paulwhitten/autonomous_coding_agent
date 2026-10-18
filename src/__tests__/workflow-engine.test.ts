@@ -1,7 +1,8 @@
 // Tests for workflow-engine.ts
 
 import { describe, it, expect, beforeEach } from '@jest/globals';
-import { WorkflowEngine } from '../workflow-engine.js';
+import { WorkflowEngine, findUnproducibleRequiredOutputs } from '../workflow-engine.js';
+import { readFileSync, readdirSync } from 'fs';
 import {
   WorkflowDefinition,
   WorkflowValidationError,
@@ -976,6 +977,16 @@ describe('WorkflowEngine', () => {
     });
   });
 
+  describe('stripMessage with nested envelopes', () => {
+    it('removes the whole outer envelope when the payload embeds a prior one', () => {
+      const inner = engine.packMessage('Inner content', engine.buildOOB('Inner', 'r'));
+      const outer = engine.packMessage('Outer content', engine.buildOOB(inner, 'r'));
+      const stripped = engine.stripMessage(outer);
+      expect(stripped).toBe('Outer content');
+      expect(stripped).not.toContain('WORKFLOW_MSG');
+    });
+  });
+
   describe('classifyMessage', () => {
     it('should classify workflow assignments', () => {
       engine.loadWorkflow(createTestWorkflow());
@@ -1571,6 +1582,20 @@ describe('WorkflowEngine', () => {
       expect(engine.getManifestTaskStatus('task-B')).toBe('blocked');
     });
 
+    it('an escalated task is not auto-unblocked by the timed recheck', () => {
+      engine.loadManifest(twoTaskManifest);
+      engine.markTaskEscalated('task-A');  // root task: no dependencies
+      expect(engine.getBlockedTasksDueForRecheck(0)).toEqual([]);
+      expect(engine.getManifestTaskStatus('task-A')).toBe('blocked');
+    });
+
+    it('a manually unblocked escalated task can be dispatched again', () => {
+      engine.loadManifest(twoTaskManifest);
+      engine.markTaskEscalated('task-A');
+      engine.unblockTask('task-A');
+      expect(engine.getManifestTaskStatus('task-A')).toBe('ready');
+    });
+
     it('unblockTask re-evaluates dependencies', () => {
       engine.loadManifest(twoTaskManifest);
       engine.markTaskBlocked('task-B');
@@ -1643,5 +1668,107 @@ describe('WorkflowEngine', () => {
       // Clean up
       await fs.unlink(tmpFile);
     });
+  });
+});
+
+describe('validation and transition fixes', () => {
+  let engine: WorkflowEngine;
+  beforeEach(() => {
+    engine = new WorkflowEngine(createMockLogger());
+  });
+
+  it('rejects a non-terminal state with a null onSuccess', () => {
+    const wf = createTestWorkflow();
+    wf.states.REVIEW.transitions = { onSuccess: null, onFailure: 'REWORK' };
+    expect(() => engine.loadWorkflow(wf)).toThrow(WorkflowValidationError);
+  });
+
+  it('counts set_context exitActions toward requiredOutputs', () => {
+    const wf = createTestWorkflow();
+    wf.states.START.exitActions = [
+      { type: 'set_context', params: { key: 'branch', value: 'feat/{{taskId}}' } },
+    ];
+    engine.loadWorkflow(wf);
+    engine.createTask('test-workflow', 'task-sc');
+    const t = engine.transition('task-sc', { success: true, outputs: {} });
+    expect(t.newState).toBe('REVIEW');
+    expect(engine.getTask('task-sc')!.context.branch).toBe('feat/task-sc');
+  });
+
+  it('does not let a value left by an earlier state satisfy requiredOutputs', () => {
+    const wf = createTestWorkflow();
+    engine.loadWorkflow(wf);
+    engine.createTask('test-workflow', 'task-stale', { verdict: 'pass' });
+    engine.transition('task-stale', { success: true, outputs: { branch: 'b' } });  // -> REVIEW
+    const t = engine.transition('task-stale', { success: true, outputs: {} });
+    expect(t.newState).toBe('REWORK');
+  });
+
+  it('reports required outputs that nothing can produce', () => {
+    const wf = createTestWorkflow();
+    expect(findUnproducibleRequiredOutputs(wf)).toEqual({
+      START: ['branch'],
+      REVIEW: ['verdict'],
+      REWORK: ['branch'],
+    });
+  });
+
+  describe('shipped workflows', () => {
+    const files = readdirSync(WORKFLOWS_DIR).filter((f) => f.endsWith('.workflow.json'));
+
+    it.each(files)('%s: every requiredOutputs key can be produced', (file) => {
+      const def = JSON.parse(readFileSync(path.join(WORKFLOWS_DIR, file), 'utf8')) as WorkflowDefinition;
+      expect(findUnproducibleRequiredOutputs(def)).toEqual({});
+    });
+
+    it.each(files)('%s: every {{placeholder}} in a prompt has a source', (file) => {
+      const def = JSON.parse(readFileSync(path.join(WORKFLOWS_DIR, file), 'utf8')) as WorkflowDefinition;
+      // Built-ins injected by the engine/agent, plus initial task context keys
+      const known = new Set([
+        'taskId', 'role', 'state', 'rejectionReason',
+        'taskTitle', 'taskDescription',
+        ...Object.keys(def.globalContext ?? {}),
+      ]);
+      for (const state of Object.values(def.states)) {
+        for (const cmd of [...(state.onEntryCommands ?? []), ...(state.onExitCommands ?? [])]) {
+          if (cmd.captureAs) known.add(cmd.captureAs);
+        }
+        for (const action of state.exitActions ?? []) {
+          if (action.type === 'set_context') known.add(action.params.key);
+        }
+      }
+      const unknown = Object.entries(def.states).flatMap(([name, state]) =>
+        [...(state.prompt ?? '').matchAll(/\{\{(\w+)\}\}/g)]
+          .map((m) => m[1])
+          .filter((key) => !known.has(key))
+          .map((key) => `${name}: {{${key}}}`),
+      );
+      expect(unknown).toEqual([]);
+    });
+
+    it.each(files)('%s: passes load-time validation', (file) => {
+      const def = JSON.parse(readFileSync(path.join(WORKFLOWS_DIR, file), 'utf8')) as WorkflowDefinition;
+      expect(() => engine.loadWorkflow(def)).not.toThrow();
+    });
+  });
+});
+
+describe('retry budget is per state', () => {
+  it('a failure in one state does not consume the next state\'s retries', () => {
+    const engine = new WorkflowEngine(createMockLogger());
+    const wf = createTestWorkflow();
+    wf.states.REVIEW.requiredOutputs = [];
+    // REWORK retries itself once, then escalates
+    wf.states.REWORK.transitions = { onSuccess: 'REVIEW', onFailure: 'REWORK' };
+    wf.states.REWORK.maxRetries = 1;
+    engine.loadWorkflow(wf);
+    engine.createTask('test-workflow', 't-retry');
+    engine.transition('t-retry', { success: true, outputs: { branch: 'b' } });  // START -> REVIEW
+    expect(engine.transition('t-retry', { success: false, outputs: {} }).newState).toBe('REWORK');
+    expect(engine.getTask('t-retry')!.retryCount).toBe(0);
+    // First REWORK failure is a retry, not an escalation
+    expect(engine.transition('t-retry', { success: false, outputs: {} }).newState).toBe('REWORK');
+    // Second consecutive failure exceeds maxRetries 1 on a self-loop
+    expect(engine.transition('t-retry', { success: false, outputs: {} }).newState).toBe('FAILED');
   });
 });

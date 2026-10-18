@@ -3,8 +3,8 @@
 #
 # Workflow-driven counterpart to converter-ad-hoc. A single developer
 # agent is driven through a GENERIC, deliverable-agnostic state machine
-# (workflow.json: DEVELOP -> TEST -> FINALIZE -> DONE). The LLM only writes
-# source, test, and doc files in DEVELOP; the workflow engine runs Jest and
+# (workflow.json: IMPLEMENT -> TEST -> VERIFY -> DOCUMENT -> FINALIZE -> DONE). The LLM only writes
+# source, test, and doc files (IMPLEMENT, TEST, DOCUMENT); the workflow engine runs Jest and
 # performs every git commit plus working-tree hygiene via onExitCommands.
 #
 # The three deliverables (build module, add kilogramsToPounds, write README)
@@ -17,7 +17,7 @@
 # on a single agent: setup.sh seeds only assignment 1 (converter-01) here;
 # run-test.sh waits for each assignment to reach a terminal state, then seeds
 # the next (regulatory-workflow pattern). Serial seeding guarantees only one
-# task is ever in the mailbox, so a DEVELOP rework self-loop cannot clobber a
+# task is ever in the mailbox, so an IMPLEMENT rework self-loop cannot clobber a
 # later assignment's not-yet-committed work.
 
 set -eE

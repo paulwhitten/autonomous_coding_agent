@@ -152,6 +152,8 @@ export const DEFAULT_SHELL_ALLOWLIST: ReadonlySet<string> = new Set([
 
   'cat',
   'echo',
+  'printf',          // formatted output; no more powerful than echo
+  '#',               // a shell comment line (the SDK reports "# ..." as a command)
   'grep',
   'find',
   'ls',
@@ -267,13 +269,18 @@ export type PermissionOverrides = Partial<Pick<PermissionsConfig, 'write' | 'rea
  * @param config - Permission policies per request kind
  * @param workingDirectory - Absolute path to the agent's working directory (for 'workingDir' policy)
  * @param logger - Logger instance for audit trail
+ * @param overrides - Shared mutable per-state policy overrides
+ * @param isToolRestricted - Returns true if a tool name is on the active
+ *   workflow state's restrictedTools deny-list.  Checked first for every
+ *   request that names a tool (custom-tool, mcp, hook).
  * @returns A PermissionHandler function for use with SessionConfig.onPermissionRequest
  */
 export function createPermissionHandler(
   config: PermissionsConfig,
   workingDirectory: string,
   logger: pino.Logger,
-  overrides?: PermissionOverrides
+  overrides?: PermissionOverrides,
+  isToolRestricted?: (toolName: string) => boolean
 ): (request: PermissionRequest, invocation: { sessionId: string }) => PermissionRequestResult {
 
   // Build the effective shell allowlist (defaults + any user-configured extras)
@@ -305,6 +312,18 @@ export function createPermissionHandler(
       sessionId: invocation.sessionId,
       ...(overridePolicy ? { override: overridePolicy } : {}),
     }, `Permission request: ${request.kind}`);
+
+    // Workflow restrictedTools deny-list takes precedence over any policy.
+    if (isToolRestricted && typeof request.toolName === 'string' && isToolRestricted(request.toolName)) {
+      logger.warn({
+        kind: request.kind,
+        toolName: request.toolName,
+        sessionId: invocation.sessionId,
+        decision: 'denied',
+        reason: 'workflow-restricted',
+      }, `Permission denied: tool '${request.toolName}' is restricted in this workflow state`);
+      return { kind: 'reject' };
+    }
 
     if (!policy) {
       // Unknown permission kind — deny by default
@@ -355,6 +374,16 @@ export function createPermissionHandler(
 
 /**
  * Evaluate a shell command against the allowlist.
+ *
+ * Every command the request names must be allowlisted: the base of the
+ * full command text, and the base of each entry in the SDK's parsed
+ * `commands` list (which covers chained commands such as
+ * "cd /foo && rm -rf bar").  A request with no command to validate is
+ * denied.
+ *
+ * This is a guardrail against accidental commands, not a sandbox:
+ * allowlisted interpreters and wrappers (bash -c, sh, env, xargs,
+ * find -exec, timeout, nohup) can still run arbitrary programs.
  */
 function evaluateAllowlist(
   request: PermissionRequest,
@@ -362,31 +391,31 @@ function evaluateAllowlist(
   allowlist: Set<string>,
   logger: pino.Logger
 ): PermissionRequestResult {
-  const command = extractCommand(request);
+  const commands = extractCommands(request);
 
-  if (!command) {
-    // Can't determine command — log and approve (SDK may not include command info
-    // for all shell request types; denying blindly would break functionality)
+  if (commands.length === 0) {
     logger.warn({
       kind: request.kind,
       sessionId: invocation.sessionId,
-      decision: 'approved',
+      decision: 'denied',
       reason: 'no-command-to-validate',
-    }, 'Shell permission approved (no command to validate)');
-    return { kind: 'approve-once' };
+    }, 'Shell DENIED (no command to validate)');
+    return { kind: 'reject' };
   }
 
-  const baseCommand = extractBaseCommand(command);
+  const command = commands[0];
+  const baseCommands = [...new Set(commands.map(extractBaseCommand))];
+  const notAllowed = baseCommands.filter((c) => !allowlist.has(c));
 
-  if (allowlist.has(baseCommand)) {
+  if (notAllowed.length === 0) {
     logger.info({
       kind: request.kind,
       command: command,
-      baseCommand,
+      baseCommands,
       sessionId: invocation.sessionId,
       decision: 'approved',
       reason: 'allowlisted',
-    }, `Shell approved (allowlisted): ${baseCommand}`);
+    }, `Shell approved (allowlisted): ${baseCommands.join(', ')}`);
     return { kind: 'approve-once' };
   }
 
@@ -394,11 +423,12 @@ function evaluateAllowlist(
   logger.warn({
     kind: request.kind,
     command: command,
-    baseCommand,
+    baseCommands,
+    notAllowed,
     sessionId: invocation.sessionId,
     decision: 'denied',
     reason: 'not-in-allowlist',
-  }, `Shell DENIED (not in allowlist): ${baseCommand} — add to shellAllowAdditional config if needed`);
+  }, `Shell DENIED (not in allowlist): ${notAllowed.join(', ')} — add to shellAllowAdditional config if needed`);
   return { kind: 'reject' };
 }
 
@@ -447,39 +477,49 @@ function evaluateWorkingDir(
 }
 
 /**
- * Extract a command string from a permission request.
+ * Extract every command string from a permission request.
  *
  * The SDK sends shell command info in several possible shapes:
  * - { fullCommandText: "npm test" }                          — primary field
- * - { commands: [{ identifier: "npm test" }] }               — structured list
+ * - { commands: [{ identifier: "npm test" }] }               — parsed list, one per command
  * - { command: "npm test" }                                  — simple string
  * - { shellCommand: "npm test" }                             — alt name
  * - { cmd: "npm test" }                                      — alt name
  * - { args: ["npm", "test"] }                                — array form
  *
- * We check all of these, prioritizing the fields the SDK actually uses.
+ * fullCommandText and all `commands` identifiers are returned together so
+ * each can be checked; the other fields are fallbacks.
  */
-function extractCommand(request: PermissionRequest): string | undefined {
-  // Primary: SDK sends fullCommandText for shell requests
-  if (typeof request.fullCommandText === 'string') return request.fullCommandText;
+function extractCommands(request: PermissionRequest): string[] {
+  const result: string[] = [];
 
-  // Structured: SDK sends commands array with identifier per command
-  if (Array.isArray(request.commands) && request.commands.length > 0) {
-    const first = request.commands[0] as { identifier?: string };
-    if (typeof first.identifier === 'string') return first.identifier;
+  // Primary: SDK sends fullCommandText for shell requests
+  if (typeof request.fullCommandText === 'string' && request.fullCommandText.trim()) {
+    result.push(request.fullCommandText);
   }
 
+  // Structured: SDK sends commands array with identifier per command
+  if (Array.isArray(request.commands)) {
+    for (const entry of request.commands as Array<{ identifier?: unknown }>) {
+      if (typeof entry?.identifier === 'string' && entry.identifier.trim()) {
+        result.push(entry.identifier);
+      }
+    }
+  }
+  if (result.length > 0) return result;
+
   // Fallback: other possible property names
-  if (typeof request.command === 'string') return request.command;
-  if (typeof request.shellCommand === 'string') return request.shellCommand;
-  if (typeof request.cmd === 'string') return request.cmd;
+  for (const key of ['command', 'shellCommand', 'cmd'] as const) {
+    const value = request[key];
+    if (typeof value === 'string' && value.trim()) return [value];
+  }
 
   // Array of args without a command name
   if (Array.isArray(request.args) && request.args.length > 0) {
-    return request.args.join(' ');
+    return [request.args.join(' ')];
   }
 
-  return undefined;
+  return [];
 }
 
 /**
@@ -489,7 +529,9 @@ function extractCommand(request: PermissionRequest): string | undefined {
  * - Simple commands: "git status" → "git"
  * - Absolute paths: "/usr/bin/python3 script.py" → "python3"
  * - Env prefix: "env FOO=bar npm test" → "npm"
- * - Chained commands: "cd /foo && npm test" → "cd" (first command)
+ * - Attached operators: "ls; cat x" → "ls", "(cd dir && make)" → "cd"
+ * - Chained commands: "cd /foo && npm test" → "cd" (first command only;
+ *   the SDK's parsed `commands` list supplies the rest)
  *
  * @param command Full command string
  * @returns The base executable name (lowercase-preserved)
@@ -498,8 +540,10 @@ export function extractBaseCommand(command: string): string {
   const trimmed = command.trim();
   if (!trimmed) return '';
 
-  // Split on whitespace to get first token
-  let firstToken = trimmed.split(/\s+/)[0];
+  // Split on whitespace to get first token, then cut it at shell operators
+  // so "ls;", "make&&" or "(cd" resolve to the command itself.
+  let firstToken = trimmed.split(/\s+/)[0].replace(/^[({]+/, '');
+  firstToken = firstToken.split(/[;&|<>`)]/)[0] || firstToken;
 
   // Strip path: "/usr/bin/python3" → "python3"
   const lastSlash = firstToken.lastIndexOf('/');

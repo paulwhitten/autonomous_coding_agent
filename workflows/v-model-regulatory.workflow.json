@@ -28,11 +28,6 @@
         "team",
         "mailbox:read"
       ],
-      "requiredOutputs": [
-        "assignedTo",
-        "requirementIds",
-        "acceptanceCriteria"
-      ],
       "transitions": {
         "onSuccess": "REQUIREMENTS_ANALYSIS",
         "onFailure": "ESCALATED"
@@ -42,7 +37,7 @@
       "name": "Requirements Analysis",
       "role": "developer",
       "description": "V-model left side (Level 1). Developer reviews requirements, decomposes them into testable specifications, and documents acceptance criteria. This is the counterpart of ACCEPTANCE_TESTING on the right side.",
-      "prompt": "Analyze and document the requirements for this task.\n\n**Requirement IDs:** {{requirementIds}}\n**Acceptance Criteria:** {{acceptanceCriteria}}\n\nYou are ALREADY on branch reg/{{taskId}} -- the entry commands created it from main. Do NOT create branches or run git checkout.\n\n**Procedure:**\n1. cd {{projectPath}}\n2. Create or update a requirements document at docs/requirements/{{taskId}}.md\n3. For each requirement ID, document:\n   - Requirement text (what is required)\n   - Rationale (why)\n   - Verification method (how it will be tested in ACCEPTANCE_TESTING)\n   - Traceability: REQ -> acceptance test case mapping\n\nDo NOT run git commands (checkout, add, commit, push) -- the entry and exit commands handle all git operations mechanically.\nDo NOT call send_completion_report() -- the workflow engine handles state transitions and routing automatically.",
+      "prompt": "Analyze and document the requirements for this task.\n\n**Requirement IDs:** see the Task Details below\n**Acceptance Criteria:** see the Task Details below\n\nYou are ALREADY on branch reg/{{taskId}} -- the entry commands created it from main. Do NOT create branches or run git checkout.\n\n**Procedure:**\n1. cd {{projectPath}}\n2. Create or update a requirements document at docs/requirements/{{taskId}}.md\n3. For each requirement ID, document:\n   - Requirement text (what is required)\n   - Rationale (why)\n   - Verification method (how it will be tested in ACCEPTANCE_TESTING)\n   - Traceability: REQ -> acceptance test case mapping\n\nDo NOT run git commands (checkout, add, commit, push) -- the entry and exit commands handle all git operations mechanically.\nDo NOT call send_completion_report() -- the workflow engine handles state transitions and routing automatically.",
       "allowedTools": [
         "terminal",
         "file_ops",
@@ -50,7 +45,6 @@
         "mailbox:read"
       ],
       "requiredOutputs": [
-        "requirementsDoc",
         "branch"
       ],
       "transitions": {
@@ -135,15 +129,12 @@
       "name": "System and Detailed Design",
       "role": "developer",
       "description": "V-model left side (Level 2). Developer creates the technical design: module structure, interfaces, data flow, and error handling strategy. This is the counterpart of INTEGRATION_TESTING on the right side.",
-      "prompt": "Create the technical design for this task.\n\n**Requirements Doc:** {{requirementsDoc}}\n**Requirement IDs:** {{requirementIds}}\n\nYou are ALREADY on branch reg/{{taskId}} -- the entry commands checked it out. Do NOT create branches or run git checkout.\n\n**Procedure:**\n1. cd {{projectPath}}\n2. Create or update a design document at docs/design/{{taskId}}.md\n3. Document:\n   - Module structure (which crates, which modules)\n   - Public interfaces (traits, structs, functions with signatures)\n   - Data flow between modules\n   - Error handling strategy (error types, Result patterns)\n   - Safety considerations (unsafe usage justification if needed)\n   - Integration points (how modules interact -- this drives INTEGRATION_TESTING)\n   - Traceability: REQ -> design element mapping\n\nDo NOT run git commands (checkout, add, commit, push) -- the entry and exit commands handle all git operations mechanically.\nDo NOT call send_completion_report() -- the workflow engine handles state transitions and routing automatically.",
+      "prompt": "Create the technical design for this task.\n\n**Requirements Doc:** docs/requirements/{{taskId}}.md\n**Requirement IDs:** see the Task Details below\n\nYou are ALREADY on branch reg/{{taskId}} -- the entry commands checked it out. Do NOT create branches or run git checkout.\n\n**Procedure:**\n1. cd {{projectPath}}\n2. Create or update a design document at docs/design/{{taskId}}.md\n3. Document:\n   - Module structure (which crates, which modules)\n   - Public interfaces (traits, structs, functions with signatures)\n   - Data flow between modules\n   - Error handling strategy (error types, Result patterns)\n   - Safety considerations (unsafe usage justification if needed)\n   - Integration points (how modules interact -- this drives INTEGRATION_TESTING)\n   - Traceability: REQ -> design element mapping\n\nDo NOT run git commands (checkout, add, commit, push) -- the entry and exit commands handle all git operations mechanically.\nDo NOT call send_completion_report() -- the workflow engine handles state transitions and routing automatically.",
       "allowedTools": [
         "terminal",
         "file_ops",
         "reporting",
         "mailbox:read"
-      ],
-      "requiredOutputs": [
-        "designDoc"
       ],
       "transitions": {
         "onSuccess": "IMPLEMENTING",
@@ -204,7 +195,7 @@
       "name": "Implementation",
       "role": "developer",
       "description": "V-model bottom. Developer writes code per the design, with unit test stubs. This is the transition point from the left side to the right side of the V.",
-      "prompt": "Implement the code per the design document.\n\n**Design Doc:** {{designDoc}}\n**Requirement IDs:** {{requirementIds}}\n\nYou are ALREADY on branch reg/{{taskId}} -- the entry commands checked it out. Do NOT create branches or run git checkout.\n\n**Procedure:**\n1. cd {{projectPath}}\n2. Implement the code following the design document\n3. Follow validated coding practices per coding standards\n4. Minimize unsafe blocks -- document any with safety comments\n5. Add requirement ID comments (// REQ: {{requirementIds}}) at implementation points\n6. Write unit test stubs for each public function\n\nQuality gates (build, test, lint) run automatically as exit commands -- fix any errors the gates surface before the state can transition.\n\nDo NOT run git commands (checkout, add, commit, push) -- the entry and exit commands handle all git operations mechanically.\nDo NOT call send_completion_report() -- the workflow engine handles state transitions and routing automatically.",
+      "prompt": "Implement the code per the design document.\n\n**Design Doc:** docs/design/{{taskId}}.md\n**Requirement IDs:** see the Task Details below\n\nYou are ALREADY on branch reg/{{taskId}} -- the entry commands checked it out. Do NOT create branches or run git checkout.\n\n**Procedure:**\n1. cd {{projectPath}}\n2. Implement the code following the design document\n3. Follow validated coding practices per coding standards\n4. Minimize unsafe blocks -- document any with safety comments\n5. Add requirement ID comments (// REQ: <id>) at implementation points, using the requirement IDs listed in the Task Details below\n6. Write unit test stubs for each public function\n\nQuality gates (build, test, lint) run automatically as exit commands -- fix any errors the gates surface before the state can transition.\n\nDo NOT run git commands (checkout, add, commit, push) -- the entry and exit commands handle all git operations mechanically.\nDo NOT call send_completion_report() -- the workflow engine handles state transitions and routing automatically.",
       "allowedTools": [
         "terminal",
         "file_ops",
@@ -288,17 +279,12 @@
       "name": "Unit Testing",
       "role": "qa",
       "description": "V-model right side (Level 3). QA verifies unit tests exist and pass for each public function, validating the implementation against the detailed design. Counterpart of IMPLEMENTING.",
-      "prompt": "Verify unit tests on branch reg/{{taskId}}. The entry commands have already checked out and synced this branch.\n\n**Design Doc:** {{designDoc}}\n\n**Procedure:**\n1. cd {{projectPath}}\n2. Run: {{testCommand}} -- verify all tests pass\n3. Run coverage measurement (cargo tarpaulin if available)\n4. For each public function in the design document:\n   - Verify a corresponding unit test exists\n   - Verify it tests both success and error paths\n5. Verify coverage >= {{coverageThreshold}}%\n6. If coverage is missing for a public API or error path, write a focused test\n\n**Pass criteria:**\n- All unit tests pass\n- Each public function has unit tests\n- Coverage >= {{coverageThreshold}}%\n\nDo NOT run git commands (checkout, add, commit, push) -- the entry and exit commands handle all git operations mechanically.\nDo NOT call send_completion_report() -- the workflow engine handles state transitions and routing automatically.",
+      "prompt": "Verify unit tests on branch reg/{{taskId}}. The entry commands have already checked out and synced this branch.\n\n**Design Doc:** docs/design/{{taskId}}.md\n\n**Procedure:**\n1. cd {{projectPath}}\n2. Run: {{testCommand}} -- verify all tests pass\n3. Run coverage measurement (cargo tarpaulin if available)\n4. For each public function in the design document:\n   - Verify a corresponding unit test exists\n   - Verify it tests both success and error paths\n5. Verify coverage >= {{coverageThreshold}}%\n6. If coverage is missing for a public API or error path, write a focused test\n\n**Pass criteria:**\n- All unit tests pass\n- Each public function has unit tests\n- Coverage >= {{coverageThreshold}}%\n\nDo NOT run git commands (checkout, add, commit, push) -- the entry and exit commands handle all git operations mechanically.\nDo NOT call send_completion_report() -- the workflow engine handles state transitions and routing automatically.",
       "allowedTools": [
         "terminal",
         "file_ops",
         "reporting",
         "mailbox:read"
-      ],
-      "requiredOutputs": [
-        "testResults",
-        "coveragePercent",
-        "verdict"
       ],
       "transitions": {
         "onSuccess": "STATIC_ANALYSIS",
@@ -363,7 +349,7 @@
       "name": "Rework (Unit Tests)",
       "role": "developer",
       "description": "Developer adds missing unit tests or fixes failing tests.",
-      "prompt": "Fix unit test issues on branch reg/{{taskId}}. The entry commands have checked it out.\n\n**Test Results:** {{testResults}}\n**Current Coverage:** {{coveragePercent}}%\n**Required Coverage:** {{coverageThreshold}}%\n\n**Procedure:**\n1. cd {{projectPath}}\n2. Add missing unit tests for each public function\n3. Fix any failing tests\n4. Ensure both success and error paths are tested\n5. Run: {{testCommand}} -- verify all pass\n\nDo NOT run git commands (checkout, add, commit, push) -- the entry and exit commands handle all git operations mechanically.\nDo NOT call send_completion_report() -- the workflow engine handles state transitions and routing automatically.",
+      "prompt": "Fix unit test issues on branch reg/{{taskId}}. The entry commands have checked it out.\n\n**Issues found by QA:** {{rejectionReason}}\n(Full findings are in the agent notes in the workflow history above.)\n**Required coverage:** >= {{coverageThreshold}}%\n**Required Coverage:** {{coverageThreshold}}%\n\n**Procedure:**\n1. cd {{projectPath}}\n2. Add missing unit tests for each public function\n3. Fix any failing tests\n4. Ensure both success and error paths are tested\n5. Run: {{testCommand}} -- verify all pass\n\nDo NOT run git commands (checkout, add, commit, push) -- the entry and exit commands handle all git operations mechanically.\nDo NOT call send_completion_report() -- the workflow engine handles state transitions and routing automatically.",
       "allowedTools": [
         "terminal",
         "file_ops",
@@ -444,10 +430,6 @@
         "reporting",
         "mailbox:read"
       ],
-      "requiredOutputs": [
-        "staticAnalysisResults",
-        "verdict"
-      ],
       "transitions": {
         "onSuccess": "INTEGRATION_TESTING",
         "onFailure": "REWORK_STATIC"
@@ -511,7 +493,7 @@
       "name": "Rework (Static Analysis)",
       "role": "developer",
       "description": "Developer fixes static analysis issues.",
-      "prompt": "Fix static analysis issues on branch reg/{{taskId}}. The entry commands have checked it out.\n\n**Issues:** {{staticAnalysisResults}}\n\n**Procedure:**\n1. cd {{projectPath}}\n2. Address each issue from static analysis\n3. Add missing SAFETY comments for unsafe blocks\n4. Remove TODO/FIXME comments (implement or defer properly)\n5. Run: {{staticAnalysisCommand}} -- verify clean\n\nDo NOT run git commands (checkout, add, commit, push) -- the entry and exit commands handle all git operations mechanically.\nDo NOT call send_completion_report() -- the workflow engine handles state transitions and routing automatically.",
+      "prompt": "Fix static analysis issues on branch reg/{{taskId}}. The entry commands have checked it out.\n\n**Issues found by QA:** {{rejectionReason}}\n(Full findings are in the agent notes in the workflow history above.)\n\n**Procedure:**\n1. cd {{projectPath}}\n2. Address each issue from static analysis\n3. Add missing SAFETY comments for unsafe blocks\n4. Remove TODO/FIXME comments (implement or defer properly)\n5. Run: {{staticAnalysisCommand}} -- verify clean\n\nDo NOT run git commands (checkout, add, commit, push) -- the entry and exit commands handle all git operations mechanically.\nDo NOT call send_completion_report() -- the workflow engine handles state transitions and routing automatically.",
       "allowedTools": [
         "terminal",
         "file_ops",
@@ -585,16 +567,12 @@
       "name": "Integration Testing",
       "role": "qa",
       "description": "V-model right side (Level 2). QA validates that modules integrate correctly per the design document. Counterpart of DESIGN.",
-      "prompt": "Run integration tests on branch reg/{{taskId}} validating against the design. The entry commands have already checked out and synced this branch.\n\n**Design Doc:** {{designDoc}}\n\n**Procedure:**\n1. cd {{projectPath}}\n2. Review the design document for integration points\n3. Run: {{testCommand}} -- include integration tests\n4. Verify cross-module interactions match the design:\n   - Data flows correctly between modules\n   - Error propagation works across module boundaries\n   - Public interfaces match design signatures\n5. Verify FFI boundary if applicable\n\n**Pass criteria:**\n- All integration tests pass\n- Module interactions match design document\n- Error handling works across boundaries\n\nDo NOT run git commands (checkout, add, commit, push) -- the entry and exit commands handle all git operations mechanically.\nDo NOT call send_completion_report() -- the workflow engine handles state transitions and routing automatically.",
+      "prompt": "Run integration tests on branch reg/{{taskId}} validating against the design. The entry commands have already checked out and synced this branch.\n\n**Design Doc:** docs/design/{{taskId}}.md\n\n**Procedure:**\n1. cd {{projectPath}}\n2. Review the design document for integration points\n3. Run: {{testCommand}} -- include integration tests\n4. Verify cross-module interactions match the design:\n   - Data flows correctly between modules\n   - Error propagation works across module boundaries\n   - Public interfaces match design signatures\n5. Verify FFI boundary if applicable\n\n**Pass criteria:**\n- All integration tests pass\n- Module interactions match design document\n- Error handling works across boundaries\n\nDo NOT run git commands (checkout, add, commit, push) -- the entry and exit commands handle all git operations mechanically.\nDo NOT call send_completion_report() -- the workflow engine handles state transitions and routing automatically.",
       "allowedTools": [
         "terminal",
         "file_ops",
         "reporting",
         "mailbox:read"
-      ],
-      "requiredOutputs": [
-        "integrationResults",
-        "verdict"
       ],
       "transitions": {
         "onSuccess": "ACCEPTANCE_TESTING",
@@ -659,7 +637,7 @@
       "name": "Rework (Integration)",
       "role": "developer",
       "description": "Developer fixes integration issues found when modules interact.",
-      "prompt": "Fix integration issues on branch reg/{{taskId}}. The entry commands have checked it out.\n\n**Integration Results:** {{integrationResults}}\n**Design Doc:** {{designDoc}}\n\n**Procedure:**\n1. cd {{projectPath}}\n2. Address each integration failure\n3. Verify module interfaces match the design document\n4. Fix cross-module error propagation\n\nDo NOT run git commands (checkout, add, commit, push) -- the entry and exit commands handle all git operations mechanically.\nDo NOT call send_completion_report() -- the workflow engine handles state transitions and routing automatically.",
+      "prompt": "Fix integration issues on branch reg/{{taskId}}. The entry commands have checked it out.\n\n**Issues found by QA:** {{rejectionReason}}\n(Full findings are in the agent notes in the workflow history above.)\n**Design Doc:** docs/design/{{taskId}}.md\n\n**Procedure:**\n1. cd {{projectPath}}\n2. Address each integration failure\n3. Verify module interfaces match the design document\n4. Fix cross-module error propagation\n\nDo NOT run git commands (checkout, add, commit, push) -- the entry and exit commands handle all git operations mechanically.\nDo NOT call send_completion_report() -- the workflow engine handles state transitions and routing automatically.",
       "allowedTools": [
         "terminal",
         "file_ops",
@@ -733,17 +711,12 @@
       "name": "Acceptance Testing",
       "role": "qa",
       "description": "V-model right side (Level 1). QA validates the implementation against the original requirements and acceptance criteria. Counterpart of REQUIREMENTS_ANALYSIS.",
-      "prompt": "Validate against original requirements on branch reg/{{taskId}}. The entry commands have already checked out and synced this branch.\n\n**Requirements Doc:** {{requirementsDoc}}\n**Requirement IDs:** {{requirementIds}}\n**Acceptance Criteria:** {{acceptanceCriteria}}\n\n**Procedure:**\n1. cd {{projectPath}}\n2. For EACH acceptance criterion:\n   - Execute the verification method documented in requirements\n   - Record pass/fail with evidence\n3. Build the traceability matrix:\n   - Requirement -> Design element -> Source code -> Unit test -> Integration test -> Acceptance result\n4. Verify each requirement ID has full traceability\n\n**Pass criteria:**\n- ALL acceptance criteria pass with evidence\n- Full traceability matrix (req -> design -> code -> tests)\n- No requirement left unverified\n\nDo NOT run git commands (checkout, add, commit, push) -- the entry and exit commands handle all git operations mechanically.\nDo NOT call send_completion_report() -- the workflow engine handles state transitions and routing automatically.",
+      "prompt": "Validate against original requirements on branch reg/{{taskId}}. The entry commands have already checked out and synced this branch.\n\n**Requirements Doc:** docs/requirements/{{taskId}}.md\n**Requirement IDs:** see the Task Details below\n**Acceptance Criteria:** see the Task Details below\n\n**Procedure:**\n1. cd {{projectPath}}\n2. For EACH acceptance criterion:\n   - Execute the verification method documented in requirements\n   - Record pass/fail with evidence\n3. Build the traceability matrix:\n   - Requirement -> Design element -> Source code -> Unit test -> Integration test -> Acceptance result\n4. Verify each requirement ID has full traceability\n\n**Pass criteria:**\n- ALL acceptance criteria pass with evidence\n- Full traceability matrix (req -> design -> code -> tests)\n- No requirement left unverified\n\nDo NOT run git commands (checkout, add, commit, push) -- the entry and exit commands handle all git operations mechanically.\nDo NOT call send_completion_report() -- the workflow engine handles state transitions and routing automatically.",
       "allowedTools": [
         "terminal",
         "file_ops",
         "reporting",
         "mailbox:read"
-      ],
-      "requiredOutputs": [
-        "acceptanceResults",
-        "traceabilityMatrix",
-        "verdict"
       ],
       "transitions": {
         "onSuccess": "REGULATORY_SIGNOFF",
@@ -807,7 +780,7 @@
       "name": "Rework (Acceptance)",
       "role": "developer",
       "description": "Developer fixes issues that caused acceptance test failures against requirements.",
-      "prompt": "Fix acceptance test failures on branch reg/{{taskId}}. The entry commands have checked it out.\n\n**Acceptance Results:** {{acceptanceResults}}\n**Requirements Doc:** {{requirementsDoc}}\n**Traceability Matrix:** {{traceabilityMatrix}}\n\n**Procedure:**\n1. cd {{projectPath}}\n2. Address each failed acceptance criterion\n3. Verify implementation matches requirements (not just tests)\n4. Update traceability comments if needed\n\nDo NOT run git commands (checkout, add, commit, push) -- the entry and exit commands handle all git operations mechanically.\nDo NOT call send_completion_report() -- the workflow engine handles state transitions and routing automatically.",
+      "prompt": "Fix acceptance test failures on branch reg/{{taskId}}. The entry commands have checked it out.\n\n**Issues found by QA:** {{rejectionReason}}\n(Full findings are in the agent notes in the workflow history above.)\n**Requirements Doc:** docs/requirements/{{taskId}}.md\n**Traceability Matrix:** build it from docs/requirements/{{taskId}}.md and docs/design/{{taskId}}.md\n\n**Procedure:**\n1. cd {{projectPath}}\n2. Address each failed acceptance criterion\n3. Verify implementation matches requirements (not just tests)\n4. Update traceability comments if needed\n\nDo NOT run git commands (checkout, add, commit, push) -- the entry and exit commands handle all git operations mechanically.\nDo NOT call send_completion_report() -- the workflow engine handles state transitions and routing automatically.",
       "allowedTools": [
         "terminal",
         "file_ops",
@@ -881,15 +854,12 @@
       "name": "Regulatory Sign-Off",
       "role": "manager",
       "description": "Manager reviews the full V-model evidence package and signs off for regulatory compliance.",
-      "prompt": "Review the full V-model evidence package for regulatory sign-off.\n\n**V-Model Evidence:**\n- Requirements Analysis: {{requirementsDoc}}\n- Design Document: {{designDoc}}\n- Unit Testing: coverage {{coveragePercent}}%, all pass\n- Static Analysis: clean (pedantic)\n- Integration Testing: modules verified against design\n- Acceptance Testing: all criteria verified against requirements\n- Traceability: {{traceabilityMatrix}}\n\n**Procedure:**\n1. Review all QA reports for this task\n2. Verify all V-model levels passed without waivers\n3. Verify traceability is complete: REQ -> Design -> Code -> Unit -> Integration -> Acceptance\n4. Approve merge by reporting success\n\nIf any evidence is missing or inadequate, escalate.\n\nDo NOT call send_completion_report() -- the workflow engine handles routing.",
+      "prompt": "Review the full V-model evidence package for regulatory sign-off.\n\n**V-Model Evidence:**\n- Requirements Analysis: docs/requirements/{{taskId}}.md\n- Design Document: docs/design/{{taskId}}.md\n- Unit Testing: coverage >= {{coverageThreshold}}%, all pass\n- Static Analysis: clean (pedantic)\n- Integration Testing: modules verified against design\n- Acceptance Testing: all criteria verified against requirements\n- Traceability: complete REQ -> Design -> Code -> Unit -> Integration -> Acceptance (see the ACCEPTANCE_TESTING notes)\n\n**Procedure:**\n1. Review all QA reports for this task\n2. Verify all V-model levels passed without waivers\n3. Verify traceability is complete: REQ -> Design -> Code -> Unit -> Integration -> Acceptance\n4. Approve merge by reporting success\n\nIf any evidence is missing or inadequate, escalate.\n\nDo NOT call send_completion_report() -- the workflow engine handles routing.",
       "allowedTools": [
         "mailbox:send",
         "mailbox:read",
         "team",
         "reporting"
-      ],
-      "requiredOutputs": [
-        "signoffVerdict"
       ],
       "transitions": {
         "onSuccess": "MERGING",

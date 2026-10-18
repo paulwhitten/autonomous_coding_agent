@@ -54,6 +54,14 @@ smoke_tests/
 
 ## Running Tests
 
+### Model
+
+Every smoke-test agent is pinned to `claude-haiku-5.5`, one of the cheapest
+available models, through `copilot.model` in its `config.template.json` (or,
+for `tool-delegation`, in `setup.sh`). To try another model, change it there.
+Leaving `copilot.model` out falls back to the agent default, `auto`. The LLM
+judge is configured separately in `judge/config.yml` and uses `auto`.
+
 All smoke tests now use compiled TypeScript (transpiled to JavaScript) for reliable execution.
 
 ### Basic Smoke Test

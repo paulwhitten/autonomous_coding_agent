@@ -220,7 +220,7 @@ Your steps for this requirement:
 4. Run: git add -A, git commit -m 'requirements: REQ-HCDP-002 spec and checklist', git push origin main. You run git yourself -- nothing runs it for you.
 5. Hand off to the Developer: send_message(toHostname='smoke-regah-dev', toRole='developer', subject='IMPLEMENT: REQ-HCDP-002 JSONL Validation', content includes the requirement text and the instruction to implement, test, push to origin main, and then hand off to QA).
 
-Requirement traceability shall be maintained in the acceptance verdict, traceability matrix, and verification reports -- not in source code comments." \
+Traceability is recorded in the evidence documents (traceability matrix, verification report, acceptance verdict), not in source or test code comments. Acceptance criteria must describe the CLI's behavior, not the evidence documents." \
     "V-Model REQUIREMENTS: REQ-HCDP-002 JSONL Validation" \
     "002_req_hcdp_002.md"
 
@@ -239,7 +239,7 @@ Your steps for this requirement:
 4. Run: git add -A, git commit -m 'requirements: REQ-HCDP-003 spec and checklist', git push origin main. You run git yourself -- nothing runs it for you.
 5. Hand off to the Developer: send_message(toHostname='smoke-regah-dev', toRole='developer', subject='IMPLEMENT: REQ-HCDP-003 Referential Integrity', content includes the requirement text and the instruction to implement, test, push to origin main, and then hand off to QA).
 
-Requirement traceability shall be maintained in the acceptance verdict, traceability matrix, and verification reports -- not in source code comments." \
+Traceability is recorded in the evidence documents (traceability matrix, verification report, acceptance verdict), not in source or test code comments. Acceptance criteria must describe the CLI's behavior, not the evidence documents." \
       "V-Model REQUIREMENTS: REQ-HCDP-003 Referential Integrity" \
       "003_req_hcdp_003.md"
 

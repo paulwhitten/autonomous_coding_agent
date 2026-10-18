@@ -38,7 +38,7 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 # Arguments
 # ----------------------------------------------------------------
 usage() {
-  echo "Usage: $0 <converter-ad-hoc|converter-workflow> <N>" >&2
+  echo "Usage: $0 <test-dir> <N>   (e.g. converter-ad-hoc, converter-workflow)" >&2
   echo "  <N> must be a positive integer." >&2
   exit 2
 }
@@ -47,13 +47,12 @@ usage() {
 TEST_NAME="$1"
 N="$2"
 
-case "$TEST_NAME" in
-  converter-ad-hoc|converter-workflow) ;;
-  *)
-    echo "ERROR: unknown test '$TEST_NAME'." >&2
-    usage
-    ;;
-esac
+# Any smoke test directory with a run-test.sh (converter-ad-hoc,
+# converter-workflow, or a per-model copy of either, e.g. batch-gpt5mini-adhoc).
+if [ ! -f "${SCRIPT_DIR}/${TEST_NAME}/run-test.sh" ]; then
+  echo "ERROR: unknown test '$TEST_NAME' (no ${TEST_NAME}/run-test.sh)." >&2
+  usage
+fi
 
 if ! [[ "$N" =~ ^[0-9]+$ ]] || [ "$N" -lt 1 ]; then
   echo "ERROR: N must be a positive integer (got '$N')." >&2
@@ -74,6 +73,19 @@ fi
 BATCH_TS="$(date -u +%Y%m%d-%H%M%S)"
 BATCH_DIR="${TEST_DIR}/log_archive/batch-${BATCH_TS}"
 mkdir -p "$BATCH_DIR"
+
+# Record the harness version so batches can be matched later: the repo
+# commit, any uncommitted changes, the assessed model, and the judge model.
+REPO_ROOT="$(cd "${SCRIPT_DIR}/.." && pwd)"
+{
+  echo "commit: $(git -C "$REPO_ROOT" rev-parse HEAD 2>/dev/null)"
+  echo "dirty_files: $(git -C "$REPO_ROOT" status --porcelain 2>/dev/null | wc -l | tr -d ' ')"
+  echo "assessed_model: $(python3 -c "import json,sys;print(json.load(open(sys.argv[1]))['copilot']['model'])" "${TEST_DIR}/agent/config.template.json" 2>/dev/null)"
+  echo "judge_model: $(grep -E '^model:' "${SCRIPT_DIR}/judge/config.yml" 2>/dev/null | awk '{print $2}')"
+  echo "sdk_version: $(python3 -c "import json;print(json.load(open('${REPO_ROOT}/node_modules/@github/copilot-sdk/package.json'))['version'])" 2>/dev/null)"
+  echo "started_utc: ${BATCH_TS}"
+} > "${BATCH_DIR}/harness.txt"
+git -C "$REPO_ROOT" diff HEAD > "${BATCH_DIR}/harness.diff" 2>/dev/null || true
 
 SUMMARY_CSV="${BATCH_DIR}/summary.csv"
 SUMMARY_TXT="${BATCH_DIR}/summary.txt"
@@ -151,6 +163,13 @@ for i in $(seq 1 "$N"); do
     cp "$JUDGE_SRC" "${RUN_DIR}/judge.json"
   else
     echo "WARN: no fresh judge report for ${RUN_ID} (none newer than START_EPOCH); judge.json omitted" | tee -a "${RUN_DIR}/console.log"
+  fi
+
+  # Archive the project workspace (including .git, excluding node_modules)
+  # so the run can be re-judged later by a different judge model.
+  if [ -d "${TEST_DIR}/agent/workspace/project" ]; then
+    tar czf "${RUN_DIR}/project.tgz" --exclude=node_modules \
+      -C "${TEST_DIR}/agent/workspace" project 2>/dev/null || true
   fi
 
   # Commit count in the project repo (read now, before next setup wipes it).

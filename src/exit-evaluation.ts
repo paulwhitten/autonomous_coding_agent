@@ -98,8 +98,9 @@ export interface EvaluationParseResult {
  *
  * For enum format:
  *   - Tries exact match first (case-insensitive)
- *   - Falls back to substring scan (first choice found in response)
- *   - This handles LLM responses like "The answer is pass."
+ *   - Falls back to a word scan that accepts a choice only if it is the
+ *     only choice present and is not negated ("The answer is pass." ->
+ *     pass; "not accepted" or "accepted ... rejected" -> default)
  *
  * @param response  Raw LLM response text
  * @param eval_     The exit evaluation spec
@@ -208,13 +209,18 @@ function parseBooleanResponse(
   } else if (BOOLEAN_FALSE_VALUES.has(token)) {
     parsedValue = 'false';
   } else {
-    // Try to find a boolean word anywhere in the response (LLM was verbose)
-    const lower = raw.toLowerCase();
-    // Check false first — "not true" should map to false
-    if (/\b(false|no)\b/.test(lower) && !/\b(true|yes)\b/.test(lower)) {
-      parsedValue = 'false';
-    } else if (/\b(true|yes)\b/.test(lower) && !/\b(false|no)\b/.test(lower)) {
-      parsedValue = 'true';
+    // Try to find a boolean word anywhere in the response (LLM was verbose).
+    // Accept only an unambiguous answer: exactly one polarity present and
+    // never negated ("not true" is ambiguous, so it falls to the default).
+    const trueHits = findChoiceOccurrences(raw, 'true').concat(findChoiceOccurrences(raw, 'yes'));
+    const falseHits = findChoiceOccurrences(raw, 'false').concat(findChoiceOccurrences(raw, 'no'));
+    const anyNegated = [...trueHits, ...falseHits].some((h) => h.negated);
+    if (!anyNegated) {
+      if (falseHits.length > 0 && trueHits.length === 0) {
+        parsedValue = 'false';
+      } else if (trueHits.length > 0 && falseHits.length === 0) {
+        parsedValue = 'true';
+      }
     }
     // If both or neither found, parsedValue stays null
   }
@@ -262,21 +268,34 @@ function parseEnumResponse(
     }
   }
 
-  // 2. Substring scan — find the first choice that appears in the response
-  //    Sort by length descending so "partial_pass" matches before "pass"
+  // 2. Word scan — accept only when exactly one choice appears and none
+  //    of its occurrences is negated.  "not accepted", or a response that
+  //    names both "accepted" and "rejected", is ambiguous and falls to the
+  //    default outcome rather than passing the gate.
+  //    Longer choices are matched first and masked out so "partial_pass"
+  //    does not also count as "pass".
   const sortedChoices = [...choices].sort((a, b) => b.length - a.length);
-  const lower = raw.toLowerCase();
+  let masked = raw;
+  const found: string[] = [];
+  let anyNegated = false;
   for (const choice of sortedChoices) {
-    const pattern = new RegExp(`\\b${escapeRegex(choice)}\\b`, 'i');
-    if (pattern.test(lower)) {
-      return {
-        rawResponse: raw,
-        parsedValue: choice,
-        parsed: true,
-        outcome: eval_.mapping[choice] ?? defaultOutcome,
-        fallback: false,
-      };
+    const hits = findChoiceOccurrences(masked, choice);
+    if (hits.length === 0) continue;
+    found.push(choice);
+    if (hits.some((h) => h.negated)) anyNegated = true;
+    for (const h of hits) {
+      masked = masked.slice(0, h.index) + ' '.repeat(h.length) + masked.slice(h.index + h.length);
     }
+  }
+  if (found.length === 1 && !anyNegated) {
+    const choice = found[0];
+    return {
+      rawResponse: raw,
+      parsedValue: choice,
+      parsed: true,
+      outcome: eval_.mapping[choice] ?? defaultOutcome,
+      fallback: false,
+    };
   }
 
   // 3. No match — use default
@@ -287,6 +306,30 @@ function parseEnumResponse(
     outcome: defaultOutcome,
     fallback: true,
   };
+}
+
+/**
+ * Words that negate a following answer token, allowing one intervening
+ * word ("not accepted", "not fully accepted", "isn't true").
+ */
+const NEGATION_BEFORE = /\b(?:not|no|never|cannot|without|\w+n['’]t)\W+(?:\w+\W+)?$/i;
+
+interface ChoiceOccurrence {
+  index: number;
+  length: number;
+  negated: boolean;
+}
+
+/** Find whole-word occurrences of `word` in `text`, flagging negated ones. */
+function findChoiceOccurrences(text: string, word: string): ChoiceOccurrence[] {
+  const pattern = new RegExp(`\\b${escapeRegex(word)}\\b`, 'gi');
+  const hits: ChoiceOccurrence[] = [];
+  for (const m of text.matchAll(pattern)) {
+    const index = m.index ?? 0;
+    const before = text.slice(Math.max(0, index - 40), index);
+    hits.push({ index, length: m[0].length, negated: NEGATION_BEFORE.test(before) });
+  }
+  return hits;
 }
 
 /** Simple {{variable}} template substitution. */

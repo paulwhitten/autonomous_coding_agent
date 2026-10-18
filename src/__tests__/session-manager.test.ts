@@ -28,7 +28,8 @@ describe('SessionManager', () => {
       sendAndWait: jest.fn<any>().mockResolvedValue(undefined),
       on: jest.fn<any>().mockReturnValue(() => {}),
       abort: jest.fn<any>().mockResolvedValue(undefined),
-      getMessages: jest.fn<any>().mockResolvedValue([])
+      getEvents: jest.fn<any>().mockResolvedValue([]),
+      disconnect: jest.fn<any>().mockResolvedValue(undefined),
     };
 
     // Create mock client
@@ -36,7 +37,6 @@ describe('SessionManager', () => {
       createSession: jest.fn<any>().mockResolvedValue(mockSession),
       resumeSession: jest.fn<any>().mockResolvedValue(mockSession),
       deleteSession: jest.fn<any>().mockResolvedValue(undefined),
-      getState: jest.fn<any>().mockReturnValue('connected'),
       listSessions: jest.fn<any>().mockResolvedValue([]),
       ping: jest.fn<any>().mockResolvedValue({ message: 'pong', timestamp: Date.now() }),
     };
@@ -368,12 +368,12 @@ describe('SessionManager', () => {
         { id: '1', timestamp: '2024-01-01', parentId: null, type: 'system.message' as const, data: { content: 'Hello', role: 'developer' as const } },
         { id: '2', timestamp: '2024-01-01', parentId: null, type: 'system.message' as const, data: { content: 'Hi there', role: 'system' as const } }
       ];
-      mockSession.getMessages.mockResolvedValue(mockMessages as any);
+      mockSession.getEvents.mockResolvedValue(mockMessages as any);
 
       const messages = await sessionManager.getMessages();
 
       expect(messages).toEqual(mockMessages);
-      expect(mockSession.getMessages).toHaveBeenCalled();
+      expect(mockSession.getEvents).toHaveBeenCalled();
     });
 
     it('should return empty array if no active session', async () => {
@@ -594,7 +594,7 @@ describe('SessionManager', () => {
 
     it('should return null when session has no messages', async () => {
       await sessionManager.initializeSession(undefined, defaultConfig);
-      mockSession.getMessages.mockResolvedValue([]);
+      mockSession.getEvents.mockResolvedValue([]);
 
       const result = await sessionManager.compressConversationHistory();
       expect(result).toBeNull();
@@ -602,7 +602,7 @@ describe('SessionManager', () => {
 
     it('should compress user messages', async () => {
       await sessionManager.initializeSession(undefined, defaultConfig);
-      mockSession.getMessages.mockResolvedValue([
+      mockSession.getEvents.mockResolvedValue([
         { type: 'user.message', data: { content: 'Build a feature' } },
       ]);
 
@@ -613,7 +613,7 @@ describe('SessionManager', () => {
 
     it('should compress assistant messages', async () => {
       await sessionManager.initializeSession(undefined, defaultConfig);
-      mockSession.getMessages.mockResolvedValue([
+      mockSession.getEvents.mockResolvedValue([
         { type: 'assistant.message', data: { content: 'I completed the task' } },
       ]);
 
@@ -624,7 +624,7 @@ describe('SessionManager', () => {
 
     it('should compress tool results', async () => {
       await sessionManager.initializeSession(undefined, defaultConfig);
-      mockSession.getMessages.mockResolvedValue([
+      mockSession.getEvents.mockResolvedValue([
         { type: 'tool.result', data: { toolName: 'bash', result: 'output here' } },
       ]);
 
@@ -634,7 +634,7 @@ describe('SessionManager', () => {
 
     it('should handle getMessages error gracefully', async () => {
       await sessionManager.initializeSession(undefined, defaultConfig);
-      mockSession.getMessages.mockRejectedValue(new Error('Connection lost'));
+      mockSession.getEvents.mockRejectedValue(new Error('Connection lost'));
 
       const result = await sessionManager.compressConversationHistory();
       expect(result).toBeNull();
@@ -644,7 +644,7 @@ describe('SessionManager', () => {
   describe('resetWithContext', () => {
     it('should create a new session and return session id', async () => {
       await sessionManager.initializeSession(undefined, defaultConfig);
-      mockSession.getMessages.mockResolvedValue([]);
+      mockSession.getEvents.mockResolvedValue([]);
 
       const newId = await sessionManager.resetWithContext(defaultConfig);
       expect(newId).toBe('test-session-123');
@@ -652,7 +652,7 @@ describe('SessionManager', () => {
 
     it('should seed new session with context when history exists', async () => {
       await sessionManager.initializeSession(undefined, defaultConfig);
-      mockSession.getMessages.mockResolvedValue([
+      mockSession.getEvents.mockResolvedValue([
         { type: 'user.message', data: { content: 'Prior task' } },
       ]);
 
@@ -663,7 +663,7 @@ describe('SessionManager', () => {
 
     it('should seed with preamble even when no history', async () => {
       await sessionManager.initializeSession(undefined, defaultConfig);
-      mockSession.getMessages.mockResolvedValue([]);
+      mockSession.getEvents.mockResolvedValue([]);
 
       await sessionManager.resetWithContext(defaultConfig, 'Extra context here');
       // sendAndWait called to seed the preamble

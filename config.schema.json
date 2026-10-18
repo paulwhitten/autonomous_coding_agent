@@ -158,7 +158,7 @@
               "type": "string",
               "enum": ["none", "spot_check", "milestone", "always"],
               "default": "spot_check",
-              "description": "Validation mode for completed work items."
+              "description": "Which completed work items are logged through the review/ folder. This is a record only: no human or automated review happens, and the item is approved immediately."
             },
             "reviewEveryNthItem": {
               "type": "integer",
@@ -234,8 +234,8 @@
       "properties": {
         "model": {
           "type": "string",
-          "default": "gpt-4.1",
-          "description": "LLM model identifier (e.g., gpt-4.1, gpt-5, claude-sonnet-4.5)."
+          "default": "auto",
+          "description": "LLM model identifier. \"auto\" (default) lets Copilot choose the best available model per request. Or pin one, e.g. claude-sonnet-5.5, gpt-6.1-sol. Run the Copilot CLI's /model command to see the models available to you."
         },
         "temperature": {
           "type": "number",

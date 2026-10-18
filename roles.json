@@ -272,12 +272,14 @@
       "principle": "RA succeeds when requirements are clear, testable, traceable, and the final delivery is accepted with evidence.",
       "examples": [
         "Pull latest, create docs/requirements-specification.md with REQ-HCDP-001 section including acceptance criteria, push, report completion.",
-        "For acceptance: read QA's verification report, grep for REQ annotations in src/ and tests/, create evidence/acceptance-verdict.md with ACCEPTED verdict and verified commit hash.",
-        "Pull main after QA merge, verify traceability exists (grep -rn 'REQ-HCDP-001' src/ tests/), create acceptance verdict table row with evidence links."
+        "For acceptance: read QA's verification report and traceability matrix, confirm commits reference the requirement (git log --grep=REQ-HCDP-001), create evidence/acceptance-verdict.md with ACCEPTED verdict and verified commit hash.",
+        "Verify traceability exists in commit messages and the evidence documents, then create an acceptance verdict table row with evidence links."
       ]
     },
 
     "coreWorkflow": [
+      "Git steps below (pull, push) apply only when you manage git yourself. In a workflow state whose prompt says the engine handles git, do NOT run git -- follow the state prompt.",
+      "",
       "REQUIREMENTS_DEFINITION state:",
       "1. Pull latest from origin (there may be prior work from earlier tasks).",
       "2. Create or update docs/requirements-specification.md with a section for this requirement (include REQ-HCDP-XXX identifier).",
@@ -286,21 +288,20 @@
       "5. Push to origin and report completion.",
       "",
       "ACCEPTANCE state:",
-      "1. Pull latest from origin (main branch -- QA merged verified code here).",
+      "1. Pull latest from origin.",
       "2. Read evidence/verification-report.md and evidence/traceability-matrix.md from QA.",
       "3. Note the Verified Commit hash from the QA report.",
-      "4. Check traceability annotations: grep -rn 'REQ-HCDP-XXX' src/ tests/ --include='*.ts'",
+      "4. Check traceability: git log --oneline --grep='REQ-HCDP-XXX' shows commits for the requirement, and evidence/traceability-matrix.md has a row for it.",
       "5. Create or update evidence/acceptance-verdict.md with a verdict table row:",
       "   | Requirement | Criteria Met | Evidence | Verdict |",
       "   Include verified commit hash and overall verdict (ACCEPTED / REJECTED).",
-      "6. If QA verdict was PASS and annotations exist, verdict should be ACCEPTED.",
+      "6. If QA verdict was PASS and commits reference the requirement, verdict should be ACCEPTED.",
       "7. Push and report completion."
     ],
 
     "traceabilityRules": [
       "Every requirement must have a REQ-HCDP-XXX identifier.",
-      "Every source file in src/ MUST contain a comment '// REQ: REQ-HCDP-XXX' for traceability.",
-      "Every test file in tests/ MUST contain a comment '// REQ: REQ-HCDP-XXX' for traceability.",
+      "Traceability is recorded in git commit messages and evidence documents, never in source or test code comments. Do not write acceptance criteria about requirement IDs appearing (or not appearing) in code.",
       "Acceptance criteria must be objectively verifiable (not 'should be fast' but 'completes in <100ms').",
       "Acceptance verdict must reference the verified commit SHA from QA's report."
     ],

@@ -1,6 +1,6 @@
 // Main autonomous agent implementation
 
-import { CopilotClient } from '@github/copilot-sdk';
+import { CopilotClient, RuntimeConnection } from '@github/copilot-sdk';
 import { execSync } from 'child_process';
 import fs from 'fs/promises';
 import path from 'path';
@@ -18,7 +18,7 @@ import { createComponentLogger, createLogger } from './logger.js';
 import { MailboxManager } from './mailbox.js';
 import { createPermissionHandler, DEFAULT_PERMISSIONS, PermissionOverrides, PermissionsConfig } from './permission-handler.js';
 import { QuotaManager } from './quota-manager.js';
-import { SessionManager } from './session-manager.js';
+import { SessionManager, type SessionHooks } from './session-manager.js';
 import { TimeoutManager } from './timeout-manager.js';
 import { ToolHealthMonitor } from './tool-health-monitor.js';
 import { createMailboxTools, OnMessageSentCallback } from './tools/mailbox-tools.js';
@@ -46,6 +46,21 @@ export class AutonomousAgent {
   private completionTracker!: CompletionTracker;
   private permissionHandler: ReturnType<typeof createPermissionHandler>;
   private permissionOverrides: PermissionOverrides = {};
+  /** SDK hooks for every session.  onPreToolUse enforces the active
+   *  workflow state's restrictedTools for built-in tools, which do not
+   *  carry a tool name in their permission requests. */
+  private readonly sessionHooks: SessionHooks = {
+    onPreToolUse: (input) => {
+      if (this.workItemExecutor?.isToolRestricted(input.toolName)) {
+        this.logger.warn({ toolName: input.toolName }, 'Tool call denied: restricted in this workflow state');
+        return {
+          permissionDecision: 'deny',
+          permissionDecisionReason: `Tool '${input.toolName}' is restricted in the current workflow state.`,
+        };
+      }
+      return undefined;
+    },
+  };
   private toolHealthMonitor: ToolHealthMonitor;
   private config: AgentConfig;
   private configWatcher: ConfigWatcher | null = null;
@@ -70,6 +85,13 @@ export class AutonomousAgent {
   /** Set to true when entry commands fail on a mechanical state so that
    *  handleWorkflowTransition forces a failure transition. */
   private entryCommandsFailed: boolean = false;
+  /** Titles of work items in the current workflow phase that failed after
+   *  exhausting their retries.  A non-empty list forces a failure
+   *  transition in handleWorkflowTransition. */
+  private workflowPhaseFailedItems: string[] = [];
+  /** Values captured by the current state's entry commands (captureAs).
+   *  Merged into the transition outputs so they reach the task context. */
+  private workflowPhaseEntryCaptures: Record<string, string> = {};
   /** Work items decomposed by the manager during ASSIGN (or similar states).
    *  Attached to the next workflow assignment so the developer receives
    *  pre-decomposed tasks instead of one monolithic prompt. */
@@ -95,7 +117,9 @@ export class AutonomousAgent {
 
     // Support external Copilot CLI via environment variable
     const cliUrl = process.env.COPILOT_CLI_URL;
-    this.client = new CopilotClient(cliUrl ? { cliUrl } : undefined);
+    this.client = new CopilotClient(
+      cliUrl ? { connection: RuntimeConnection.forUri(cliUrl) } : undefined,
+    );
 
     // Create SessionManager
     this.sessionManager = new SessionManager(
@@ -140,7 +164,8 @@ export class AutonomousAgent {
       permissionsConfig,
       path.resolve(config.workspace.path),
       createComponentLogger(baseLogger, 'Permissions'),
-      this.permissionOverrides
+      this.permissionOverrides,
+      (toolName) => this.workItemExecutor.isToolRestricted(toolName),
     );
     this.logger.info({ permissions: permissionsConfig }, 'Permission handler configured');
 
@@ -778,6 +803,7 @@ export class AutonomousAgent {
         streaming: true,  // Hardcoded - agent only works in streaming mode
         tools: tools,
         onPermissionRequest: this.permissionHandler,
+        hooks: this.sessionHooks,
         workingDirectory: path.resolve(this.config.workspace.path, this.config.workspace.workingFolder || 'project'),
       },
       forceNew
@@ -824,6 +850,7 @@ export class AutonomousAgent {
         streaming: true,
         tools: tools,
         onPermissionRequest: this.permissionHandler,
+        hooks: this.sessionHooks,
         workingDirectory: path.resolve(
           this.config.workspace.path,
           this.config.workspace.workingFolder || 'project',
@@ -1631,6 +1658,8 @@ ${message.content}
         const received = this.workflowEngine!.receiveAssignment(assignment);
         this.activeWorkflowTaskId = received.taskId;
         this.workflowPhaseResponseText = '';
+        this.workflowPhaseFailedItems = [];
+        this.workflowPhaseEntryCaptures = {};
 
         // Force failure transition (ASSIGN onFailure → BLOCKED)
         const result: StateExecutionResult = {
@@ -1670,6 +1699,8 @@ ${message.content}
       const received = this.workflowEngine!.receiveAssignment(assignment);
       this.activeWorkflowTaskId = received.taskId;
       this.workflowPhaseResponseText = '';
+      this.workflowPhaseFailedItems = [];
+      this.workflowPhaseEntryCaptures = {};
       this.pendingWorkItems = null;
 
       // ---- Empty-prompt fast-path (mechanical routing) ----
@@ -1782,8 +1813,12 @@ ${message.content}
       } else {
         this.logger.error(
           { taskId: assignment.taskId, error: result.error },
-          'Manager workflow state failed',
+          'Manager workflow state failed -- forcing failure transition',
         );
+        // Fire the failure transition so the engine retries or escalates
+        // per the workflow, instead of leaving the task stalled.
+        this.workflowPhaseFailedItems.push(`Manager ${assignment.targetState} turn: ${result.error ?? 'failed'}`);
+        await this.handleWorkflowTransition();
       }
 
       this.pendingWorkItems = null;
@@ -1813,6 +1848,8 @@ ${message.content}
     const received = this.workflowEngine!.receiveAssignment(assignment);
     this.activeWorkflowTaskId = received.taskId;
     this.workflowPhaseResponseText = '';  // Reset for new phase
+    this.workflowPhaseFailedItems = [];
+    this.workflowPhaseEntryCaptures = {};
 
     this.logger.info({
       taskId: received.taskId,
@@ -1841,7 +1878,23 @@ ${message.content}
         received.taskId,
       );
       entryOk = entryResult.success;
+      this.workflowPhaseEntryCaptures = entryResult.captured;
       entryFailedCommand = entryResult.failedCommand;
+
+      // Make captured values available to THIS state's prompt.  The prompt
+      // was rendered before the entry commands ran, so a {{captureAs}}
+      // placeholder would otherwise reach the LLM as literal text.
+      if (Object.keys(entryResult.captured).length > 0) {
+        const task = this.workflowEngine!.getTask(received.taskId);
+        if (task) {
+          Object.assign(task.context, entryResult.captured);
+          received.prompt = this.workflowEngine!.getPrompt(received.taskId);
+          this.workItemExecutor.updateWorkflowContext(
+            received.prompt,
+            received.restrictedTools,
+          );
+        }
+      }
       entryFailedError = entryResult.failedError;
       if (!entryOk) {
         this.logger.error(
@@ -1953,6 +2006,8 @@ ${message.content}
     if (received.relatedTaskId) {
       this.activeWorkflowTaskId = received.relatedTaskId;
       this.workflowPhaseResponseText = '';  // Reset for rework phase
+      this.workflowPhaseFailedItems = [];
+      this.workflowPhaseEntryCaptures = {};
     }
 
     const oobMessage = {
@@ -2063,91 +2118,98 @@ ${message.content}
     const taskId = this.activeWorkflowTaskId;
 
     try {
-      // Build the initial result.  If entry commands failed (set by the
-      // mechanical-state path in processWorkflowMessage), force failure
-      // so the workflow engine retries or escalates instead of advancing.
-      const result: StateExecutionResult = {
-        success: !this.entryCommandsFailed,
-        outputs: {},
-        ...(this.entryCommandsFailed ? { error: 'Entry commands failed on mechanical state' } : {}),
-      };
-      if (this.entryCommandsFailed) {
-        this.logger.warn(
-          { taskId },
-          'Entry commands failed -- forcing failure transition',
-        );
+      // Build the initial result.  Two conditions force failure before
+      // any LLM is consulted, and nothing below may turn them back into
+      // success:
+      //   - entry commands failed (a precondition did not hold), or
+      //   - a work item in this phase exhausted its retries.
+      const entryFailed = this.entryCommandsFailed;
+      const failedItems = this.workflowPhaseFailedItems;
+      this.entryCommandsFailed = false;  // Reset for next use
+      this.workflowPhaseFailedItems = [];
+
+      let forcedError: string | undefined;
+      if (entryFailed) {
+        forcedError = 'Entry commands failed';
+      } else if (failedItems.length > 0) {
+        forcedError = `${failedItems.length} work item(s) failed after exhausting retries: ${failedItems.join('; ')}`;
       }
-      this.entryCommandsFailed = false;  // Reset flag for next use
+      const result: StateExecutionResult = {
+        success: forcedError === undefined,
+        outputs: { ...this.workflowPhaseEntryCaptures },
+        ...(forcedError ? { error: forcedError } : {}),
+      };
+      this.workflowPhaseEntryCaptures = {};
+      if (forcedError) {
+        this.logger.warn({ taskId, reason: forcedError }, 'Forcing failure transition');
+      }
 
-      // Try to extract common outputs from completed work context
-      // These are listed in the workflow state's requiredOutputs
+      // Outputs come only from deterministic sources: entry/exit command
+      // captures (captureAs) and the state's set_context exitActions.
+      // Values are never scraped from message text -- a regex like
+      // /branch[:\s]+(\S+)/ matched prose such as "branch coverage" and
+      // silently replaced the workflow's branch.
       const task = this.workflowEngine.getTask(taskId);
-      if (task) {
-        // Check session context for any outputs the workflow expects
-        if (this.context.currentTask?.description) {
-          // Look for branch name pattern in task context.
-          // Use [\w./-]+ instead of \S+ because the description may
-          // contain raw JSON where \n is literal "\" + "n" (both
-          // non-whitespace), which causes \S+ to capture past the
-          // branch name into adjacent text.
-          const branchMatch = this.context.currentTask.description.match(/branch[:\s]+([\w./-]+)/i);
-          if (branchMatch) {
-            result.outputs.branch = branchMatch[1];
-          }
-          // Look for commit SHA pattern (7-40 hex chars after "commit")
-          const shaMatch = this.context.currentTask.description.match(/commit[:\s]+([0-9a-f]{7,40})/i);
-          if (shaMatch) {
-            result.outputs.commitSha = shaMatch[1];
-          }
 
-          // Detect verification/QA failure indicators in the LLM's actual
-          // work output (accumulated across all work items in this phase),
-          // NOT in the incoming task prompt.
-          //
-          // Strategy:
-          //   1. If the state defines an exitEvaluation, ask the LLM a
-          //      constrained yes/no or enum question and parse the answer
-          //      deterministically.  This avoids the "table header" problem
-          //      where the word FAIL appears in column headers even for
-          //      passing results.
-          //   2. Fall back to regex-based fail-pattern detection if no
-          //      exitEvaluation is defined (backward compat).
-          const exitEval = this.workflowEngine!.getExitEvaluation(taskId);
-          if (exitEval) {
-            const evalResult = await this.evaluateExitCondition(exitEval, taskId, task);
-            if (evalResult !== null) {
-              result.success = evalResult;
-              if (!evalResult) {
-                result.error = 'Exit evaluation determined failure';
+      // Gate the transition on the LLM's actual work output (accumulated
+      // across all work items in this phase), NOT on the incoming task
+      // prompt.  The gate runs whenever the task exists; it does not
+      // depend on the backend having populated the task description.
+      //
+      // Strategy:
+      //   1. If the state defines an exitEvaluation, ask the LLM a
+      //      constrained yes/no or enum question and parse the answer
+      //      deterministically.  This avoids the "table header" problem
+      //      where the word FAIL appears in column headers even for
+      //      passing results.
+      //   2. Fall back to regex-based fail-pattern detection if no
+      //      exitEvaluation is defined (backward compat).
+      //
+      // Skipped when failure is already forced: the gate can only
+      // confirm or deny success, and the outcome is already decided.
+      if (task && !forcedError) {
+        const exitEval = this.workflowEngine!.getExitEvaluation(taskId);
+        if (exitEval) {
+          const evalResult = await this.evaluateExitCondition(exitEval, taskId, task);
+          result.success = evalResult;
+          if (!evalResult) {
+            result.error = 'Exit evaluation determined failure';
 
-                // Ask the LLM for a rejection summary so the next agent
-                // (developer in REWORK) knows exactly what to fix.
-                const rejectionSummary = await this.extractRejectionSummary(taskId, task);
-                if (rejectionSummary) {
-                  result.outputs.rejectionReason = rejectionSummary;
+            // Ask the LLM for a rejection summary so the next agent
+            // (developer in REWORK) knows exactly what to fix.
+            const rejectionSummary = await this.extractRejectionSummary(taskId, task);
+            if (rejectionSummary) {
+              result.outputs.rejectionReason = rejectionSummary;
 
-                  // Also record as a persistent note for full trail visibility
-                  this.workflowEngine!.addNote(
-                    taskId,
-                    task.context._role ?? this.config.agent.role,
-                    rejectionSummary,
-                  );
-                }
-              }
-            }
-          } else {
-            // Fallback: regex-based fail-pattern detection
-            const failDetection = detectFailureIndicators(this.workflowPhaseResponseText);
-            if (failDetection.detected) {
-              this.logger.warn(
-                { taskId, state: task.currentState, matchedPattern: failDetection.matchedPattern, matchedText: failDetection.matchedText },
-                'Failure indicator detected in work output -- marking transition as failure',
+              // Also record as a persistent note for full trail visibility
+              this.workflowEngine!.addNote(
+                taskId,
+                task.context._role ?? this.config.agent.role,
+                rejectionSummary,
               );
-              result.success = false;
-              result.error = 'Work output indicates failure (verdict FAIL, tests failed, or annotations missing)';
             }
+          }
+        } else {
+          // Fallback: regex-based fail-pattern detection
+          const failDetection = detectFailureIndicators(this.workflowPhaseResponseText);
+          if (failDetection.detected) {
+            this.logger.warn(
+              { taskId, state: task.currentState, matchedPattern: failDetection.matchedPattern, matchedText: failDetection.matchedText },
+              'Failure indicator detected in work output -- marking transition as failure',
+            );
+            result.success = false;
+            result.error = 'Work output indicates failure (verdict FAIL, tests failed, or annotations missing)';
           }
         }
+      }
+
+      if (task && failedItems.length > 0) {
+        result.outputs.rejectionReason = result.error!;
+        this.workflowEngine.addNote(
+          taskId,
+          this.config.agent.role,
+          `[${task.currentState}] ${result.error}`,
+        );
       }
 
       // Capture a summary note from the LLM for every state phase.
@@ -2156,7 +2218,15 @@ ${message.content}
       // can record observations, and the manager can document scope
       // decisions.  Notes persist across transitions and are rendered
       // in every subsequent prompt.
-      if (task) {
+      //
+      // Skipped when entry commands failed (no LLM work happened in this
+      // state; the failure note is already recorded) and for mechanical
+      // states with no prompt (there is no LLM work to summarize).
+      const stateDef = task
+        ? this.workflowEngine.getWorkflow(task.workflowId)?.states[task.currentState]
+        : undefined;
+      const isMechanical = (stateDef?.prompt?.trim() ?? '') === '';
+      if (task && !entryFailed && !isMechanical) {
         const stateSummary = await this.extractStateSummary(taskId, task);
         if (stateSummary) {
           this.workflowEngine!.addNote(
@@ -2171,7 +2241,11 @@ ${message.content}
       // transitioning to the next state.  This ensures the agent's work
       // is committed and pushed regardless of whether the LLM remembered
       // to do it during the main work items.
-      const exitCommands = this.workflowEngine.getStateCommands(taskId, 'exit');
+      //
+      // Not run when entry commands failed: the state's preconditions
+      // did not hold (e.g. the checkout failed), so committing and
+      // pushing from whatever the working tree happens to be is wrong.
+      const exitCommands = entryFailed ? [] : this.workflowEngine.getStateCommands(taskId, 'exit');
       if (exitCommands.length > 0) {
         const { success: exitOk, captured, failedCommand, failedError } = await this.executeStateCommands(exitCommands, 'exit', taskId);
         if (!exitOk) {
@@ -2193,8 +2267,19 @@ ${message.content}
           this.workflowEngine.addNote(
             taskId,
             this.config.agent.role,
-            `[${currentState}] Exit commands failed: ${result.error}. Work was completed but may not have been committed/pushed.${errorDetail}`,
+            `[${currentState}] Exit commands failed: ${result.error}. Commands before the failing one (e.g. commit/push) ran; the rest did not.${errorDetail}`,
           );
+
+          // Pass the failing command's output to the next state as
+          // {{rejectionReason}}, so a rework prompt sees exactly which gate
+          // failed and why (e.g. failing tests, a missing QA verdict line).
+          // Appended to any rejection summary from the exit evaluation.
+          const gateText =
+            `Exit command failed: \`${failedCommand ?? 'unknown'}\`\n\n` +
+            (failedError ?? 'unknown').substring(0, 2000);
+          result.outputs.rejectionReason = result.outputs.rejectionReason
+            ? `${result.outputs.rejectionReason}\n\n${gateText}`
+            : gateText;
         }
         // Merge captured values (e.g. commitSha from `git rev-parse HEAD`)
         // into result.outputs so they satisfy requiredOutputs validation
@@ -2549,14 +2634,17 @@ ${message.content}
    * validation tests pass? true/false") and the response is parsed
    * mechanically.
    *
-   * @returns true for success, false for failure, null if evaluation
-   *          could not be performed (caller falls through to default).
+   * @returns true for success, false for failure.  If the evaluation
+   *          cannot be performed (e.g. the LLM call throws), the state's
+   *          `defaultOutcome` decides, which is failure unless the
+   *          workflow author chose otherwise.  A gate never fails open
+   *          by accident.
    */
   private async evaluateExitCondition(
     exitEval: ExitEvaluation,
     taskId: string,
     task: { currentState: string; context: Record<string, string> },
-  ): Promise<boolean | null> {
+  ): Promise<boolean> {
     try {
       // Build the evaluation prompt from the spec + task context
       const evalPrompt = composeEvaluationPrompt(exitEval, task.context);
@@ -2583,12 +2671,12 @@ ${message.content}
       return parseResult.outcome === 'success';
 
     } catch (error) {
+      const defaultOutcome = exitEval.defaultOutcome ?? 'failure';
       this.logger.error(
-        { error: String(error), taskId, state: task.currentState },
-        'Exit evaluation failed -- falling back to success (no regression)',
+        { error: String(error), taskId, state: task.currentState, defaultOutcome },
+        'Exit evaluation failed -- applying defaultOutcome',
       );
-      // Return null so the caller can try the regex fallback or default to success
-      return null;
+      return defaultOutcome === 'success';
     }
   }
 
@@ -2736,6 +2824,7 @@ ${message.content}
         streaming: true,
         tools: [],
         onPermissionRequest: this.permissionHandler,
+        hooks: this.sessionHooks,
         workingDirectory: path.resolve(this.config.workspace.path, this.config.workspace.workingFolder || 'project'),
       },
       true  // Force new session
@@ -3008,6 +3097,18 @@ ${message.content}
       // Escalation happens at assignment level in checkMessageCompletion
 
       this.context.status = 'idle';
+
+      // In a workflow phase, a permanently failed item fails the phase.
+      // Record it, and if it was the last item, fire the transition now;
+      // otherwise the task would stall with no pending work and no
+      // transition (the success path is the only other trigger).
+      if (this.activeWorkflowTaskId) {
+        this.workflowPhaseFailedItems.push(workItem.title);
+        const hasMoreWork = await this.workspace.hasWorkItems();
+        if (!hasMoreWork) {
+          await this.handleWorkflowTransition();
+        }
+      }
     }
   }
 
@@ -3186,8 +3287,12 @@ export function captureCommandOutput(
     });
     return { success: true, output: stdout.trim() };
   } catch (err: unknown) {
+    // err.message carries the stderr; many tools (tsc, or jest run with
+    // 2>&1) report failures on stdout, so include it too.
     const message = err instanceof Error ? err.message : String(err);
-    return { success: false, output: '', error: message };
+    const stdout = String((err as { stdout?: string | Buffer }).stdout ?? '').trim();
+    const error = stdout ? `${message.trim()}\n--- stdout ---\n${stdout}` : message;
+    return { success: false, output: '', error };
   }
 }
 

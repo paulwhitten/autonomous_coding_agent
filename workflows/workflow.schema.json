@@ -99,7 +99,7 @@
         "restrictedTools": {
           "type": "array",
           "items": { "type": "string" },
-          "description": "Tools explicitly blocked in this state (ENFORCED deny-list). Unlike allowedTools (advisory), these are actually enforced -- the engine will refuse calls to tools on this list. Use sparingly for safety boundaries.\n\nExamples: prevent QA from 'git push', prevent developer from 'send_broadcast'.\n\nAccepts individual tool names or group names (same as allowedTools)."
+          "description": "Tools explicitly blocked in this state (ENFORCED deny-list). Unlike allowedTools (advisory), these are enforced -- the agent denies calls to tools on this list. Restriction is per tool, not per shell command (restricting the terminal blocks all shell use). Use sparingly for safety boundaries.\n\nExample: prevent developer from 'send_broadcast'.\n\nAccepts individual tool names or group names (same as allowedTools)."
         },
         "requiredOutputs": {
           "type": "array",
@@ -119,7 +119,7 @@
         "timeoutMs": {
           "type": "integer",
           "minimum": 0,
-          "description": "Hard time limit for this state in milliseconds. If exceeded, treated as a failure."
+          "description": "Intended hard time limit for this state in milliseconds. NOT currently enforced: work items use the agent's adaptive timeout (agent.sdkTimeoutMs / timeoutStrategy)."
         },
         "onEntryCommands": {
           "type": "array",

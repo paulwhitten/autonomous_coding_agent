@@ -134,6 +134,23 @@ describe('Permission Handler', () => {
       expect(extractBaseCommand('env HOME=/tmp /usr/bin/git init')).toBe('git');
     });
 
+    it('should allow printf and shell comment lines in allowlist mode', () => {
+      const handler = createPermissionHandler(
+        { shell: 'allowlist', write: 'allow', read: 'allow', url: 'deny', mcp: 'deny', 'custom-tool': 'allow' },
+        '/workspace', mockLogger,
+      );
+      for (const cmd of ["printf '%s\\n' x && sed -n 1p f", '# inspect files']) {
+        expect(handler({ kind: 'shell', fullCommandText: cmd }, { sessionId: 's' }).kind).toBe('approve-once');
+      }
+    });
+
+    it('should cut the command at attached shell operators', () => {
+      expect(extractBaseCommand('ls; cat package.json')).toBe('ls');
+      expect(extractBaseCommand('make&& make test')).toBe('make');
+      expect(extractBaseCommand('(cd src && ls)')).toBe('cd');
+      expect(extractBaseCommand('[[ -f x ]]')).toBe('[[');
+    });
+
     it('should return env if no command follows', () => {
       expect(extractBaseCommand('env FOO=bar')).toBe('env');
     });
@@ -375,13 +392,13 @@ describe('Permission Handler', () => {
         expect(result.kind).toBe('reject');
       });
 
-      it('should approve when no command info is available', () => {
+      it('should deny when no command info is available (fail closed)', () => {
         const handler = createPermissionHandler(config, '/workspace', mockLogger);
         const result = handler(
           { kind: 'shell' },  // No command property
           { sessionId: 'test-session' }
         );
-        expect(result.kind).toBe('approve-once');
+        expect(result.kind).toBe('reject');
       });
 
       it('should handle args array without command property', () => {
@@ -489,18 +506,53 @@ describe('Permission Handler', () => {
         expect(result.kind).toBe('approve-once');
       });
 
-      it('should prefer fullCommandText over commands array', () => {
+      it('should deny when any parsed command is not allowlisted', () => {
         const handler = createPermissionHandler(config, '/workspace', mockLogger);
-        // fullCommandText is safe, but commands[0].identifier would be dangerous
+        // fullCommandText starts with an allowlisted command, but the
+        // SDK-parsed list shows a dangerous one too
         const result = handler(
           {
             kind: 'shell',
-            fullCommandText: 'git status',
-            commands: [{ identifier: 'sudo rm -rf /', readOnly: false }],
+            fullCommandText: 'git status && sudo rm -rf /',
+            commands: [
+              { identifier: 'git status', readOnly: true },
+              { identifier: 'sudo rm -rf /', readOnly: false },
+            ],
+          },
+          { sessionId: 'test-session' }
+        );
+        expect(result.kind).toBe('reject');
+      });
+
+      it('should approve a chain when every parsed command is allowlisted', () => {
+        const handler = createPermissionHandler(config, '/workspace', mockLogger);
+        const result = handler(
+          {
+            kind: 'shell',
+            fullCommandText: 'cd /workspace && npm test',
+            commands: [
+              { identifier: 'cd', readOnly: true },
+              { identifier: 'npm test', readOnly: false },
+            ],
           },
           { sessionId: 'test-session' }
         );
         expect(result.kind).toBe('approve-once');
+      });
+
+      it('should deny a restricted workflow tool regardless of policy', () => {
+        const handler = createPermissionHandler(
+          config, '/workspace', mockLogger, {},
+          (name) => name === 'send_broadcast',
+        );
+        expect(handler(
+          { kind: 'custom-tool', toolName: 'send_broadcast' },
+          { sessionId: 'test-session' },
+        ).kind).toBe('reject');
+        expect(handler(
+          { kind: 'custom-tool', toolName: 'send_message' },
+          { sessionId: 'test-session' },
+        ).kind).toBe('approve-once');
       });
     });
 

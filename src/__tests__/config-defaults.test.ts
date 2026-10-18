@@ -60,7 +60,7 @@ describe('applyDefaults', () => {
     expect(result.agent.taskRetryCount).toBe(3);
     expect(result.mailbox.gitSync).toBe(false);
     expect(result.mailbox.autoCommit).toBe(true);
-    expect(result.copilot.model).toBe('gpt-4.1');
+    expect(result.copilot.model).toBe('auto');
     expect(result.workspace.path).toBe('./workspace');
     expect(result.logging.level).toBe('info');
     expect(result.quota?.enabled).toBe(true);
@@ -193,7 +193,7 @@ describe('DEFAULT_CONFIG', () => {
     expect(DEFAULT_CONFIG.agent.minWorkItems).toBe(5);
     expect(DEFAULT_CONFIG.agent.maxWorkItems).toBe(20);
     expect(DEFAULT_CONFIG.mailbox.gitSync).toBe(false);
-    expect(DEFAULT_CONFIG.copilot.model).toBe('gpt-4.1');
+    expect(DEFAULT_CONFIG.copilot.model).toBe('auto');
   });
 });
 

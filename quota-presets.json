@@ -12,8 +12,8 @@
       },
       "modelFallback": {
         "enabled": true,
-        "primary": "claude-sonnet-4.5",
-        "fallback": "gpt-4.1",
+        "primary": "claude-sonnet-5.5",
+        "fallback": "claude-haiku-5.5",
         "switchAt": 0.5
       },
       "behavior": {
@@ -52,8 +52,8 @@
       },
       "modelFallback": {
         "enabled": true,
-        "primary": "gpt-4.1",
-        "fallback": "gpt-4.1-mini",
+        "primary": "auto",
+        "fallback": "claude-haiku-5.5",
         "switchAt": 0.75
       },
       "priorityRules": {
@@ -88,8 +88,8 @@
       },
       "modelFallback": {
         "enabled": true,
-        "primary": "gpt-4.1",
-        "fallback": "claude-haiku-4.5",
+        "primary": "gpt-5.6-terra",
+        "fallback": "gpt-6-luna",
         "switchAt": 0.3
       },
       "behavior": {
@@ -110,7 +110,7 @@
       },
       "modelFallback": {
         "enabled": false,
-        "primary": "gpt-4.1"
+        "primary": "auto"
       },
       "behavior": {
         "onDailyLimit": "warn",
@@ -139,6 +139,7 @@
       "gemini-3-pro-preview": 1
     },
     "notes": [
+      "OUT OF DATE: Copilot now bills these models per token, and most models listed here are retired. Models not listed (including auto and every current model) count as 1 request each.",
       "gpt-4.1, gpt-4o, gpt-5-mini are FREE on paid plans (0x multiplier)",
       "claude-opus-4.5 is premium: 3x multiplier (1 prompt = 3 requests)",
       "claude-haiku-4.5 is cheaper: 0.5x multiplier (2 prompts = 1 request)",

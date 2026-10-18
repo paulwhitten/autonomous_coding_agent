@@ -23,6 +23,14 @@ All workflow files are validated against [`workflow.schema.json`](workflow.schem
 | `regulatory.workflow.json` | Linear regulated pipeline with static analysis, coverage, code review, traceability |
 | `v-model-regulatory.workflow.json` | V-model regulated pipeline (requirements through acceptance testing) |
 
+The regulatory workflows read requirement IDs and acceptance criteria from
+the task specification (rendered as **Task Details** at the end of every
+prompt); there is no separate `requirementIds` variable. The V-model
+documents live at fixed paths, `docs/requirements/{{taskId}}.md` and
+`docs/design/{{taskId}}.md`. Their analysis, coverage, review and sign-off
+gates are `exitEvaluation` questions answered by the LLM; only build, test
+and lint run as mechanical `onExitCommands` gates.
+
 ### dev-qa-merge State Diagram
 
 The dev-qa-merge workflow is the default project workflow. The diagram below
@@ -38,6 +46,38 @@ States can define an `exitEvaluation` field to replace regex-based fail
 detection with a structured LLM question. After work items complete, the
 engine sends a constrained prompt (e.g., "Did all tests pass? true/false")
 and maps the parsed response to `success` or `failure` for transition routing.
+An answer that is negated ("not true"), names more than one choice, or
+cannot be obtained (the LLM call fails) falls to `defaultOutcome`, which is
+`failure` unless you set it.
+
+The exit evaluation does not run, and cannot turn a failure into success,
+when the state has already failed: an entry command with `failOnError`
+failed, or a work item exhausted its retries.
+
+## Outputs and Template Variables
+
+`{{variable}}` placeholders in prompts and commands resolve from the task
+context. A value is in the context only if something puts it there:
+
+| Source | Example |
+|--------|---------|
+| `globalContext` in the workflow file | `{{buildCommand}}`, `{{projectPath}}` |
+| Engine built-ins | `{{taskId}}`, `{{role}}`, `{{state}}` |
+| `captureAs` on an entry or exit command (trimmed stdout). Entry captures are available in the same state's prompt | `{{commitSha}}` from `git rev-parse HEAD` |
+| `set_context` in `exitActions` | `{{branch}}` set to `dev/{{taskId}}` |
+| Agent built-in | `rejectionReason` after a failed gate |
+
+An unknown placeholder is left in the prompt as literal text. Values are
+never extracted from message text. To give the
+LLM task-specific data (requirement IDs, acceptance criteria), put it in the
+task specification, which is appended to every prompt as **Task Details**.
+
+`requiredOutputs` lists keys that **this state** must produce (through
+`captureAs` or `set_context`) before its success
+transition fires; values left by earlier states do not count. The engine
+logs a warning at load time for any required output that nothing can
+produce, because such a state can never succeed. A non-terminal state must
+have an `onSuccess` transition.
 
 See the main [README](../README.md#exit-evaluation-exitevaluation) for full
 documentation and examples. The schema is defined in
@@ -131,10 +171,10 @@ binding, and routing logic. This conflates knowledge and control:
 | Requirement | Declarative workflow JSON | Procedural graph code |
 |---|---|---|
 | Per-state prompt templates | `"prompt": "Review {{branch}}"` | Embedded in node function body |
-| Per-state tool restrictions | `"allowedTools": ["terminal"]` | Bound at model level, not per-node |
+| Per-state tool restrictions | `"restrictedTools": ["send_broadcast"]` (enforced deny-list; `allowedTools` is advisory) | Bound at model level, not per-node |
 | Entry/exit shell commands | `"onExitCommands": [{"cmd": "git push"}]` | Written imperatively in each node |
 | Multi-agent role routing | `"role": "developer"` dispatches to physical agent | Custom routing code per edge |
-| Hot-reload without restart | Edit JSON, re-read at next state | Recompile and redeploy |
+| Change behavior without code changes | Edit JSON, restart the agent | Recompile and redeploy |
 | Non-programmer modification | Edit a JSON file | Edit Python/TypeScript code |
 
 The declarative approach means a workflow author (who may not be a software
@@ -234,8 +274,11 @@ This architecture yields specific operational benefits:
 4. **Multi-tenancy** — different projects can use different workflow
    definitions with the same agent binary.
 5. **Resilience** — the engine is deterministic. Given the same state and
-   inputs, it always produces the same transition. LLM non-determinism is
-   confined to within-state execution, not to the control flow.
+   inputs (including the success/failure result), it always produces the
+   same transition. Note that the result itself can come from an LLM: when
+   a state uses `exitEvaluation`, the LLM's answer decides success and only
+   the parsing is deterministic. Use `onExitCommands` with
+   `failOnError: true` for gates that must not depend on an LLM.
 
 ## Customizing for Your Language
 
@@ -251,6 +294,8 @@ toolchain.
 | `buildCommand` | Compile / build the project | `cargo build`, `npm run build`, `go build ./...`, `dotnet build` |
 | `testCommand` | Run the test suite | `cargo test`, `npm test`, `pytest`, `go test ./...`, `dotnet test` |
 | `lintCommand` | Run the linter | `cargo clippy -- -D warnings`, `npm run lint`, `ruff check .`, `golangci-lint run` |
+| `formatCommand` | Auto-format (dev-qa-merge only) | `cargo fmt`, `npx prettier --write .`, `ruff format .`, `gofmt -w .` |
+| `formatCheckCommand` | Fail if unformatted (dev-qa-merge only) | `cargo fmt --check`, `npx prettier --check .`, `ruff format --check .` |
 
 These values are substituted into prompt templates and `onExitCommands` via
 `{{buildCommand}}`, `{{testCommand}}`, and `{{lintCommand}}`. If they are
@@ -283,7 +328,7 @@ fail.
 
 Some workflow prompts contain language-specific guidance beyond the three
 command fields. For example, the `VALIDATING` prompt in
-`dev-qa-merge.workflow.json` references `cargo fmt --check`, `///` doc
+`dev-qa-merge.workflow.json` references `///` doc
 comments, `//!` module comments, and `Display/Error` trait implementations.
 When adapting a workflow to a different language, review every state's
 `prompt` field and replace language-specific references with equivalents

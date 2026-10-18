@@ -72,32 +72,34 @@ Modern Node.js LTS versions are required for Copilot and Copilot SDK.
 
 The `@github/copilot-sdk` automatically connects to your authenticated Copilot CLI. Just make sure you're logged in.
 
-#### FREE Models (Recommended for Autonomous Agents)
+#### Choosing a Model
 
-If you have a **paid Copilot plan**, these models are **FREE and UNLIMITED**:
+By default the agent uses `"model": "auto"`, which lets Copilot pick the best
+available model for each request. Because `auto` is not tied to a specific
+model, the default keeps working when models are retired.
+
+To pin a model, set it explicitly:
 
 ```json
 {
   "copilot": {
-    "model": "gpt-4.1"    // FREE! No quota limits
-    // Also FREE: "gpt-4o", "gpt-5-mini"
-  },
-  "quota": {
-    "enabled": false      // Disable for FREE models
+    "model": "claude-sonnet-5.5"
   }
 }
 ```
 
-These don't count against your premium request quota, making them perfect for autonomous agents that run for hours.
+Model availability changes often. Run `/model` in the Copilot CLI to see the
+models your account can use, and check for deprecation notices before pinning
+one for a long-running agent.
 
-#### Premium Models (Quota Tracking Enabled)
+#### Quota Tracking
 
-For premium models like `claude-sonnet-4.5` or `claude-opus-4.5`, enable quota tracking:
+To cap usage, enable quota tracking:
 
 ```json
 {
   "copilot": {
-    "model": "claude-sonnet-4.5"
+    "model": "auto"
   },
   "quota": {
     "enabled": true,
@@ -105,6 +107,9 @@ For premium models like `claude-sonnet-4.5` or `claude-opus-4.5`, enable quota t
   }
 }
 ```
+
+Note: the quota multipliers in `quota-presets.json` date from the old
+per-request pricing and are out of date; Copilot now bills per token.
 
 See `QUOTA.md` for detailed quota management strategies.
 
@@ -336,8 +341,8 @@ Both fields are optional. When omitted, the agent defaults to 5-20.
 
 | Scenario | Suggested Range | Rationale |
 |----------|----------------|-----------|
-| Large capable model (gpt-4.1, claude-sonnet-4) | 5-12 | Fewer, broader items -- the model handles complexity within each item. Faster execution, fewer SDK round-trips. |
-| Smaller / less capable model (gpt-5-mini) | 8-20 | More granular items reduce per-item complexity so the model can succeed at each step. Trades speed and tokens for reliability. |
+| Large capable model (e.g. claude-sonnet-5.5, gpt-6.1-sol, or `auto`) | 5-12 | Fewer, broader items -- the model handles complexity within each item. Faster execution, fewer SDK round-trips. |
+| Smaller / less capable model (e.g. claude-haiku-5.5, gpt-6-luna) | 8-20 | More granular items reduce per-item complexity so the model can succeed at each step. Trades speed and tokens for reliability. |
 | Manager (delegation only) | 3-6 | Each item is a delegation message, not implementation work. Fewer items = fewer inter-agent messages. |
 | Quick tasks / hotfixes | 2-5 | Small tasks don't need 20 items. Keeps overhead proportional. |
 
@@ -588,9 +593,11 @@ autonomous_copilot_agent/
 │   ├── agent.ts              # Main autonomous agent loop
 │   ├── mailbox.ts            # Mailbox operations (read, write, archive)
 │   ├── tools/                # Custom Copilot tools
-│   │   ├── mailbox-tools.ts  # Mailbox checking/archiving tools
-│   │   ├── file-tools.ts     # File operations
-│   │   └── test-tools.ts     # Testing/verification tools
+│   │   └── mailbox-tools.ts  # Mailbox, messaging and team-discovery tools
+│   ├── workflow-engine.ts    # Declarative workflow state machine
+│   ├── permission-handler.ts # SDK permission policy (shell allowlist, etc.)
+│   ├── backends/             # Communication backends (git mailbox, A2A)
+│   ├── api/                  # Web UI / REST API server
 │   ├── types.ts              # TypeScript type definitions
 │   └── utils.ts              # Utility functions
 ├── workspace/                # Agent working directory
@@ -618,16 +625,16 @@ autonomous_copilot_agent/
 
 ## Custom Tools
 
-The agent has access to:
+The agent registers these custom tools (`src/tools/mailbox-tools.ts`) on top
+of the Copilot SDK's built-in file and terminal tools:
 
-- `check_mailbox` - Check for new task assignments
-- `archive_message` - Move processed messages to archive
-- `send_message` - Send status updates or completion reports
-- `send_broadcast` - Send team-wide broadcast to `to_all/`
-- `read_file` - Read files from workspace
-- `write_file` - Create/modify files
-- `run_tests` - Execute test suites
-- `git_operations` - Git commit, status, diff
+- `check_mailbox`, `read_message`, `archive_message` - Read and archive messages
+- `send_message`, `send_broadcast` - Message one agent, or the whole team via `to_all/`
+- `send_completion_report`, `escalate_issue` - Report results or escalate
+- `get_team_roster`, `find_agents_by_role`, `find_agents_by_capability`, `get_agent_info` - Team discovery
+
+In workflow mode, the message-lifecycle and routing tools are hidden from the
+LLM because the workflow engine routes work itself.
 
 ## Monitoring
 
@@ -646,9 +653,13 @@ cat workspace/session_context.json
 ## Safety Features
 
 - **Timeout protection** - Escalates if stuck on task >30 minutes
-- **Tool allowlist** - Only approved tools can be called
-- **Workspace isolation** - Agent works in sandboxed directory
-- **Dry-run mode** - Test without executing (coming soon)
+- **Shell allowlist** - Shell commands are checked against an allowlist of
+  executables (every command in a chain). This guards against accidents; it
+  is not a sandbox, since allowlisted interpreters such as `bash -c` can run
+  anything
+- **Workspace working directory** - The agent's session runs in the
+  configured workspace (`read`/`write` can be limited to it with the
+  `workingDir` permission policy)
 
 ## Integration with Multi-Agent Workflows
 
@@ -785,11 +796,10 @@ routing chain.
 
 ### State Entry / Exit Commands (`onEntryCommands`, `onExitCommands`)
 
-Workflow states can define deterministic shell commands that are issued to the
-LLM via the Copilot SDK at state entry and exit. Unlike `entryActions` /
-`exitActions` (code-level engine actions), these commands are **sent to the LLM
-as synthetic work items** so the LLM executes them in a terminal and can adapt
-if they fail.
+Workflow states can define deterministic shell commands that run at state
+entry and exit. The agent runs them itself (`child_process.execSync` in the
+project directory); **no LLM is involved**, so they behave the same every
+time. The `reason` field is documentation only.
 
 This solves a critical reliability problem: LLMs frequently forget to push
 committed work. With `onExitCommands`, every state boundary enforces git
@@ -851,18 +861,25 @@ injects these synthetic variables:
 
 #### Execution Model
 
-1. Each command becomes a synthetic `WorkItem` sent to the Copilot SDK
-2. The LLM receives the command + human-readable reason as a prompt
-3. The LLM executes the command in a terminal and can adapt on failure
-4. If `failOnError` is true (default) and the command fails, remaining
-   commands in the sequence are skipped
-5. Entry commands run after `receiveAssignment()` but before work items
-6. Exit commands run after work items complete but before `transition()`
+1. Commands run in order, in the project directory, without an LLM
+2. stdout/stderr are logged; with `captureAs`, trimmed stdout is stored as
+   an output of the state (entry and exit commands alike)
+3. If `failOnError` is true (default) and the command fails, remaining
+   commands in the sequence are skipped and the state fails
+4. Entry commands run after `receiveAssignment()` but before work items.
+   If they fail, the state fails immediately: no work items, exit
+   evaluation or exit commands run
+5. Exit commands run after work items complete but before `transition()`
 
 ### Exit Evaluation (`exitEvaluation`)
 
 Workflow states can define a structured **exit evaluation** that replaces
-regex-based fail detection with a deterministic, LLM-answered question.
+regex-based fail detection with a constrained question answered by the LLM.
+The parsing of the answer is deterministic; the answer itself is the LLM's
+self-assessment in the same session that did the work. If the answer is
+unclear (negated, names more than one choice, or the call fails),
+`defaultOutcome` applies. For gates that must not depend on an LLM, use
+`onExitCommands` with `failOnError: true` (e.g. run the tests).
 
 After work items complete and before the state transition fires, the engine
 sends a constrained prompt to the LLM (e.g., "Did all tests pass? true/false").

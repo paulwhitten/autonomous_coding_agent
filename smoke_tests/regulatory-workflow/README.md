@@ -21,18 +21,41 @@ flowchart TD
     VER -->|QA verdict PASS| ACC["ACCEPTANCE<br/>RA"]
     VER -->|QA verdict FAIL| REWORK["REWORK<br/>Developer"]
     REWORK -->|rework complete| VER
-    ACC -->|RA accepts| DONE[DONE]
+    ACC -->|RA accepts| MERGE["MERGING<br/>engine only"]
+    MERGE -->|merged into main| DONE[DONE]
+    MERGE -->|merge conflict| ESC[ESCALATED]
     ACC -->|RA rejects| REWORK2["REWORK_ACCEPTANCE<br/>Developer"]
     REWORK2 -->|rework complete| VER
     DONE --> END(( ))
 ```
+
+## Branching
+
+Each requirement is developed on its own branch, `feature/<requirementId>`
+(for example `feature/REQ-HCDP-001`). The task's `requirementId` is seeded in
+the task context by `setup.sh` / `run-test.sh`, and every git operation is a
+mechanical entry/exit command; the agents never run git themselves.
+
+| Step | Who | What happens |
+|------|-----|--------------|
+| `REQUIREMENTS_DEFINITION` entry | engine | Creates `feature/<id>` from `main` (or reuses it on retry) |
+| Every state's entry | engine | Checks out `feature/<id>` exactly as last pushed |
+| Every state's exit | engine | Commits with `<id>: <STATE> by <role> (<taskId>)`, then pushes `feature/<id>` |
+| `IMPLEMENTING` / `REWORK` exit, `VERIFICATION` entry | engine | Runs `npx jest` as a gate; failing tests send the work back |
+| `MERGING` (after RA acceptance) | engine | `git merge --no-ff` into `main`, pushes, deletes the remote branch; a conflict escalates |
+
+Because every engine commit carries the requirement ID, QA's traceability
+evidence (`git log --grep=<id> main..HEAD`, captured as `reqCommits`) does not
+depend on the LLM writing commit messages. Requirements run serially, so each
+new branch starts from a `main` that already contains the previous
+requirement's accepted work.
 
 ### Expected Evidence Artifacts
 
 | State | Role | Artifacts |
 |-------|------|-----------|
 | REQUIREMENTS_DEFINITION | RA | `docs/requirements-specification.md`, `docs/acceptance-criteria-checklist.md` |
-| IMPLEMENTING | Developer | `src/*.ts` (REQ annotations), `tests/*.test.ts`, `evidence/developer-traceability.md` |
+| IMPLEMENTING | Developer | `src/*.ts`, `tests/*.test.ts`, `evidence/developer-traceability.md` |
 | VERIFICATION | QA | `evidence/traceability-matrix.md`, `evidence/verification-report.md`, `tests/integration/*.test.ts` |
 | ACCEPTANCE | RA | `evidence/acceptance-verdict.md` |
 
@@ -41,7 +64,7 @@ flowchart TD
 | Agent | Hostname | Role | V-Model Position | Workflow State |
 |-------|----------|------|------------------|----------------|
 | Manager | smoke-regwf-mgr | manager | Orchestrator (delegation) | None (no workflowFile) |
-| Requirements Analyst | smoke-regwf-ra | requirements-analyst | Left top / Right top | REQUIREMENTS_DEFINITION, ACCEPTANCE |
+| Requirements Analyst | smoke-regwf-ra | requirements-analyst | Left top / Right top | REQUIREMENTS_DEFINITION, ACCEPTANCE, MERGING (mechanical) |
 | Developer | smoke-regwf-dev | developer | Bottom | IMPLEMENTING, REWORK, REWORK_ACCEPTANCE |
 | QA | smoke-regwf-qa | qa | Right ascending | VERIFICATION |
 
@@ -100,12 +123,14 @@ work instead of doing it.
 
 ## Validation Checks
 
-The validate.sh script checks:
+The validate.sh script first syncs every agent workspace to `origin/main`, so
+it validates merged work. It then checks:
 
+0. **Branch flow** -- each `feature/REQ-HCDP-00N` was merged into `main`, its commits carry the requirement ID, and no feature branches are left over
 1. **Manager log** -- log file present, delegation activity detected
 2. **RA workspace** -- requirements spec, acceptance checklist, all 3 REQ IDs present
-3. **Developer workspace** -- source files with REQ annotations, test files with REQ references, evidence document
-4. **QA workspace** -- traceability matrix, verification report, integration tests with REQ cross-references
+3. **Developer workspace** -- source and test files, evidence document
+4. **QA workspace** -- traceability matrix, verification report, integration tests
 5. **Cross-agent traceability** -- each REQ ID appears in at least 2 agent workspaces
 6. **Workflow engine logs** -- RA, Developer, QA all show workflow activity
 

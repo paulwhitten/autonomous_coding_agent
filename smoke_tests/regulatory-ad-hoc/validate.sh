@@ -308,8 +308,8 @@ if [ -n "$INTEG_DIR" ]; then
   INTEG_COUNT=$(find "$INTEG_DIR" -name "*.test.ts" -o -name "*.test.js" 2>/dev/null | wc -l)
   if [ "$INTEG_COUNT" -gt 0 ]; then
     pass "Integration test files found ($INTEG_COUNT files)"
-    # Check cross-requirement references
-    check_grep_dir "Integration test references REQ-HCDP" "REQ-HCDP" "$INTEG_DIR" ".ts"
+    # Requirement IDs are not expected in code: traceability lives in commit
+    # messages and evidence documents.
   else
     fail "Integration test directory exists but no test files"
   fi

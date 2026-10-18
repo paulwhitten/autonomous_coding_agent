@@ -104,7 +104,7 @@ echo ""
 # setup.sh already seeded converter-01. We wait for each assignment to
 # reach a terminal state (DONE or ESCALATED), then seed the next.
 # Serial seeding guarantees only one task is ever in the mailbox, so a
-# DEVELOP rework self-loop cannot clobber a later assignment's
+# IMPLEMENT rework self-loop cannot clobber a later assignment's
 # not-yet-committed work.
 #
 # Task sequence:

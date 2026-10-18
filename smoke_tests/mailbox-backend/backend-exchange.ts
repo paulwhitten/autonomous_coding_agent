@@ -64,7 +64,7 @@ function buildConfig(overrides: {
       supportPriority: true,
     },
     copilot: {
-      model: 'gpt-4.1',
+      model: 'claude-haiku-5.5',
       allowedTools: 'all',
     },
     workspace: {

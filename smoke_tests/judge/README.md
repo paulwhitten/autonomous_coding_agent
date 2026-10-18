@@ -6,7 +6,7 @@ Runs a frontier model over the output of a completed smoke test and produces a s
 
 1. **Collect** — reads project files from `agent/workspace/project/`, task state from `tasks/completed|failed|pending/`, and the agent's role instructions from `project/.github/copilot-instructions.md`.
 2. **Prompt** — builds a structured judge prompt with all artifacts, a 10-dimension rubric with scoring anchors and explicit examples, tied to the project instructions.
-3. **Judge** — calls the configured model (default: `gpt-5.4`) via the Copilot SDK with no tools enabled. Determinism is enforced via prompt-level instructions.
+3. **Judge** — calls the configured model (default: `auto`) via the Copilot SDK with no tools enabled. Determinism is enforced via prompt-level instructions.
 4. **Score** — parses the LLM response and recomputes the weighted overall score server-side (does not trust LLM arithmetic).
 5. **Delta** — compares against the most recent previous report in the same `judge/` folder to detect regressions and improvements.
 6. **Save** — writes a timestamped JSON report to `<smoke-test>/judge/<YYYY-MM-DD_HH-MM-SS>.json`.
@@ -16,7 +16,7 @@ Runs a frontier model over the output of a completed smoke test and produces a s
 `config.yml` in this directory (convention over configuration — all fields have defaults):
 
 ```yaml
-model: gpt-5.4
+model: auto
 runs: 1
 weights:
   task_completion: 0.20
@@ -66,7 +66,7 @@ npx tsx smoke_tests/judge/judge.ts \
 | `--workspace <dir>` | `<smoke-test>/agent/workspace` | Explicit workspace path |
 | `--instructions <file>` | `workspace/project/.github/copilot-instructions.md` | Override instructions path |
 | `--test-name <name>` | dirname of `--smoke-test` | Label in the report |
-| `--model <model>` | from `config.yml` (fallback: `gpt-5.4`) | Model used for judging |
+| `--model <model>` | from `config.yml` (fallback: `auto`) | Model used for judging |
 | `--output <file>` | `<smoke-test>/judge/<timestamp>.json` | Output JSON path |
 
 ## Output
@@ -78,9 +78,9 @@ A JSON file with this structure:
   "test": "basic",
   "timestamp": "2026-06-12T15:47:07.000Z",
   "workspace": "/path/to/workspace",
-  "judge_model": "gpt-5.4",
-  "assessed_model": "gpt-4.1",
-  "config": { "model": "gpt-5.4", "runs": 1, "weights": { "..." } },
+  "judge_model": "auto",
+  "assessed_model": "auto",
+  "config": { "model": "auto", "runs": 1, "weights": { "..." } },
   "scores": {
     "task_completion":       { "score": 5, "justification": "..." },
     "code_correctness":      { "score": 5, "justification": "..." },
@@ -114,7 +114,7 @@ The report records two distinct models so the verdict is never ambiguous:
 
 | Field | Meaning | Source |
 |-------|---------|--------|
-| `judge_model` | The model that performed the evaluation (the LLM judge) | `--model` flag, else `config.yml`, else `gpt-5.4` |
+| `judge_model` | The model that performed the evaluation (the LLM judge) | `--model` flag, else `config.yml`, else `auto` |
 | `assessed_model` | The model that produced the work under test (the agent) | Agent runtime log (`agent/logs/agent.log`), else `agent/config.json` |
 
 The `assessed_model` is resolved in order of reliability:

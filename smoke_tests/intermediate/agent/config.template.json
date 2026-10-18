@@ -5,6 +5,9 @@
     "checkIntervalMs": 30000,
     "taskRetryCount": 2
   },
+  "copilot": {
+    "model": "claude-haiku-5.5"
+  },
   "mailbox": {
     "repoPath": "../runtime_mailbox",
     "autoCommit": false,

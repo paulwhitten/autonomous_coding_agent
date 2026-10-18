@@ -93,6 +93,47 @@ check_grep_dir() {
 }
 
 # ================================================================
+# Feature-Branch Flow (what actually landed on main)
+# ================================================================
+echo "--- Feature-Branch Flow ---"
+
+# Each requirement is developed on feature/<REQ-ID> and merged into main
+# only after RA acceptance.  Sync every agent workspace to origin/main so
+# the checks below validate merged work, not whatever branch an agent was
+# last on.
+for WS_PROJECT in ra/agent/workspace/project developer/agent/workspace/project qa/agent/workspace/project; do
+  if [ -d "$WS_PROJECT/.git" ]; then
+    git -C "$WS_PROJECT" fetch -q --prune origin 2>/dev/null
+    git -C "$WS_PROJECT" checkout -q -f -B main origin/main 2>/dev/null \
+      || warn "Could not sync $WS_PROJECT to origin/main"
+  fi
+done
+
+if [ -d origin.git ]; then
+  for REQ_ID in REQ-HCDP-001 REQ-HCDP-002 REQ-HCDP-003; do
+    if git --git-dir=origin.git log main --merges --format=%s | grep -q "^Merge feature/${REQ_ID}:"; then
+      pass "feature/${REQ_ID} merged into main after acceptance"
+    else
+      fail "feature/${REQ_ID} not merged into main"
+    fi
+    if [ "$(git --git-dir=origin.git log main --format=%s --grep="^${REQ_ID}: " | wc -l)" -gt 0 ]; then
+      pass "${REQ_ID} commits carry the requirement ID"
+    else
+      fail "No commits on main carry ${REQ_ID} in the message"
+    fi
+  done
+  LEFTOVER=$(git --git-dir=origin.git branch --format='%(refname:short)' --list 'feature/*' | tr '\n' ' ')
+  if [ -z "$LEFTOVER" ]; then
+    pass "No unmerged feature branches left on origin"
+  else
+    warn "Feature branches still on origin: $LEFTOVER"
+  fi
+else
+  fail "origin.git not found -- cannot check branch flow"
+fi
+echo ""
+
+# ================================================================
 # RA Workspace
 # ================================================================
 echo "--- RA Agent Workspace ---"
@@ -308,8 +349,8 @@ if [ -n "$INTEG_DIR" ]; then
   INTEG_COUNT=$(find "$INTEG_DIR" -name "*.test.ts" -o -name "*.test.js" 2>/dev/null | wc -l)
   if [ "$INTEG_COUNT" -gt 0 ]; then
     pass "Integration test files found ($INTEG_COUNT files)"
-    # Check cross-requirement references
-    check_grep_dir "Integration test references REQ-HCDP" "REQ-HCDP" "$INTEG_DIR" ".ts"
+    # Requirement IDs are not expected in code: traceability lives in commit
+    # messages and evidence documents (checked above).
   else
     fail "Integration test directory exists but no test files"
   fi

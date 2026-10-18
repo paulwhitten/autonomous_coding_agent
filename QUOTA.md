@@ -1,5 +1,14 @@
 # Quota Management Guide
 
+> **Out of date (October 2026).** This guide predates the current Copilot
+> model lineup and pricing. `gpt-4.1`, `gpt-4o`, `claude-sonnet-4.5` and the
+> other models named below are retired, and Copilot now bills per token rather
+> than per premium request, so the "free model" advice and the multipliers no
+> longer apply. The agent now defaults to `"model": "auto"`. The quota presets
+> in `quota-presets.json` have been updated to current model names, but their
+> multiplier table has not.
+
+
 ## Overview
 
 When running multiple autonomous agents on a **single GitHub Copilot account**, they share one monthly quota pool. Proper quota management prevents all agents from being blocked mid-month.

@@ -5,7 +5,8 @@ import { Save, Download, ChevronRight, ChevronLeft, Eye, FolderOpen, Trash2, Fil
 
 const STEPS = ['Agent', 'Mailbox', 'Copilot', 'Workspace', 'Logging', 'Manager', 'Team', 'Quota'] as const;
 
-const MODELS = ['gpt-4.1', 'gpt-5', 'claude-sonnet-4.5', 'claude-opus-4', 'o3-mini'];
+// 'auto' lets Copilot choose per request; the rest are pinned models.
+const MODELS = ['auto', 'claude-sonnet-5.5', 'claude-opus-5.5', 'claude-haiku-5.5', 'gpt-6.1-sol', 'gpt-6-luna', 'gpt-5.6-terra'];
 const ROLES = ['developer', 'qa', 'manager', 'researcher', 'requirements-analyst'];
 const VALIDATION_MODES = ['none', 'spot_check', 'always', 'milestone'];
 const QUOTA_PRESETS = ['conservative', 'aggressive', 'adaptive', 'unlimited'];
@@ -132,7 +133,7 @@ const defaultValues: ConfigForm = {
     supportPriority: true,
   },
   copilot: {
-    model: 'gpt-4.1',
+    model: 'auto',
     permissions: {
       shell: 'allowlist',
       write: 'allow',
