@@ -329,7 +329,9 @@ for REQ_ID in REQ-HCDP-001 REQ-HCDP-002 REQ-HCDP-003; do
   AGENTS_WITH_REQ=0
   for AGENT_WS in "$RA_WS" "$DEV_WS" "$QA_WS"; do
     if [ -d "$AGENT_WS" ]; then
-      FOUND=$(grep -rl "$REQ_ID" "$AGENT_WS" --include="*.md" --include="*.ts" --include="*.js" 2>/dev/null | head -1)
+      # Search the merged project only, not tasks/ (old work-item files
+      # mention requirement IDs even when the work never reached main).
+      FOUND=$(grep -rl "$REQ_ID" "$AGENT_WS/project" --include="*.md" --include="*.ts" --include="*.js" --exclude-dir=node_modules --exclude-dir=.git 2>/dev/null | head -1)
       if [ -n "$FOUND" ]; then
         AGENTS_WITH_REQ=$((AGENTS_WITH_REQ + 1))
       fi

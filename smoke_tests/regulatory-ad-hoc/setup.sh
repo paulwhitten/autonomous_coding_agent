@@ -44,9 +44,9 @@ echo ""
 # paths to avoid killing unrelated agents (e.g. project team agents).
 # ----------------------------------------------------------------
 echo "Killing any leftover regulatory test agent processes..."
-pkill -f "node.*smoke_tests/regulatory.*/dist/index.js" 2>/dev/null || true
+pkill -f "node.*smoke_tests/regulatory-ad-hoc/.*dist/index.js" 2>/dev/null || true
 sleep 1
-pkill -9 -f "node.*smoke_tests/regulatory.*/dist/index.js" 2>/dev/null || true
+pkill -9 -f "node.*smoke_tests/regulatory-ad-hoc/.*dist/index.js" 2>/dev/null || true
 
 # ----------------------------------------------------------------
 # Clean previous artifacts

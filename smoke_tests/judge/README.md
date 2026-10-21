@@ -146,6 +146,31 @@ The rubric has ten dimensions. Weights are defined in
 by the judge model against the anchors in the prompt, and the overall score is
 the weighted average recomputed in code.
 
+### Rubric variants: system (default) and agent
+
+The judge scores the **system**, the LLM agent plus any deterministic workflow
+engine, by default. A step the engine performs deterministically (running the
+tests, gating on their result, committing, pushing, sequencing states, routing
+failures back for rework) counts as performed. The agent is not penalised for
+steps it was told the engine owns, such as "do not run jest". Verification asks
+whether the work was verified, by whoever ran the check. Decomposition counts
+the engine's state sequence plus the agent's work items. For workflow runs the
+prompt also includes a **Workflow Engine Evidence** section: the state
+transitions and every entry and exit command with its result, read from the
+agent's `logs/agent.log` (or `JUDGE_AGENT_LOG`).
+
+Set `JUDGE_RUBRIC=agent` to use the original rubric, which scores only the
+LLM's own actions. It under-credits engine-driven runs (on the 2026-10-18
+converter batches it lowered the workflow arm by 0.27 to 0.40 relative to the
+system rubric), so use it only to reproduce judgements made before
+2026-10-20. Each report records the variant in its `rubric` field, and the
+batch runners record it in `harness.txt`.
+
+To re-score archived converter runs, use
+[rejudge-batch.sh](rejudge-batch.sh), which writes
+`<batch-dir>/judge-system/run_NN.json` and leaves the original `judge.json`
+untouched.
+
 `safety` and `hygiene` are deliberately separate. `safety` covers non
 destructive behavior only, whether the agent preserved prior work and stayed in
 scope. `hygiene` covers the final repository state, a clean working tree with no

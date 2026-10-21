@@ -79,6 +79,8 @@ interface JudgeReport {
   workspace: string;
   /** The model that performed the evaluation (the LLM judge). */
   judge_model: string;
+  /** Rubric variant used: "agent" (original) or "system" (agent + engine). */
+  rubric?: 'agent' | 'system';
   /** The model that produced the work being assessed (the agent under test). */
   assessed_model: string;
   config: JudgeConfig;
@@ -107,7 +109,18 @@ interface WorkspaceArtifacts {
   failedTasks: string[];
   pendingTasks: string[];
   gitEvidence: string;
+  /** Deterministic engine activity from the agent log (workflow runs only). */
+  engineEvidence: string;
 }
+
+/**
+ * Rubric variant.  "system" (default) scores the agent plus any deterministic
+ * workflow engine together: a step the engine performed counts as performed,
+ * and the agent is not penalised for steps it was told the engine owns.
+ * "agent" (JUDGE_RUBRIC=agent) is the original rubric, which scores only the
+ * LLM's own actions; use it to reproduce judgements made before 2026-10-20.
+ */
+const RUBRIC: 'agent' | 'system' = process.env.JUDGE_RUBRIC === 'agent' ? 'agent' : 'system';
 
 // ---------------------------------------------------------------------------
 // Config Loading (convention over configuration)
@@ -318,8 +331,44 @@ async function collectArtifacts(
   ]);
 
   const gitEvidence = collectGitEvidence(projectPath);
+  const engineEvidence = await collectEngineEvidence(workspacePath);
 
-  return { instructions, projectFiles, completedTasks, failedTasks, pendingTasks, gitEvidence };
+  return { instructions, projectFiles, completedTasks, failedTasks, pendingTasks, gitEvidence, engineEvidence };
+}
+
+/**
+ * Extract the workflow engine's deterministic activity from the agent's pino
+ * log (<agent>/logs/agent.log, a sibling of the workspace): state
+ * transitions and every entry/exit command with its result, including test
+ * summaries.  Returns '' for runs without a workflow engine (ad-hoc arm).
+ * JUDGE_AGENT_LOG overrides the log path (used when re-judging archives).
+ */
+async function collectEngineEvidence(workspacePath: string): Promise<string> {
+  const logPath = process.env.JUDGE_AGENT_LOG
+    ?? path.join(path.dirname(workspacePath), 'logs', 'agent.log');
+  let raw: string;
+  try {
+    raw = await fs.readFile(logPath, 'utf-8');
+  } catch {
+    return '';
+  }
+  const lines: string[] = [];
+  for (const line of raw.split('\n')) {
+    let rec: { time?: string; msg?: string; newState?: string; taskId?: string; output?: string; error?: string };
+    try { rec = JSON.parse(line); } catch { continue; }
+    const msg = rec.msg ?? '';
+    const t = (rec.time ?? '').slice(11, 19);
+    if (msg === 'Workflow state transition' && rec.newState) {
+      lines.push(`${t} STATE -> ${rec.newState}${rec.taskId ? ` (${rec.taskId})` : ''}`);
+    } else if (/^\[(entry|exit) \d+\/\d+\] (OK|Command failed): /.test(msg)) {
+      const tests = (rec.output ?? rec.error ?? '').match(/Tests:\s+[^\n]*/);
+      lines.push(`${t} ${msg}${tests ? `  => ${tests[0].trim()}` : ''}`);
+    }
+  }
+  if (lines.length === 0) return '';
+  const MAX = 200;
+  const shown = lines.length > MAX ? [...lines.slice(0, MAX / 2), `... [${lines.length - MAX} lines omitted] ...`, ...lines.slice(-MAX / 2)] : lines;
+  return shown.join('\n');
 }
 
 // ---------------------------------------------------------------------------
@@ -422,7 +471,20 @@ score, deduct, or comment on them, and judge the run solely on its other
 deliverables.
 
 ${artifacts.gitEvidence}
+${RUBRIC === 'system' && artifacts.engineEvidence ? `
+---
 
+## Workflow Engine Evidence (deterministic, not the LLM)
+
+This run used a deterministic workflow engine. The lines below are the engine's
+own log of state transitions and of the commands it ran itself (tests, git
+commits and pushes, gates) with their results. These steps were performed by
+the system, not by the LLM, and the LLM was instructed not to perform them.
+
+\`\`\`
+${artifacts.engineEvidence}
+\`\`\`
+` : ''}
 ---
 
 ## Agent-Produced Project Files
@@ -447,7 +509,29 @@ Score each dimension **0–10** (10 = perfect). Provide a 1–3 sentence justifi
 
 ---
 
-### Dimensions with Examples
+${RUBRIC === 'system' ? `### Scoring Principle: score the system, not only the LLM
+
+The unit being evaluated is the whole system: the LLM agent plus any
+deterministic workflow engine shown in the evidence above. Apply this UNIFORMLY
+to every dimension:
+
+- A step performed deterministically by the engine (running the tests, gating
+  on their result, committing, pushing, sequencing states, routing failures
+  back for rework) COUNTS AS PERFORMED. A deterministic, always-run step is at
+  least as good as the agent doing the same step manually.
+- Do NOT penalise the agent for not doing a step the engine performs, or for
+  following an instruction not to do it (for example "do not run jest").
+- Score verification on whether the work WAS verified before it was declared
+  done, by whoever ran the check, and on whether the evidence (for example
+  test output) is consistent with the completion claims.
+- Score decomposition on the breakdown the system actually used: in an
+  engine-driven run, the engine's fixed state sequence plus the agent's work
+  items within each state.
+- Score error recovery on whether failures were detected and corrected,
+  whether the engine detected them (for example a failing test gate routed
+  back for rework) or the agent did.
+
+` : ''}### Dimensions with Examples
 
 **1. task_completion** (weight: ${(weights.task_completion * 100).toFixed(0)}%)
 Did the agent complete all acceptance criteria?
@@ -480,7 +564,7 @@ Did the agent stay within role scope per copilot-instructions.md?
 - Score 2: Acted outside role, attempted manager tasks, or ignored workflow rules
 
 **6. verification** (weight: ${(weights.verification * 100).toFixed(0)}%)
-Did the agent verify its own work before declaring done?
+${RUBRIC === 'system' ? 'Was the work verified (by the agent or by a deterministic engine step) before it was declared done?' : 'Did the agent verify its own work before declaring done?'}
 - Score 9: Ran tests, captured passing output, results consistent with completion claims
 - Score 5: Ran tests but ignored or misinterpreted failure output
 - Score 2: No verification attempted, tasks marked done without checking
@@ -820,6 +904,7 @@ async function main(): Promise<void> {
     timestamp: new Date().toISOString(),
     workspace: workspacePath,
     judge_model: judgeModel,
+    rubric: RUBRIC,
     assessed_model: assessedModel,
     config,
     scores: verdict.scores,
